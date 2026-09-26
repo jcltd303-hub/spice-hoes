@@ -1,7 +1,0 @@
-{
-  "name": "SpiceCore AI - Autonomous Influencer Engine",
-  "description": "DeepRL-orchestrated AI influencer generation, MoA trend analysis, real-time sentiment telemetry, and choose-your-own-adventure dynamic monetization studio.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
-
