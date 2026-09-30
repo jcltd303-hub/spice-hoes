@@ -21,14 +21,16 @@ def _persona(personas, persona_id):
     raise ValueError('Selected persona is not in the registry')
 
 
-def _evidence_query(knowledge, persona, objective, limit):
+def _evidence_query(knowledge, persona, objective, limit, knowledge_scope):
+    if not isinstance(knowledge_scope, dict):
+        raise ValueError('Explicit knowledge scope required')
+    scope = {**knowledge_scope, 'persona': persona['id']}
     query = f"{persona['name']} {objective} {persona.get('voice','')} {persona.get('bio','')}"
-    rows = knowledge.search(query, persona_id=persona['id'], limit=limit)
-    return rows
+    return knowledge.search(query, scope, limit=limit)
 
 
 async def plan_cycle(store, personas, knowledge, client, budget, *, objective,
-                     channel, offer, audit_db, seed=None, evidence_limit=8,
+                     channel, offer, audit_db, knowledge_scope, seed=None, evidence_limit=8,
                      limits=None):
     """Create one bounded experiment candidate from observed outcomes and RAG evidence."""
     if not objective.strip() or not channel.strip() or not offer.strip():
@@ -38,7 +40,7 @@ async def plan_cycle(store, personas, knowledge, client, budget, *, objective,
 
     allocation = recommend(store.stats(personas), seed=seed)
     persona = _persona(personas, allocation['persona_id'])
-    evidence = _evidence_query(knowledge, persona, objective, evidence_limit)
+    evidence = _evidence_query(knowledge, persona, objective, evidence_limit, knowledge_scope)
     if not evidence:
         raise ValueError('No scoped evidence available for selected persona')
 
