@@ -15,6 +15,6 @@ class LocalDreamTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as d:
                 out=Path(d)/"asset.png"; meta=generate("test",out,size=2,steps=1,server_url=f"http://127.0.0.1:{server.server_port}")
-                self.assertEqual(out.read_bytes()[:8],b"\\x89PNG\\r\\n\\x1a\\n"); self.assertEqual(meta["provider"],"local-dream"); self.assertEqual(meta["generation_time_ms"],12)
+                self.assertEqual(out.read_bytes()[:8], bytes.fromhex("89504e470d0a1a0a")); self.assertEqual(meta["provider"],"local-dream"); self.assertEqual(meta["generation_time_ms"],12)
         finally: server.shutdown(); server.server_close()
 if __name__=="__main__": unittest.main()
