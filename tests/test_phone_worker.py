@@ -24,16 +24,16 @@ class Generator:
 class PhoneTests(unittest.TestCase):
     def test_offline(self):
         with tempfile.TemporaryDirectory() as p:
-            c=Cloud(); g=Generator(); w=PhoneWorker(c,g,p,worker_id='w',device_id='d')
+            c=Cloud(); g=Generator(); w=PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=False)
             for s in ({},dict(STATE,online=False),dict(STATE,battery=24),dict(STATE,thermal_severity=3),dict(STATE,battery=True)):
                 self.assertEqual(w.tick(s)['status'],'deferred')
             self.assertEqual((c.claims,g.calls),(0,0))
     def test_lease_loss(self):
         with tempfile.TemporaryDirectory() as p:
-            c=Cloud(); g=Generator(); w=PhoneWorker(c,g,p,worker_id='w',device_id='d')
+            c=Cloud(); g=Generator(); w=PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=False)
             self.assertEqual(w.tick(STATE)['status'],'reconciliation_pending')
             self.assertTrue(list(Path(p).glob('*.json')))
-            w=PhoneWorker(c,g,p,worker_id='w',device_id='d')
+            w=PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=False)
             self.assertEqual(w.tick(STATE)['status'],'reconciliation_pending')
             self.assertEqual(g.calls,1)
             self.assertEqual(c.claims,1)
@@ -46,10 +46,37 @@ class PhoneTests(unittest.TestCase):
                 self.assertEqual(len(list(Path(p).glob('*.png'))),1)
                 return original(job,image,result)
             c.upload=upload
-            self.assertEqual(PhoneWorker(c,g,p,worker_id='w',device_id='d').tick(STATE)['status'],'completed')
+            self.assertEqual(PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=False).tick(STATE)['status'],'completed')
             self.assertFalse(list(Path(p).glob('*.json')))
     def test_dry_run(self):
         with tempfile.TemporaryDirectory() as p:
             c=Cloud(); g=Generator()
             self.assertEqual(PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=True).tick(STATE)['status'],'dry_run')
+            self.assertEqual(c.claims,0)
+
+    def test_heartbeat_loss_retains_generation(self):
+        import threading
+        with tempfile.TemporaryDirectory() as p:
+            c=Cloud(); g=Generator(); renewed=threading.Event()
+            def renew(*args):
+                renewed.set()
+                raise ValueError('lost')
+            c.renew=renew
+            original=g.generate
+            def generate(settings):
+                self.assertTrue(renewed.wait(1))
+                return original(settings)
+            g.generate=generate
+            w=PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=False)
+            w.heartbeat_seconds=0.01
+            self.assertEqual(w.tick(STATE)['status'],'reconciliation_pending')
+            self.assertEqual((g.calls,c.uploads),(1,0))
+    def test_serial_lock(self):
+        import fcntl
+        with tempfile.TemporaryDirectory() as p:
+            c=Cloud(); g=Generator()
+            w=PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=False)
+            with w.lock_path.open('a+b') as lock:
+                fcntl.flock(lock,fcntl.LOCK_EX)
+                self.assertEqual(w.tick(STATE)['status'],'busy')
             self.assertEqual(c.claims,0)
