@@ -56,3 +56,15 @@ python3 -m spicecore.cli free-plan --theme talking-head --channel TikTok --perso
 ```
 
 All generated production stages declare `cost_cents: 0`. This means **tooling cost in the planner**, not a guarantee that a third-party service will remain free or available. The paid Higgsfield, ElevenLabs, and Fal.ai routes are no longer required by the core architecture.
+
+## Evidence-driven next batch
+
+The complete local planning path is now one command:
+
+```bash
+python3 -m spicecore.cli next-batch --theme city-nights --channel TikTok --seed 42 --output-dir jobs
+```
+
+It reads the SQLite outcome ledger, selects an experiment with the logged exploration policy, retrieves relevant local project/persona knowledge, runs the four-lens MoA planner, and writes the free production manifest. The manifest remains `awaiting_generation`; generation and publication do not bypass the existing review gate. Use `--avatar` to choose the Pavo talking-avatar production route.
+
+The current learner is intentionally a contextual allocation heuristic rather than a claimed deep-RL model. Every planned batch and observed outcome creates the trajectory data needed to evaluate a future longer-horizon policy against this baseline.
