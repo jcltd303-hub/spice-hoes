@@ -155,7 +155,12 @@ async def run_moa(task: dict, evidence: list[dict], client: ModelClient, budget:
             context = {**facts, 'proposals': proposals}
             critic_roles = ('evidence_critic', 'quality_critic')
             critiques = await parallel(critic_roles, 2, context)
-            return await call('aggregator', 3, {**context, 'critiques': critiques})
+            decision = await call('aggregator', 3, {**context, 'critiques': critiques})
+            selected_role = decision['chosen_proposal']
+            selected = proposals[selected_role]
+            return {**decision, 'selected_proposer': selected_role,
+                    'selected_proposal': selected['proposal'],
+                    'selected_proposal_evidence_ids': selected['evidence_ids']}
 
         decision = await asyncio.wait_for(layers(), timeout)
         audit({'event': 'complete', 'run_id': task['task_id'], 'decision': decision})
