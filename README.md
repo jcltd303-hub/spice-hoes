@@ -79,3 +79,18 @@ python3 -m spicecore.cli generate-local --prompt "production portrait prompt" --
 ```
 
 For a computer connected through ADB, first run `adb forward tcp:8081 tcp:8081` and use the same URL. The adapter calls `POST /generate`, consumes the SSE progress/completion stream, writes the returned image to PNG, and records generation lineage in the experiment ledger. Model-specific size/steps/CFG should follow the loaded Local Dream model; the CLI values are explicit and overrideable.
+
+## Autonomous asset creation
+
+With Local Dream open and a model loaded, one command now performs evidence-based allocation → RAG/MoA brief → Local Dream HTTP generation → PNG persistence → provenance event → review candidate creation:
+
+```bash
+export LOCAL_DREAM_URL=http://127.0.0.1:8081
+python3 -m spicecore.cli auto-assets --theme city-nights --channel TikTok --seed 42 --output-dir jobs --assets-dir assets/generated
+```
+
+Successful jobs finish at `awaiting_review`; autonomous production does not imply autonomous publication. If Local Dream is unavailable or generation fails, the job is persisted as `generation_failed` with the error and can be resumed without reallocating the experiment:
+
+```bash
+python3 -m spicecore.cli produce-job jobs/JOB.json --assets-dir assets/generated
+```
