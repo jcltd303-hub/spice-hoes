@@ -7,8 +7,9 @@ from urllib.request import Request,urlopen
 DEFAULT_URL=os.environ.get("LOCAL_DREAM_URL","http://127.0.0.1:8081")
 PROFILES={
  "sdxl-dmd2-fast":{"scheduler":"lcm","steps":8,"cfg":1.0,"aspect_ratio":"9:16"},
+ "cyberrealistic-v10":{"scheduler":"dpm_karras","steps":25,"cfg":6.0,"aspect_ratio":"9:16"},
  "sdxl-quality":{"scheduler":"dpm_karras","steps":25,"cfg":6.0,"aspect_ratio":"9:16"},
- "sd15-quality":{"scheduler":"DPM++ 2M Karras","steps":25,"cfg":6.0,"width":512,"height":768},
+ "sd15-quality":{"scheduler":"dpm_karras","steps":25,"cfg":6.0,"width":512,"height":768},
 }
 
 def _post_json(path,payload,server_url=None,timeout=900,accept="application/json"):
