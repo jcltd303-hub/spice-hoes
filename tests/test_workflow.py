@@ -47,6 +47,20 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn('<script>alert(1)</script>', page)
         self.assertIn('test-token', page)
 
+    def test_dashboard_advances_one_candidate_at_a_time(self):
+        p = self.people[0]
+        first = self.store.propose(p, 'first', 'still', 'Instagram', 'portrait')
+        second = self.store.propose(p, 'second', 'still', 'Instagram', 'portrait')
+        page = render_dashboard(self.store, self.people, csrf_token='test-token')
+        self.assertIn(first, page)
+        self.assertNotIn(second, page)
+        self.assertIn('2 awaiting review', page)
+        self.store.review(first, 'rejected', 'operator', '')
+        page = render_dashboard(self.store, self.people, csrf_token='test-token')
+        self.assertNotIn(first, page)
+        self.assertIn(second, page)
+        self.assertIn('1 awaiting review', page)
+
     def test_review_action_requires_matching_token(self):
         p = self.people[0]
         cid = self.store.propose(p, 'night', 'still', 'Instagram', 'portrait')
