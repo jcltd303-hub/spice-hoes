@@ -7,6 +7,7 @@ from http.server import HTTPServer
 from pathlib import Path
 
 from .core import Store, load_personas
+from .knowledge import KnowledgeStore
 from .policy import recommend
 from .web import make_handler
 from .workflow import build_briefs
@@ -48,7 +49,40 @@ def main(argv=None):
     outcome.add_argument('kind', choices=('impression', 'click', 'purchase', 'refund', 'distribution_cost'))
     outcome.add_argument('--amount-cents', type=int, default=0)
     outcome.add_argument('--external-id')
+    knowledge = sub.add_parser('knowledge')
+    operations = knowledge.add_subparsers(dest='knowledge_operation', required=True)
+    for operation in ('add', 'revise'):
+        command = operations.add_parser(operation)
+        if operation == 'revise':
+            command.add_argument('document_id')
+        command.add_argument('--document', required=True, help='JSON document file with metadata and text/content')
+    search = operations.add_parser('search')
+    search.add_argument('query')
+    search.add_argument('--scope', required=True, help='JSON scope with authenticated tenant, owner, persona')
+    search.add_argument('--limit', type=int, default=8)
+    for operation in ('archive', 'delete'):
+        operations.add_parser(operation).add_argument('document_id')
     args = parser.parse_args(argv)
+    if args.command == 'knowledge':
+        Path(args.db).parent.mkdir(parents=True, exist_ok=True)
+        knowledge_store = KnowledgeStore(args.db)
+        try:
+            operation = args.knowledge_operation
+            if operation in ('add', 'revise'):
+                document = json.loads(Path(args.document).read_text())
+                if operation == 'add':
+                    output = {'document_id': knowledge_store.add(document)}
+                else:
+                    output = {'revision_id': knowledge_store.revise(args.document_id, document)}
+            elif operation == 'search':
+                output = {'mode': knowledge_store.mode, 'results': knowledge_store.search(args.query, json.loads(args.scope), args.limit)}
+            else:
+                getattr(knowledge_store, operation)(args.document_id)
+                output = {'document_id': args.document_id, 'operation': operation}
+            print(json.dumps(output, indent=2, ensure_ascii=False))
+        finally:
+            knowledge_store.close()
+        return
     personas = load_personas(args.personas)
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
     store = Store(args.db)
@@ -97,3 +131,4 @@ def main(argv=None):
 
 if __name__ == '__main__':
     main()
+
