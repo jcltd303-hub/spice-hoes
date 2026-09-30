@@ -1,0 +1,637 @@
+Task5 review package
+Base 1f5afccf905500681f8816ed950cc63b31d916c2
+Head 3fcf088cd73c87af4ef34c4dd1dabdc90aae870a
+2bfcc8061c63c6702e5fc1bc10b6aa2399c4f3f7 test: specify Local Dream phone worker and retain execution ledger
+3fcf088cd73c87af4ef34c4dd1dabdc90aae870a feat: add Local Dream S24 phone worker and recovery checkpoints
+
+### docs/phone-worker.md (+31/-0)
+@@ -0,0 +1,31 @@
++# Local Dream phone worker
++
++Local Dream's official [HTTP API reference](https://ld.chino.icu/features/http-api) was checked on 2026-09-30. Load a model manually in the app before running Termux. This client calls only loopback POST /generate. There is no health/version probe or remote model startup.
++
++The documented completion payload contains **raw RGB**, not PNG/JPEG. The client bounds stream/base64/decoded bytes to 32 MiB, checks positive dimensions, channels=3 and exact byte count, and writes a PNG with a validated signature. Progress previews consume the stream limit: keep previews disabled. Invalid JSON, HTTP errors, SSE errors and truncated streams never produce successful artifacts.
++
++Before enabling generation, record an owner-verified installed app version, loaded model and allowed request fields as capabilities:
++```python
++capabilities = {'validated': True, 'version': 'OWNER-VERIFIED-VERSION',
++                'model': 'OWNER-VERIFIED-LOADED-MODEL', 'fields': ['prompt', 'seed']}
++```
++This is a manual receipt, not discovery. Add fields only after a bounded canary confirms the installed model accepts them. Pin an explicit seed for reproducibility. Do not assume LoRA, face references or automatic model loading. Model-specific resolution/scheduler capabilities must be checked in the installed app.
++
++PhoneWorker takes an injected authenticated outbound cloud adapter, LocalDreamClient, private checkpoint directory, and paired worker/device IDs. It starts in dry-run. The adapter must use owner-configured Azure HTTPS routes and authentication, scope upload URLs privately, fence every claim/renew/completion by worker/device/token, and implement:
++- claim(worker_id, ISO8601_now, device_id=...) -> fenced image lease or None
++- renew(job_id, lease_token)
++- upload(job, encoded_image_bytes, result) -> serializable private upload receipt
++- complete(job_id, lease_token, result) -> status=completed acknowledgment
++- reconcile_artifact(job_id, historical_lease_token, result) -> durable artifact checkpoint
++
++No routes are guessed here. Task6 supplies actual transport. The adapter must bound request timeouts and provide private upload association by job ID/hash. An authenticated=True marker is an injection contract; it does not implement authentication itself. Never pass a local JobStore as a production cloud adapter.
++
++Call tick with current online:boolean, battery:0..100, charging:boolean and Android thermal_severity:int. Missing/unknown values defer. Below 25% battery defers unless charging; thermal severity >=3 always defers. Collect thermal status with a device-supported Android API; Termux battery telemetry alone is insufficient. There is no inference fallback.
++
++One process/file lock per device in the same checkpoint directory serializes work. Use one paired worker and one directory on the phone; the cloud lease also enforces device serialization. A background heartbeat renews every 30 seconds while generation runs. Lost lease does not cancel an in-progress backend request: its result is durably checkpointed and reconciled without regeneration.
++
++PNG bytes and job-ID metadata are fsynced before upload; SHA256, seed, model/version, source-image hash and latency accompany completion. Upload/completion retries preserve the exact result payload. After lease loss, or any failed delivery, the checkpoint is retained and the worker reports reconciliation_pending. Historical JobStore reconciliation records an artifact without delivering or changing ownership. Until Task6 provides authenticated finalization/operator recovery, such checkpoints can block new work and are never silently treated as completed. Do not delete them to force regeneration.
++
++Run setup-phone.sh in Termux, install and authorize Termux:API separately if using its telemetry. Disable battery optimization for Termux only after assessing battery/thermal behavior; keep Local Dream on the phone and port8081 off public networks. Inject the real cloud adapter into your application runner and call tick on a bounded polling schedule; setup does not invent a production runner or transport.
++
++Offline unittest/CI evidence validates parser and lifecycle fixtures only. Actual S24 compatibility, installed model behavior, Android telemetry, Azure pairing, credentials, upload scopes and live generation remain owner live checks.
+
+### docs/superpowers/execution/global-constraints.md (+10/-0)
+@@ -0,0 +1,10 @@
++- No third-party inference fallback.
++- At least two independent proposers plus critic and aggregator are required for a successful MoA run.
++- Limit each run to three layers, explicit token limits, bounded timeout and retries.
++- No recursively spawning agents.
++- Apply tenant/persona/access/expiry filters BEFORE ranking.
++- Start in dry-run.
++- Offline tests do not prove Azure deployment, device compatibility or platform integration.
++- Preserve existing local commands and stored experiments; keep secrets and private assets outside git.
++- Production hosting, reasoning and storage use Azure; image generation uses Local Dream on S24 exclusively.
++- Live spending requires verified credit eligibility and owner-configured ceiling. Unknown eligibility disables live operation.
+
+### docs/superpowers/execution/progress.md (+89/-0)
+@@ -0,0 +1,89 @@
++# SDD ledger — plan: docs/superpowers/plans/2026-09-30-azure-localdream-moa.md
++
++Baseline local 9855f52 / upstream a5b0fa9; implementation/azure-localdream-moa. Reviewed Tasks 1–4 remote checkpoint1f5afcc. Runtime outage interrupted Task5; ROOT sole tree/commit/ref writer, agents blob-only. Reports/briefs migrate here to preserve reviewability.
++
++## Preflight task self-consistency
++|Task|Files/tests agreement|Finding|
++|---|---|---|
++|1|Owned behavioral tests agree with public contract.|Existing cli.py must extend, not recreate.|
++|2|Owned behavioral tests agree with public contract.|No internal conflict.|
++|3|Owned behavioral tests agree with public contract.|No internal conflict.|
++|4|Owned behavioral tests agree with public contract.|No internal conflict.|
++|5|Owned behavioral tests agree with public contract.|No internal conflict.|
++|6|Owned behavioral tests agree with public contract.|No internal conflict.|
++|7|Owned behavioral tests agree with public contract.|No internal conflict.|
++|8|Owned behavioral tests agree with public contract.|No internal conflict.|
++|9|Owned behavioral tests agree with public contract.|No internal conflict.|
++|10|Owned behavioral tests agree with public contract.|No internal conflict.|
++|11|Owned behavioral tests agree with public contract.|Existing cli.py must extend, not recreate.|
++|12|Owned behavioral tests agree with public contract.|Missing implementation module; add live_preflight.py.|
++
++## Shared interface preflight
++|Tasks|Producer/consumer|Finding|
++|---|---|---|
++|1, 2|Task 1 contract consumed by 2|Compatible staged interface; preserve API and fail closed.|
++|1, 7|Task 1 contract consumed by 7|Compatible staged interface; preserve API and fail closed.|
++|1, 9|Task 1 contract consumed by 9|Compatible staged interface; preserve API and fail closed.|
++|1, 10|Task 1 contract consumed by 10|Compatible staged interface; preserve API and fail closed.|
++|1, 11|Task 1 contract consumed by 11|Compatible staged interface; preserve API and fail closed.|
++|2, 3|Task 2 contract consumed by 3|Compatible staged interface; preserve API and fail closed.|
++|2, 9|Task 2 contract consumed by 9|Compatible staged interface; preserve API and fail closed.|
++|2, 10|Task 2 contract consumed by 10|Compatible staged interface; preserve API and fail closed.|
++|2, 11|Task 2 contract consumed by 11|Compatible staged interface; preserve API and fail closed.|
++|3, 4|Task 3 contract consumed by 4|Compatible staged interface; preserve API and fail closed.|
++|3, 6|Task 3 contract consumed by 6|Compatible staged interface; preserve API and fail closed.|
++|3, 8|Task 3 contract consumed by 8|Compatible staged interface; preserve API and fail closed.|
++|3, 11|Task 3 contract consumed by 11|Compatible staged interface; preserve API and fail closed.|
++|3, 12|Task 3 contract consumed by 12|Compatible staged interface; preserve API and fail closed.|
++|4, 5|Task 4 contract consumed by 5|Compatible staged interface; preserve API and fail closed.|
++|4, 6|Task 4 contract consumed by 6|Compatible staged interface; preserve API and fail closed.|
++|4, 7|Task 4 contract consumed by 7|Compatible staged interface; preserve API and fail closed.|
++|4, 9|Task 4 contract consumed by 9|Compatible staged interface; preserve API and fail closed.|
++|4, 10|Task 4 contract consumed by 10|Compatible staged interface; preserve API and fail closed.|
++|4, 11|Task 4 contract consumed by 11|Compatible staged interface; preserve API and fail closed.|
++|4, 12|Task 4 contract consumed by 12|Compatible staged interface; preserve API and fail closed.|
++|5, 6|Task 5 contract consumed by 6|Compatible staged interface; preserve API and fail closed.|
++|5, 11|Task 5 contract consumed by 11|Compatible staged interface; preserve API and fail closed.|
++|5, 12|Task 5 contract consumed by 12|Compatible staged interface; preserve API and fail closed.|
++|6, 7|Task 6 contract consumed by 7|Compatible staged interface; preserve API and fail closed.|
++|6, 11|Task 6 contract consumed by 11|Compatible staged interface; preserve API and fail closed.|
++|6, 12|Task 6 contract consumed by 12|Compatible staged interface; preserve API and fail closed.|
++|7, 9|Task 7 contract consumed by 9|Compatible staged interface; preserve API and fail closed.|
++|7, 11|Task 7 contract consumed by 11|Compatible staged interface; preserve API and fail closed.|
++|7, 12|Task 7 contract consumed by 12|Compatible staged interface; preserve API and fail closed.|
++|8, 9|Task 8 contract consumed by 9|Compatible staged interface; preserve API and fail closed.|
++|8, 11|Task 8 contract consumed by 11|Compatible staged interface; preserve API and fail closed.|
++|9, 11|Task 9 contract consumed by 11|Compatible staged interface; preserve API and fail closed.|
++|9, 12|Task 9 contract consumed by 12|Compatible staged interface; preserve API and fail closed.|
++|10, 11|Task 10 contract consumed by 11|Compatible staged interface; preserve API and fail closed.|
++|10, 12|Task 10 contract consumed by 12|Compatible staged interface; preserve API and fail closed.|
++|11, 12|Task 11 contract consumed by 12|Compatible staged interface; preserve API and fail closed.|
++
++## Rulings (chronological)
++Ruling: Extend existing cli.py in Tasks 1/11 — preserve local commands — wrong interpretation costs CLI integration rework.
++Ruling: Add spicecore/live_preflight.py for Task12 — plan omits implementation module — wrong placement costs module move.
++Ruling: Task6 real Azure adapters with fail-closed deployment gating; live receipts blocked — absent credentials cannot justify simulation — wrong SDK costs adapter rework.
++Ruling: Preserve local workspace until root reads reports/rulings — explicitly required reviewability — costs ignored temporary disk.
++Ruling: Route research/creative/commerce to same specialist plus persona, persona to persona+research; unknown types rejected — relevant roles with two proposers — costs role-map adjustment if wrong.
++Ruling: max_attempts means total attempts, defaults two/30 seconds/1024 output tokens, required bounded input/per-attempt cents — prevent off-by-one budgets — costs interface adjustment.
++Ruling: Require durable SQLite audit or explicit sink and conservatively charge missing usage — no silently lost records/undercharge — costs audit adapter rework.
++Ruling: Azure adapter one attempt/no reservation, MoA retries/reserve/settle, SDK failures charge invalid output — prevent multiplication — costs accounting adapter rework.
++Ruling: MoA supplies run/reservation IDs and adapter validates active funds — direct-call bypass otherwise — costs small cross-module adjustment.
++Ruling: ActionGate runtime/ledger injected and live eligibility/reservation checked every authorization/replay — task consumes budget guards — costs downstream wiring.
++Ruling: Decode documented Local Dream raw RGB and encode bounded validated PNG — official API differs from assumed encoded image — costs installed-version decoder adjustment.
++Ruling: Continue through GitHub source blobs/ROOT commits and existing Actions CI after shared exec-server outage; preserve public execution reports in branch — authorized reversible source work remains possible — costs extra source/report commits and slower CI feedback.
++Ruling: Phone historical checkpoint may report reconciliation_pending until authenticated cloud finalization — never regenerate or claim unsupported recovery success — costs operator recovery until adapter implemented.
++
++## Execution
++Task 1: complete (local9855f52..890eb06, review clean; remote314c801).
++Task 1: minor (deferred): populated-vector deletion regression coverage; final reviewer triage.
++Task 2: complete (local890eb06..78af97f, review clean).
++Task 2: minor (deferred): external cancellation terminal audit; route tests research-only.
++Task 2: cannot-verify resolved: provider guards Task3; filtered knowledge Task1; explicit audit sink contract/file store.
++Task 3: fix round1/5 (2 addressed, 0 open; local1e3486e..a05939e): cap binding and full usage overrun charging/halt; midnight attribution also fixed.
++Task 3: complete (local78af97f..a05939e, review clean).
++Task 3: production validate_reservation owner_cap_cents, consume=True and record_overrun/settle contract assigned Task6; live pricing/account validity blocked Task12.
++Task 4: fix round1/5 (3 addressed, 0 open; local870a481..5288d15): completion artifact conflict, stale mode receipt, live runtime/reservation guards.
++Task 4: complete (locala05939e..5288d15, review clean).
++Task 4: heartbeat assigned Task5; specialist inference-only model interface established Task2; individual live prerequisites covered.
++Task 5: in progress; local pending operations terminated, remote blob implementation. ROOT parent1f5afccf905500681f8816ed950cc63b31d916c2. No confirmed Task5 local writes/commit.
+
+### docs/superpowers/execution/task-10-brief.md (+10/-0)
+@@ -0,0 +1,10 @@
++### Task 10: Grounded DM drafting and privacy
++**Files:** Create: `spicecore/dms.py`. Tests: `tests/test_dms.py`.
++**Interfaces:** DMService.ingest(message: dict) -> dict; draft(message_id: str) -> dict; opt_out(conversation_id: str) -> None; authorize_reply(draft_id: str, policy: dict) -> dict.
++**Consumes:** Tasks 1, 2, 4 approved offers, MoA and action gate.
++- [ ] Write failing unittest cases: test_cross_customer_memory: cannot retrieve; test_opt_out: suppress even queued reply; test_price_expired: abstain/escalate; test_duplicate_message: one draft; test_unverified_connector: no outbound send; test_dm_injection: cannot invoke tools.
++- [ ] Run `python3 -m unittest discover -s tests -p 'test_dms.py' -v`; verify new cases fail for the missing behavior, not unrelated setup.
++- [ ] Implement the interfaces in the owned files: Authenticated inbound interface, private per-recipient RAG scope, duplicate suppression, cooldown and opt-out. Voice is witty, selective and luxury-minded; disclose fictional identity and ground offers in approved current facts. Default draft-only. Escalate uncertain age, disputes, sensitive requests, bespoke commitments, unsupported facts. No false availability/exclusivity, fabricated emergencies, guilt or vulnerability targeting. No live connector is fabricated.
++- [ ] Run each owned test file via unittest discovery; expect all cases PASS. Run `python3 -m unittest discover -s tests -v` before committing.
++- [ ] Commit owned modules, tests and documentation with message `feat: grounded dm drafting and privacy`; exclude secrets, local databases, references and generated assets.
++
+
+### docs/superpowers/execution/task-11-brief.md (+10/-0)
+@@ -0,0 +1,10 @@
++### Task 11: Runnable integration and documentation
++**Files:** Create: `spicecore/cli.py`, `README.md`, `.github/workflows/ci.yml`, `tests/test_end_to_end.py`. Tests: `tests/test_end_to_end.py`.
++**Interfaces:** CLI commands: knowledge, moa, worker, jobs, campaign, modeling, dm, commerce, operator; dry-run demo fixture -> structured report.
++**Consumes:** Earlier task interfaces and approved spec.
++- [ ] Write failing unittest cases: test_complete_loop: evidence IDs connect every stage; test_no_credentials: live mode fails visibly; test_existing_suite: all previous tests pass; test_demo_labels: never reports live Azure/device/publishing success.
++- [ ] Run `python3 -m unittest discover -s tests -p 'test_end_to_end.py' -v`; verify new cases fail for the missing behavior, not unrelated setup.
++- [ ] Implement the interfaces in the owned files: Wire services with explicit config and shared task/experiment IDs. Add isolated temp-database demo: retrieve canon/offer, run fake Azure MoA, lease job, simulate Local Dream artifact, approve, prepare post, import sale/renewal, compute contribution and draft grounded DM. CI runs unittest on Python 3.11+ with no credentials. Report fixture/mock status on every demo; production never selects fake client automatically.
++- [ ] Run each owned test file via unittest discovery; expect all cases PASS. Run `python3 -m unittest discover -s tests -v` before committing.
++- [ ] Commit owned modules, tests and documentation with message `feat: runnable integration and documentation`; exclude secrets, local databases, references and generated assets.
++
+
+### docs/superpowers/execution/task-12-brief.md (+10/-0)
+@@ -0,0 +1,10 @@
++### Task 12: Live canary and controlled rollout
++**Files:** Create: `docs/live-acceptance.md`, `docs/operations.md`. Tests: `tests/test_live_preflight.py`.
++**Interfaces:** preflight(config: dict, receipts: dict) -> dict; rollout action policy -> versioned receipt.
++**Consumes:** Earlier task interfaces and approved spec.
++- [ ] Write failing unittest cases: test_missing_receipt: preflight reports blocked; test_connector_permission: action cannot enable from offline test; test_rollout_version: stale policy denied; test_credit_expiry: pending paid calls halted.
++- [ ] Run `python3 -m unittest discover -s tests -p 'test_live_preflight.py' -v`; verify new cases fail for the missing behavior, not unrelated setup.
++- [ ] Implement the interfaces in the owned files: After real Azure credit/account access, device pairing and canonical references are available, run bounded Azure inference, phone generation, private upload, mobile review and one reviewed commercial loop. Verify actual fees, identity and connector permissions. Record live receipts separately from offline tests. Enable permitted publishing and replies per account/action only after explicit configuration and successful live test. Test restore/deletion and emergency stop. If accounts or phone are absent, mark live checks blocked, ship implementation PR with that limitation rather than claiming production readiness.
++- [ ] Run each owned test file via unittest discovery; expect all cases PASS. Run `python3 -m unittest discover -s tests -v` before committing.
++- [ ] Commit owned modules, tests and documentation with message `feat: live canary and controlled rollout`; exclude secrets, local databases, references and generated assets.
++
+
+### docs/superpowers/execution/task-5-brief.md (+10/-0)
+@@ -0,0 +1,10 @@
++# Task 5: Local Dream phone worker
++**Files:** Create: `spicecore/localdream.py`, `spicecore/phone_worker.py`, `scripts/setup-phone.sh`, `docs/phone-worker.md`. Tests: `tests/test_localdream.py`, `tests/test_phone_worker.py`.
++**Interfaces:** LocalDreamClient.generate(settings: dict) -> dict; PhoneWorker.tick(device_state: dict) -> dict.
++**Consumes:** Task 4 leased jobs and completion contract.
++- [ ] Write failing unittest cases: test_fragmented_sse: split network chunks assemble final image; test_json_error: no success artifact; test_bad_image_and_limit: reject invalid/oversized output; test_offline: defer with no cloud inference; test_lease_loss: checkpoint reconciles without regeneration.
++- [ ] Run `python3 -m unittest discover -s tests -p 'test_localdream.py' -v`; verify new cases fail for the missing behavior, not unrelated setup.
++- [ ] Implement the interfaces in the owned files: Termux polls authenticated Azure API outbound, calls only http://127.0.0.1:8081/generate, parses SSE and JSON errors, validates PNG/JPEG signature and limits output to 32 MiB. Retain job-ID completion checkpoint before upload. Serial generation; defer below 25% battery unless charging or at thermal severity >=3; unknown device state defers. Validate actual installed API/model capabilities; model loading remains manual. No invented health endpoint or unsupported LoRA feature. Record seed, model, source hash and latency.
++- [ ] Run each owned test file via unittest discovery; expect all cases PASS. Run `python3 -m unittest discover -s tests -v` before committing.
++- [ ] Commit owned modules, tests and documentation with message `feat: local dream phone worker`; exclude secrets, local databases, references and generated assets.
++
+
+### docs/superpowers/execution/task-6-brief.md (+10/-0)
+@@ -0,0 +1,10 @@
++### Task 6: Azure control plane and private assets
++**Files:** Create: `azure/function_app.py`, `azure/host.json`, `infra/main.bicep`, `spicecore/cloud_storage.py`, `docs/azure-runbook.md`. Tests: `tests/test_control_plane.py`, `tests/test_cloud_storage.py`.
++**Interfaces:** CloudJobAPI.claim(device_id: str) -> dict | None; renew(job_id: str, lease_token: str) -> None; complete(job_id: str, lease_token: str, artifact: dict) -> dict; AssetStore.put(job_id: str, content: bytes) -> dict; signed_upload(job_id: str) -> dict.
++**Consumes:** Tasks 3–5 transport, leases and device contracts.
++- [ ] Write failing unittest cases: test_unauthenticated: HTTP 401 and no lease; test_wrong_worker: HTTP 403; test_signed_scope: upload cannot target another job; test_etag_conflict: retry cannot overspend/double lease; test_expired_credit_preflight: no resource creation.
++- [ ] Run `python3 -m unittest discover -s tests -p 'test_control_plane.py' -v`; verify new cases fail for the missing behavior, not unrelated setup.
++- [ ] Implement the interfaces in the owned files: Azure Functions, Storage queues/Blob, Key Vault, managed identities and restricted device authentication. Use a durable database strategy with atomic claims/reservations; SQLite is never shared across Functions. Azure Table ETag conditional writes can implement job/budget metadata; Blob holds versioned evidence and append events. Provisioning validates subscription/credit evidence/region and owner caps first. SAS uploads expire after 10 minutes, scoped to exact blob; no public assets. Protect completion against cross-device job theft. Credit/capacity unverified means disabled deployment command.
++- [ ] Run each owned test file via unittest discovery; expect all cases PASS. Run `python3 -m unittest discover -s tests -v` before committing.
++- [ ] Commit owned modules, tests and documentation with message `feat: azure control plane and private assets`; exclude secrets, local databases, references and generated assets.
++
+
+### docs/superpowers/execution/task-7-brief.md (+10/-0)
+@@ -0,0 +1,10 @@
++### Task 7: Authenticated operator review and identity validation
++**Files:** Create: `spicecore/operator.py`, `spicecore/identity_checks.py`. Tests: `tests/test_operator.py`, `tests/test_identity_checks.py`.
++**Interfaces:** IdentityCheck.record(persona_id: str, reference_version: str, reviewer: str, selections: list[bool], drift: list[str]) -> dict; OperatorService.decide(candidate_id: str, reviewer: str, decision: str) -> dict.
++**Consumes:** Tasks 1, 4, 6 evidence, assets and action receipts.
++- [ ] Write failing unittest cases: test_replaced_artifact: prior approval invalidated; test_threshold: 8/10 fails, two 9/10 passes only without recurring drift; test_auth: review endpoint requires identity; test_rollback: published historical receipt not rewritten.
++- [ ] Run `python3 -m unittest discover -s tests -p 'test_operator.py' -v`; verify new cases fail for the missing behavior, not unrelated setup.
++- [ ] Implement the interfaces in the owned files: Keep existing loopback web.py for local use. Add authenticated Azure operator endpoints and mobile view for evidence, jobs, spend, review, pause, stop and rollback of unpublished work. Approvals bind artifact hash and persona/reference version. Celeste needs two reviewers each >=9/10 and no recurring drift; store prompts and rejected outputs. Never infer a pass from img2img.
++- [ ] Run each owned test file via unittest discovery; expect all cases PASS. Run `python3 -m unittest discover -s tests -v` before committing.
++- [ ] Commit owned modules, tests and documentation with message `feat: authenticated operator review and identity validation`; exclude secrets, local databases, references and generated assets.
++
+
+### docs/superpowers/execution/task-8-brief.md (+10/-0)
+@@ -0,0 +1,10 @@
++### Task 8: Commerce and cohort evidence
++**Files:** Create: `spicecore/commerce.py`, `spicecore/experiments.py`. Tests: `tests/test_commerce.py`, `tests/test_experiments.py`.
++**Interfaces:** CommerceLedger.import_event(event: dict) -> dict; cohort_report(as_of: str) -> list[dict]; ExperimentPolicy.recommend(arms: list[dict], seed: int) -> dict.
++**Consumes:** Existing Store event IDs and Task 3 cost records.
++- [ ] Write failing unittest cases: test_duplicate_payment: idempotent; test_profit: 2500 gross -500 fee -500 other costs =1500 contribution; test_payout: payout is not additional sales; test_currency: mixed currencies separated; test_delayed_window: open windows cannot become winners; test_retention: denominator excludes immature cohorts.
++- [ ] Run `python3 -m unittest discover -s tests -p 'test_commerce.py' -v`; verify new cases fail for the missing behavior, not unrelated setup.
++- [ ] Implement the interfaces in the owned files: Add gross, fees, chargebacks/refunds, inference, rejected production, storage, distribution, labor and separate settled payouts. Migrate existing ledger without interpreting old gross as net. Currency is explicit and reports never sum different currencies. Track pseudonymous cohorts, renewal and repeat purchases, attribution method/window. Comparable arms with closed outcome windows and randomized bounded exploration; clicks cannot create profit. Promote evidence with sample size and uncertainty labels.
++- [ ] Run each owned test file via unittest discovery; expect all cases PASS. Run `python3 -m unittest discover -s tests -v` before committing.
++- [ ] Commit owned modules, tests and documentation with message `feat: commerce and cohort evidence`; exclude secrets, local databases, references and generated assets.
++
+
+### docs/superpowers/execution/task-9-brief.md (+10/-0)
+@@ -0,0 +1,10 @@
++### Task 9: TikTok content and modeling workflows
++**Files:** Create: `spicecore/content.py`, `spicecore/modeling.py`. Tests: `tests/test_content.py`, `tests/test_modeling.py`.
++**Interfaces:** ContentService.prepare(persona_id: str, pillars: list[str], count: int) -> list[dict]; ModelingPipeline.transition(lead_id: str, next_state: str, evidence: dict) -> dict.
++**Consumes:** Tasks 1, 2, 4, 7, 8 knowledge, proposals, approvals and measurements.
++- [ ] Write failing unittest cases: test_missing_disclosure: cannot approve; test_no_reward_claim: eligibility unknown reported explicitly; test_unsupported_lead: cannot qualify without synthetic acceptance; test_contract: approval mandatory; test_physical_modeling: reject promise of attendance.
++- [ ] Run `python3 -m unittest discover -s tests -p 'test_content.py' -v`; verify new cases fail for the missing behavior, not unrelated setup.
++- [ ] Implement the interfaces in the owned files: Prepare three persona pillars, hook variants, original scripts/storyboards/captions, AI labeling and campaign attribution. Limit batch count to configured cap. Add deterministic video assembly interface for phone assets; no generative-video fallback. Model media kit and leads through discovered/qualified/drafted/owner-approved/sent/negotiating/contracted/fulfilled/paid. Require synthetic-model acceptance, rights, deliverables, territories, term, exclusivity, revisions, deposit/balance. External outreach and contracts remain reviewed.
++- [ ] Run each owned test file via unittest discovery; expect all cases PASS. Run `python3 -m unittest discover -s tests -v` before committing.
++- [ ] Commit owned modules, tests and documentation with message `feat: tiktok content and modeling workflows`; exclude secrets, local databases, references and generated assets.
++
+
+### scripts/setup-phone.sh (+14/-0)
+@@ -0,0 +1,14 @@
++#!/data/data/com.termux/files/usr/bin/bash
++set -eu
++# Installs local runtime only; no credentials, guessed cloud routes, or model downloads.
++if ! command -v pkg >/dev/null 2>&1; then
++  echo "Run this script inside Termux." >&2
++  exit 1
++fi
++pkg install -y python termux-api
++mkdir -p "$HOME/.local/share/spice-phone/checkpoints"
++chmod 700 "$HOME/.local/share/spice-phone/checkpoints"
++echo "Install/authorize the Termux:API app separately for device telemetry."
++echo "Open Local Dream and load the owner-selected model manually."
++echo "Record installed version/model/capabilities; configure the authenticated Azure adapter."
++echo "Worker starts in dry-run. See docs/phone-worker.md before enabling a live canary."
+
+### spicecore/localdream.py (+98/-0)
+@@ -0,0 +1,98 @@
++"""Bounded Local Dream client; installed model loading and validation remain manual."""
++import base64
++import hashlib
++import json
++import struct
++import time
++import urllib.request
++import zlib
++
++MAX_IMAGE_BYTES = 32 * 1024 * 1024
++
++def _png(rgb, width, height):
++    def chunk(kind, data):
++        return struct.pack('!I', len(data)) + kind + data + struct.pack('!I', zlib.crc32(kind + data))
++    rows = b''.join(b'\0' + rgb[y*width*3:(y+1)*width*3] for y in range(height))
++    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('!IIBBBBB', width, height, 8, 2, 0, 0, 0))
++            + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b''))
++
++class _NoRedirect(urllib.request.HTTPRedirectHandler):
++    def redirect_request(self, req, fp, code, msg, headers, newurl):
++        raise ValueError('Local Dream redirect rejected')
++
++def _open(request, timeout):
++    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout)
++
++class LocalDreamClient:
++    def __init__(self, *, capabilities, opener=_open, max_image_bytes=MAX_IMAGE_BYTES, timeout=300):
++        if not 0 < max_image_bytes <= MAX_IMAGE_BYTES or timeout <= 0:
++            raise ValueError('Invalid bounds')
++        self.capabilities, self.opener = capabilities, opener
++        self.limit, self.timeout = max_image_bytes, timeout
++
++    def generate(self, settings):
++        c = self.capabilities
++        if c.get('validated') is not True or not c.get('version') or not c.get('model') or not c.get('fields'):
++            raise ValueError('Manually validated installed version/model/fields required')
++        if not isinstance(settings, dict) or not isinstance(settings.get('prompt'), str) or not settings['prompt']:
++            raise ValueError('Prompt required')
++        if set(settings) - set(c['fields']):
++            raise ValueError('Settings unsupported by installed backend')
++        started = time.monotonic()
++        request = urllib.request.Request('http://127.0.0.1:8081/generate', data=json.dumps(settings, allow_nan=False).encode(), headers={'Content-Type':'application/json'}, method='POST')
++        response = self.opener(request, timeout=self.timeout)
++        try:
++            if response.status != 200 or response.headers.get('Content-Type', '').split(';')[0] != 'text/event-stream':
++                response.read(65536)
++                raise ValueError('Local Dream returned HTTP/JSON error')
++            pending, lines, total = b'', [], 0
++            # Limits include previews and progress; disable previews in installed configuration.
++            stream_limit = ((self.limit + 2)//3)*4 + 65536
++            while True:
++                if time.monotonic() - started > self.timeout:
++                    raise TimeoutError('Generation deadline exceeded')
++                part = response.read(65536)
++                total += len(part)
++                if total > stream_limit:
++                    raise ValueError('Local Dream stream exceeds limit')
++                pending += part
++                while b'\n' in pending:
++                    line, pending = pending.split(b'\n', 1)
++                    line = line.rstrip(b'\r')
++                    if line.startswith(b'data:'):
++                        lines.append(line[5:].lstrip(b' '))
++                    elif not line and lines:
++                        event = json.loads(b'\n'.join(lines))
++                        lines = []
++                        if not isinstance(event, dict):
++                            raise ValueError('Invalid SSE event')
++                        if event.get('type') == 'error':
++                            raise ValueError('Local Dream generation error')
++                        if event.get('type') == 'complete':
++                            return self._result(event, settings, started)
++                if not part:
++                    raise ValueError('Missing complete SSE event')
++        finally:
++            response.close()
++
++    def _result(self, event, settings, started):
++        width, height = event.get('width'), event.get('height')
++        if any(type(v) is not int or v <= 0 for v in (width, height)) or event.get('channels') != 3:
++            raise ValueError('Invalid RGB dimensions/channels')
++        expected, encoded = width * height * 3, event.get('image')
++        if expected > self.limit or not isinstance(encoded, str) or len(encoded) > ((self.limit+2)//3)*4:
++            raise ValueError('Image exceeds limit')
++        try:
++            rgb = base64.b64decode(encoded, validate=True)
++        except (ValueError, TypeError) as exc:
++            raise ValueError('Invalid image base64') from exc
++        if len(rgb) != expected:
++            raise ValueError('RGB byte length mismatch')
++        image = _png(rgb, width, height)
++        if len(image) > self.limit or not image.startswith(b'\x89PNG\r\n\x1a\n'):
++            raise ValueError('Encoded PNG exceeds limit')
++        source = settings.get('image')
++        return dict(image=image, artifact_hash=hashlib.sha256(image).hexdigest(), seed=event.get('seed'),
++                    model=self.capabilities['model'], version=self.capabilities['version'],
++                    source_hash=hashlib.sha256(base64.b64decode(source, validate=True)).hexdigest() if source else None,
++                    latency_ms=round((time.monotonic()-started)*1000))
+
+### spicecore/phone_worker.py (+140/-0)
+@@ -0,0 +1,140 @@
++"""Serial, checkpointed phone execution over an injected authenticated outbound API."""
++import datetime as dt
++import fcntl
++import hashlib
++import json
++import os
++from pathlib import Path
++import threading
++from typing import Protocol
++
++from .localdream import MAX_IMAGE_BYTES
++
++class PhoneCloudAPI(Protocol):
++    authenticated: bool
++    def claim(self, worker_id, now, *, device_id): ...
++    def renew(self, job_id, lease_token): ...
++    def upload(self, job, image, result): ...
++    def complete(self, job_id, lease_token, result): ...
++    def reconcile_artifact(self, job_id, lease_token, result): ...
++
++class PhoneWorker:
++    heartbeat_seconds = 30
++
++    def __init__(self, cloud, generator, checkpoint_dir, *, worker_id, device_id, dry_run=True):
++        if not worker_id or not device_id or getattr(cloud, 'authenticated', False) is not True:
++            raise ValueError('Authenticated paired cloud adapter and worker/device IDs required')
++        self.cloud, self.generator = cloud, generator
++        self.worker_id, self.device_id, self.dry_run = worker_id, device_id, dry_run
++        self.directory = Path(checkpoint_dir)
++        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
++        self.lock_path = self.directory / ('device-' + hashlib.sha256(device_id.encode()).hexdigest() + '.lock')
++
++    @staticmethod
++    def _ready(state):
++        return (isinstance(state, dict) and state.get('online') is True
++                and type(state.get('battery')) in (int, float) and 0 <= state['battery'] <= 100
++                and type(state.get('charging')) is bool
++                and type(state.get('thermal_severity')) is int and 0 <= state['thermal_severity'] < 3
++                and (state['battery'] >= 25 or state['charging']))
++
++    def tick(self, device_state):
++        if not self._ready(device_state):
++            return {'status':'deferred'}
++        if self.dry_run:
++            return {'status':'dry_run'}
++        with self.lock_path.open('a+b') as lock:
++            try:
++                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
++            except BlockingIOError:
++                return {'status':'busy'}
++            try:
++                for path in sorted(self.directory.glob('*.json')):
++                    saved = json.loads(path.read_text())
++                    if saved['job']['device_id'] == self.device_id:
++                        return self._deliver(path, saved)
++                now = dt.datetime.now(dt.timezone.utc).isoformat()
++                job = self.cloud.claim(self.worker_id, now, device_id=self.device_id)
++                if job is None:
++                    return {'status':'idle'}
++                if job.get('kind') != 'image' or job.get('device_id') != self.device_id or job.get('worker_id') != self.worker_id or not job.get('lease_token'):
++                    raise ValueError('Invalid fenced image lease')
++                stop, lost = threading.Event(), threading.Event()
++                def heartbeat():
++                    while not stop.wait(self.heartbeat_seconds):
++                        try:
++                            self.cloud.renew(job['id'], job['lease_token'])
++                        except Exception:
++                            lost.set()
++                            return
++                thread = threading.Thread(target=heartbeat, daemon=True)
++                thread.start()
++                try:
++                    generated = self.generator.generate(job['payload']['settings'])
++                    image = generated['image']
++                    if not isinstance(image, bytes) or len(image) > MAX_IMAGE_BYTES or not (image.startswith(b'\x89PNG\r\n\x1a\n') or image.startswith(b'\xff\xd8\xff')):
++                        raise ValueError('Invalid encoded image artifact')
++                    result = {k:v for k,v in generated.items() if k != 'image'}
++                    result['artifact_hash'] = hashlib.sha256(image).hexdigest()
++                    stem = hashlib.sha256(job['id'].encode()).hexdigest()
++                    image_path = self.directory / (stem + '.png')
++                    path = self.directory / (stem + '.json')
++                    self._atomic(image_path, image)
++                    saved = {'job':job, 'result':result, 'image_file':image_path.name, 'lease_lost':lost.is_set()}
++                    self._save(path, saved)
++                finally:
++                    stop.set()
++                    thread.join()
++                if lost.is_set():
++                    saved['lease_lost'] = True
++                    self._save(path, saved)
++                return self._deliver(path, saved)
++            finally:
++                fcntl.flock(lock, fcntl.LOCK_UN)
++
++    def _atomic(self, path, data):
++        temporary = path.with_suffix(path.suffix + '.tmp')
++        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
++        with os.fdopen(fd, 'wb') as stream:
++            stream.write(data)
++            stream.flush()
++            os.fsync(stream.fileno())
++        os.replace(temporary, path)
++        fd = os.open(self.directory, os.O_RDONLY)
++        try:
++            os.fsync(fd)
++        finally:
++            os.close(fd)
++
++    def _save(self, path, saved):
++        self._atomic(path, json.dumps(saved, sort_keys=True, allow_nan=False).encode())
++
++    def _deliver(self, path, saved):
++        job, result = saved['job'], saved['result']
++        image_path = self.directory / saved['image_file']
++        if image_path.parent != self.directory or image_path.name != saved['image_file']:
++            raise ValueError('Unsafe checkpoint image path')
++        with image_path.open('rb') as stream:
++            image = stream.read(MAX_IMAGE_BYTES + 1)
++        if len(image) > MAX_IMAGE_BYTES or hashlib.sha256(image).hexdigest() != result['artifact_hash']:
++            raise ValueError('Checkpoint artifact mismatch')
++        try:
++            if saved.get('lease_lost'):
++                raise ValueError('Lease lost')
++            if 'uploaded' not in saved:
++                receipt = self.cloud.upload(job, image, result)
++                saved['uploaded'] = receipt
++                self._save(path, saved)
++            # Keep completion payload stable across retry for JobStore idempotency.
++            completed = self.cloud.complete(job['id'], job['lease_token'], result)
++            if completed.get('status') != 'completed':
++                raise ValueError('Completion not acknowledged')
++        except Exception:
++            try:
++                self.cloud.reconcile_artifact(job['id'], job['lease_token'], result)
++            except Exception:
++                pass
++            return {'status':'reconciliation_pending', 'job_id':job['id'], 'artifact_hash':result['artifact_hash']}
++        path.unlink()
++        image_path.unlink()
++        return {'status':'completed', 'job_id':job['id'], 'artifact_hash':result['artifact_hash']}
+
+### tests/test_localdream.py (+40/-0)
+@@ -0,0 +1,40 @@
++import base64
++import json
++import unittest
++from spicecore.localdream import LocalDreamClient
++
++class Response:
++    status = 200
++    headers = {'Content-Type': 'text/event-stream'}
++    def __init__(self, data): self.data = data
++    def read(self, n):
++        chunk, self.data = self.data[:min(n, 3)], self.data[min(n, 3):]
++        return chunk
++    def close(self): pass
++
++def stream(data):
++    return Response(('event: complete\r\ndata: '+json.dumps(data)+'\r\n\r\n').encode())
++
++class LocalDreamTests(unittest.TestCase):
++    def client(self, response, **kw):
++        return LocalDreamClient(capabilities={'validated': True, 'version': 'installed', 'model': 'manual', 'fields': ['prompt', 'seed']}, opener=lambda *a, **k: response, **kw)
++    def test_fragmented_sse(self):
++        data = {'type': 'complete', 'image': base64.b64encode(b'\xff\x00\x00').decode(), 'width': 1, 'height': 1, 'channels': 3, 'seed': 42}
++        result = self.client(stream(data)).generate({'prompt': 'test', 'seed': 42})
++        self.assertTrue(result['image'].startswith(b'\x89PNG\r\n\x1a\n'))
++        self.assertEqual(result['seed'], 42)
++    def test_json_error(self):
++        r = Response(b'{"error":"model missing"}'); r.status = 500; r.headers = {'Content-Type':'application/json'}
++        with self.assertRaises(ValueError): self.client(r).generate({'prompt':'x'})
++    def test_sse_error(self):
++        with self.assertRaises(ValueError):
++            self.client(stream({'type':'error','message':'failed'})).generate({'prompt':'x'})
++    def test_bad_image_and_limit(self):
++        for image in ('!!!', base64.b64encode(b'bad').decode()):
++            data = {'type':'complete','image':image,'width':2,'height':2,'channels':3}
++            with self.assertRaises(ValueError): self.client(stream(data)).generate({'prompt':'x'})
++        with self.assertRaises(ValueError): self.client(Response(b'x'*100), max_image_bytes=4).generate({'prompt':'x'})
++    def test_manual_validation_required(self):
++        with self.assertRaises(ValueError): LocalDreamClient(capabilities={}).generate({'prompt':'x'})
++    def test_unsupported_fields(self):
++        with self.assertRaises(ValueError): self.client(Response(b'')).generate({'prompt':'x','lora':'invented'})
+
+### tests/test_phone_worker.py (+82/-0)
+@@ -0,0 +1,82 @@
++import tempfile
++import unittest
++from pathlib import Path
++from spicecore.phone_worker import PhoneWorker
++
++STATE = dict(online=True, battery=80, charging=False, thermal_severity=0)
++class Cloud:
++    authenticated = True
++    def __init__(self): self.claims=0; self.fail=True; self.reconciled=[]; self.uploads=0
++    def claim(self, worker_id, now, *, device_id):
++        self.claims+=1
++        return dict(id='job', kind='image', device_id=device_id, worker_id=worker_id, lease_token='token', payload={'settings':{'prompt':'x'}})
++    def renew(self, *args): pass
++    def upload(self, job, image, result): self.uploads+=1; return {'private_url':'scoped'}
++    def complete(self, *args):
++        if self.fail: raise ValueError('lease lost')
++        return {'status':'completed'}
++    def reconcile_artifact(self, *args): self.reconciled.append(args); return {'status':'reconciled'}
++class Generator:
++    def __init__(self): self.calls=0
++    def generate(self, settings):
++        self.calls+=1
++        return {'image':b'\x89PNG\r\n\x1a\nfixture', 'seed':1, 'model':'manual', 'source_hash':None, 'latency_ms':1}
++class PhoneTests(unittest.TestCase):
++    def test_offline(self):
++        with tempfile.TemporaryDirectory() as p:
++            c=Cloud(); g=Generator(); w=PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=False)
++            for s in ({},dict(STATE,online=False),dict(STATE,battery=24),dict(STATE,thermal_severity=3),dict(STATE,battery=True)):
++                self.assertEqual(w.tick(s)['status'],'deferred')
++            self.assertEqual((c.claims,g.calls),(0,0))
++    def test_lease_loss(self):
++        with tempfile.TemporaryDirectory() as p:
++            c=Cloud(); g=Generator(); w=PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=False)
++            self.assertEqual(w.tick(STATE)['status'],'reconciliation_pending')
++            self.assertTrue(list(Path(p).glob('*.json')))
++            w=PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=False)
++            self.assertEqual(w.tick(STATE)['status'],'reconciliation_pending')
++            self.assertEqual(g.calls,1)
++            self.assertEqual(c.claims,1)
++    def test_checkpoint_before_upload(self):
++        with tempfile.TemporaryDirectory() as p:
++            c=Cloud(); c.fail=False; g=Generator()
++            original=c.upload
++            def upload(job, image, result):
++                self.assertEqual(len(list(Path(p).glob('*.json'))),1)
++                self.assertEqual(len(list(Path(p).glob('*.png'))),1)
++                return original(job,image,result)
++            c.upload=upload
++            self.assertEqual(PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=False).tick(STATE)['status'],'completed')
++            self.assertFalse(list(Path(p).glob('*.json')))
++    def test_dry_run(self):
++        with tempfile.TemporaryDirectory() as p:
++            c=Cloud(); g=Generator()
++            self.assertEqual(PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=True).tick(STATE)['status'],'dry_run')
++            self.assertEqual(c.claims,0)
++
++    def test_heartbeat_loss_retains_generation(self):
++        import threading
++        with tempfile.TemporaryDirectory() as p:
++            c=Cloud(); g=Generator(); renewed=threading.Event()
++            def renew(*args):
++                renewed.set()
++                raise ValueError('lost')
++            c.renew=renew
++            original=g.generate
++            def generate(settings):
++                self.assertTrue(renewed.wait(1))
++                return original(settings)
++            g.generate=generate
++            w=PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=False)
++            w.heartbeat_seconds=0.01
++            self.assertEqual(w.tick(STATE)['status'],'reconciliation_pending')
++            self.assertEqual((g.calls,c.uploads),(1,0))
++    def test_serial_lock(self):
++        import fcntl
++        with tempfile.TemporaryDirectory() as p:
++            c=Cloud(); g=Generator()
++            w=PhoneWorker(c,g,p,worker_id='w',device_id='d',dry_run=False)
++            with w.lock_path.open('a+b') as lock:
++                fcntl.flock(lock,fcntl.LOCK_EX)
++                self.assertEqual(w.tick(STATE)['status'],'busy')
++            self.assertEqual(c.claims,0)
