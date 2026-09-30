@@ -11,7 +11,7 @@ from .autonomy import plan_next_batch
 from .assetflow import produce_job
 from .policy import recommend
 from .moa import deliberate
-from .localdream import generate as localdream_generate
+from .localdream import generate as localdream_generate, probe as localdream_probe
 from .rag import LocalRAG
 from .orchestration import write_n8n
 from .production import free_production_plan, write_job
@@ -51,6 +51,9 @@ def main(argv=None):
     resume.add_argument('--candidates', type=int, default=6)
     resume.add_argument('--profile', choices=('sdxl-dmd2-fast','sdxl-quality','sd15-quality'), default='sdxl-quality')
     resume.add_argument('--negative-prompt', default='')
+    diag = sub.add_parser('probe-local')
+    diag.add_argument('--prompt', default='test photograph')
+    diag.add_argument('--server-url')
     gen = sub.add_parser('generate-local')
     gen.add_argument('--prompt', required=True)
     gen.add_argument('--output', required=True)
@@ -126,6 +129,8 @@ def main(argv=None):
             output = produce_job(store, personas, planned['job'], args.assets_dir, args.server_url, args.size, args.steps, args.cfg, args.negative_prompt, args.candidates, args.profile)
         elif args.command == 'produce-job':
             output = produce_job(store, personas, args.job, args.assets_dir, args.server_url, args.size, args.steps, args.cfg, args.negative_prompt, args.candidates, args.profile)
+        elif args.command == 'probe-local':
+            output = localdream_probe(args.prompt,args.server_url)
         elif args.command == 'generate-local':
             output = localdream_generate(args.prompt,args.output,args.negative_prompt,args.size,args.steps,args.cfg,args.seed,args.server_url,profile=args.profile)
             store.record_event('asset_generated', output)
