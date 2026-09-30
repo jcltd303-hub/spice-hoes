@@ -7,6 +7,7 @@ from http.server import HTTPServer
 from pathlib import Path
 
 from .core import Store, load_personas
+from .autonomy import plan_next_batch
 from .policy import recommend
 from .moa import deliberate
 from .rag import LocalRAG
@@ -25,6 +26,12 @@ def main(argv=None):
     sub.add_parser('personas')
     sub.add_parser('stats')
     sub.add_parser('events')
+    nxt = sub.add_parser('next-batch')
+    nxt.add_argument('--theme', required=True)
+    nxt.add_argument('--channel', required=True)
+    nxt.add_argument('--seed', type=int)
+    nxt.add_argument('--avatar', action='store_true')
+    nxt.add_argument('--output-dir', default='jobs')
     moa = sub.add_parser('moa-plan')
     moa.add_argument('--theme', required=True)
     moa.add_argument('--channel', required=True)
@@ -79,6 +86,8 @@ def main(argv=None):
             output = store.stats(personas)
         elif args.command == 'events':
             output = store.events()
+        elif args.command == 'next-batch':
+            output = plan_next_batch(store, personas, args.theme, args.channel, args.output_dir, args.seed, args.avatar)
         elif args.command == 'moa-plan':
             persona = next((p for p in personas if p['id'] == args.persona), None)
             if persona is None: parser.error('Unknown persona')
