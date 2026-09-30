@@ -80,3 +80,40 @@ class LocalDreamTests(unittest.TestCase):
         self.assertLessEqual(clock[0],1.2)
         self.assertTrue(sock.timeouts)
         self.assertTrue(all(0 < value <= 1 for value in sock.timeouts))
+
+    def test_chunked_socket_trickle_deadline(self):
+        import http.client
+        import socket
+        import threading
+        import time
+        client, server = socket.socketpair()
+        stop = threading.Event()
+        def peer():
+            try:
+                server.sendall(b'HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n1;')
+                for _ in range(40):
+                    if stop.wait(0.01): return
+                    server.sendall(b'x')
+                server.sendall(b'\r\nx\r\n0\r\n\r\n')
+            except OSError:
+                pass
+            finally:
+                server.close()
+        sender = threading.Thread(target=peer)
+        sender.start()
+        response = http.client.HTTPResponse(client)
+        try:
+            response.begin()
+            started = time.monotonic()
+            with self.assertRaises(TimeoutError):
+                self.client(response, timeout=0.08).generate({'prompt':'x'})
+            elapsed = time.monotonic() - started
+            self.assertLess(elapsed,0.25)
+            self.assertTrue(response.isclosed())
+            self.assertFalse(any(t.name.startswith('localdream-deadline') for t in threading.enumerate()))
+        finally:
+            stop.set()
+            response.close()
+            client.close()
+            sender.join(1)
+        self.assertFalse(sender.is_alive())

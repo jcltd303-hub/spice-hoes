@@ -90,3 +90,5 @@ Task 5: in progress; local pending operations terminated, remote blob implementa
 
 Task 5: GREEN source3fcf088; Actions36750476135 Ran77 tests OK; RED2bfcc806/run36749961912 expected missing modules.
 Task 5: fix round1/5 dispatched (1 open: trickle stream deadline; fix base3fcf088); minor oversized stream fixture to fix.
+Task 5: fix round1/5 (size fixture addressed, deadline open; commits3fcf088..36f7ecb); scoped reviewer found read1 chunk framing can still buffer indefinitely.
+Task 5: fix round2/5 dispatched (hard socket deadline and chunked regression; base36f7ecb).
