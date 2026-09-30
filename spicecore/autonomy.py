@@ -17,7 +17,7 @@ def plan_next_batch(store,personas,theme,channel,output_dir="jobs",seed=None,use
     context=LocalRAG.from_paths(paths).search(f"{persona['name']} {theme} {channel} monetization identity",5)
     decision=deliberate(persona,brief,stats,context,seed)
     production=free_production_plan(brief,use_avatar)
-    payload={"schema_version":1,"persona_id":persona["id"],"allocation":allocation,"decision":decision,"brief":brief,"production":production,"status":"awaiting_generation"}
+    payload={"schema_version":1,"persona_id":persona["id"],"allocation":allocation,"decision":decision,"brief":brief,"production":production,"generation_seed":seed,"status":"awaiting_generation"}
     out=Path(output_dir)/f"next-{persona['id']}-{theme}.json"; out.parent.mkdir(parents=True,exist_ok=True)
     out.write_text(json.dumps(payload,indent=2,ensure_ascii=False)+"\n")
     event=store.record_event("batch_planned",{"persona_id":persona["id"],"theme":theme,"channel":channel,"job":str(out),"policy_version":allocation["policy_version"]})
