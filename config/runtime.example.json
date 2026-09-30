@@ -6,6 +6,7 @@
   ],
   "api_version": "2024-10-21",
   "region": "OWNER-VERIFIED-REGION",
+  "approved_regions": [],
   "daily_cap_cents": null,
   "credit": {
     "eligible": false,
