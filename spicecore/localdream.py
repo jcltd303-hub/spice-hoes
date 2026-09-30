@@ -23,6 +23,15 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 def _open(request, timeout):
     return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout)
 
+def _read(response, size, remaining):
+    # HTTPResponse.read1 performs at most one underlying read, unlike read(n).
+    # Set the socket timeout for THIS read to the overall remaining budget.
+    if hasattr(response, 'set_read_timeout'):
+        response.set_read_timeout(remaining)
+    else:
+        response.fp.raw._sock.settimeout(remaining)
+    return response.read1(size)
+
 class LocalDreamClient:
     def __init__(self, *, capabilities, opener=_open, max_image_bytes=MAX_IMAGE_BYTES, timeout=300):
         if not 0 < max_image_bytes <= MAX_IMAGE_BYTES or timeout <= 0:
@@ -43,15 +52,17 @@ class LocalDreamClient:
         response = self.opener(request, timeout=self.timeout)
         try:
             if response.status != 200 or response.headers.get('Content-Type', '').split(';')[0] != 'text/event-stream':
-                response.read(65536)
                 raise ValueError('Local Dream returned HTTP/JSON error')
             pending, lines, total = b'', [], 0
             # Limits include previews and progress; disable previews in installed configuration.
             stream_limit = ((self.limit + 2)//3)*4 + 65536
             while True:
-                if time.monotonic() - started > self.timeout:
+                remaining = self.timeout - (time.monotonic() - started)
+                if remaining <= 0:
                     raise TimeoutError('Generation deadline exceeded')
-                part = response.read(65536)
+                part = _read(response, 65536, remaining)
+                if time.monotonic() - started >= self.timeout:
+                    raise TimeoutError('Generation deadline exceeded')
                 total += len(part)
                 if total > stream_limit:
                     raise ValueError('Local Dream stream exceeds limit')
