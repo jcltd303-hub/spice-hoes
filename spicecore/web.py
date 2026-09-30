@@ -2,6 +2,8 @@
 
 import hmac
 import logging
+import mimetypes
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlsplit
 
@@ -18,9 +20,35 @@ def make_handler(store: Store, personas: list[dict], token: str):
         def do_GET(self):
             parsed = urlsplit(self.path)
             supplied = parse_qs(parsed.query).get('token', [''])[0]
-            if parsed.path != '/' or not hmac.compare_digest(supplied, token):
+            if not hmac.compare_digest(supplied, token):
                 self.send_error(403)
                 return
+            if parsed.path.startswith('/asset/'):
+                cid = parsed.path[len('/asset/'):]
+                db = Store(db_path)
+                try:
+                    row = db.candidate(cid)
+                except ValueError:
+                    db.close(); self.send_error(404); return
+                finally:
+                    if 'row' in locals(): db.close()
+                uri = row.get('asset_uri')
+                if not uri:
+                    self.send_error(404); return
+                asset = Path(uri).expanduser().resolve()
+                allowed = Path('assets/generated').resolve()
+                if asset != allowed and allowed not in asset.parents:
+                    self.send_error(403); return
+                if not asset.is_file():
+                    self.send_error(404); return
+                body = asset.read_bytes()
+                self.send_response(200)
+                self.send_header('Content-Type', mimetypes.guess_type(asset.name)[0] or 'application/octet-stream')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers(); self.wfile.write(body); return
+            if parsed.path != '/':
+                self.send_error(404); return
             db = Store(db_path)
             try:
                 body = render_dashboard(db, personas, token).encode('utf-8')
