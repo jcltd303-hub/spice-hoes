@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FakeKnowledge:
-    def search(self, query, *, persona_id, limit):
-        return [{'chunk_id': 'persona-1', 'text': 'approved persona facts', 'persona_id': persona_id}]
+    def search(self, query, scope, limit):
+        return [{'chunk_id': 'persona-1', 'text': 'approved persona facts', 'persona_id': scope['persona']}]
 
 
 class FakeBudget:
@@ -57,7 +57,8 @@ class OperatorLoopTests(unittest.TestCase):
         result = asyncio.run(plan_cycle(
             self.store, self.people, FakeKnowledge(), FakeClient(), FakeBudget(),
             objective='test premium portrait interest', channel='TikTok',
-            offer='profile visit', audit_db=Path(self.tmp.name) / 'audit.sqlite', seed=4,
+            offer='profile visit', audit_db=Path(self.tmp.name) / 'audit.sqlite',
+            knowledge_scope={'tenant': 'owner', 'owner': 'owner'}, seed=4,
         ))
         self.assertEqual(result['status'], 'review_required')
         self.assertFalse(result['execute'])
