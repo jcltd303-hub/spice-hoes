@@ -42,8 +42,8 @@ Add a generation adapter and asset-quality review, an authenticated review app w
 
 `free-plan` materializes one JSON job per persona under `jobs/`. The default route mirrors the source guide's zero-cost workflow:
 
-1. Google Flow / Nano Banana 2 — 9:16 identity-consistent still from the master reference.
-2. Free web upscaler — approved 1K still to 2K/4K before animation.
+1. Local Dream on the S24 Ultra — primary still generation over its loopback HTTP/SSE API.
+2. Local Dream/native on-device processing — keep image production and available upscaling on the phone.
 3. Google Flow / VEO 3.1 Fast — Frames-to-Video motion. Pass `--avatar` to substitute Pavo AI for a free talking-avatar route.
 4. FFmpeg — local clip joining and caption burn-in.
 5. n8n Community Edition — self-hosted task/approval/publishing handoff orchestration.
@@ -68,3 +68,14 @@ python3 -m spicecore.cli next-batch --theme city-nights --channel TikTok --seed 
 It reads the SQLite outcome ledger, selects an experiment with the logged exploration policy, retrieves relevant local project/persona knowledge, runs the four-lens MoA planner, and writes the free production manifest. The manifest remains `awaiting_generation`; generation and publication do not bypass the existing review gate. Use `--avatar` to choose the Pavo talking-avatar production route.
 
 The current learner is intentionally a contextual allocation heuristic rather than a claimed deep-RL model. Every planned batch and observed outcome creates the trajectory data needed to evaluate a future longer-horizon policy against this baseline.
+
+## Local Dream HTTP production
+
+After opening Local Dream and selecting/loading a model, its backend is available at `http://127.0.0.1:8081`. From Termux on the same phone:
+
+```bash
+export LOCAL_DREAM_URL=http://127.0.0.1:8081
+python3 -m spicecore.cli generate-local --prompt "production portrait prompt" --output assets/test.png --size 1024 --steps 8 --cfg 1 --seed 42
+```
+
+For a computer connected through ADB, first run `adb forward tcp:8081 tcp:8081` and use the same URL. The adapter calls `POST /generate`, consumes the SSE progress/completion stream, writes the returned image to PNG, and records generation lineage in the experiment ledger. Model-specific size/steps/CFG should follow the loaded Local Dream model; the CLI values are explicit and overrideable.
