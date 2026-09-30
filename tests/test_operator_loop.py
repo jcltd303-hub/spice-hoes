@@ -26,7 +26,7 @@ class FakeClient:
         evidence = ['persona-1']
         if role in ('commerce', 'persona'):
             output = {'evidence_ids': evidence, 'rationale': 'Grounded proposal',
-                      'proposal': role}
+                      'proposal': 'proposal '+role}
         elif role.endswith('_critic'):
             output = {'evidence_ids': evidence, 'rationale': 'Grounded critique',
                       'critique': role}
@@ -62,7 +62,9 @@ class OperatorLoopTests(unittest.TestCase):
         ))
         self.assertEqual(result['status'], 'review_required')
         self.assertFalse(result['execute'])
-        self.assertEqual(self.store.candidate(result['candidate_id'])['status'], 'proposed')
+        candidate = self.store.candidate(result['candidate_id'])
+        self.assertEqual(candidate['status'], 'proposed')
+        self.assertEqual(candidate['prompt'], 'proposal commerce')
         events = self.store.events()
         self.assertEqual(events[-1]['kind'], 'cycle_planned')
         self.assertEqual(events[-1]['payload']['candidate_id'], result['candidate_id'])
