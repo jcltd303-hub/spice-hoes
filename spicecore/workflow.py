@@ -43,7 +43,8 @@ def render_dashboard(store: Store, personas: list[dict], csrf_token: str) -> str
     safe = lambda value: html.escape(str(value), quote=True)
     rows = store.db.execute("SELECT * FROM candidates WHERE status='proposed' ORDER BY created_at").fetchall()
     cards = []
-    for row in rows:
+    # Review is intentionally one-at-a-time: disposing the current item reveals the next.
+    for row in rows[:1]:
         buttons = ''.join(f'<button name="decision" value="{d}">{d.title()}</button>'
                           for d in ('approved', 'revise', 'rejected'))
         cards.append(f'''<article><h3>{safe(row['persona_id'])} · {safe(row['theme'])}</h3>
@@ -67,6 +68,6 @@ def render_dashboard(store: Store, personas: list[dict], csrf_token: str) -> str
       .asset{{display:block;width:100%;max-height:75vh;object-fit:contain;background:#0e0b12;border-radius:12px;margin:12px 0}}
       .asset-path{{font-size:.8rem;opacity:.7;overflow-wrap:anywhere}}
       pre{{white-space:pre-wrap;overflow-wrap:anywhere}}table{{width:100%;text-align:left}}th,td{{padding:8px;border-bottom:1px solid #62546f}}
-      </style><h1>Review queue</h1><p>Local operator tool. Approval records a decision; it does not publish content.</p>
+      </style><h1>Review queue</h1><p>{len(rows)} awaiting review. Approval records a decision; it does not publish content.</p>
       {''.join(cards) or '<p>No candidates waiting.</p>'}
       <h2>Observed totals</h2><table><tr><th>Persona</th><th>Published</th><th>Clicks</th><th>Net $</th></tr>{stat_rows}</table></html>'''
