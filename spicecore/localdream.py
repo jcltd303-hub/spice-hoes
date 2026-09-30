@@ -26,7 +26,7 @@ def generate(prompt,output,negative_prompt="",size=None,steps=None,cfg=None,seed
  width=width or settings.get("width"); height=height or settings.get("height")
  payload={"prompt":prompt,"negative_prompt":negative_prompt,
           "steps":steps if steps is not None else settings.get("steps",8),
-          "cfg":cfg if cfg is not None else settings.get("cfg",1.0)}
+          "cfg":cfg if cfg is not None else settings.get("cfg",1.0),"output_format":"png"}
  if size is not None: payload["size"]=size
  if width is not None: payload["width"]=int(width)
  if height is not None: payload["height"]=int(height)
@@ -51,11 +51,20 @@ def generate(prompt,output,negative_prompt="",size=None,steps=None,cfg=None,seed
    elif msg.get("type")=="progress": progress.append({k:msg.get(k) for k in ("step","total_steps")})
  if not complete or "image" not in complete: raise RuntimeError("Local Dream ended without a complete image event")
  width,height,channels=(int(complete[k]) for k in ("width","height","channels"))
- pixels=base64.b64decode(complete["image"]); expected=width*height*channels
- if len(pixels)!=expected: raise RuntimeError(f"Local Dream image payload length {len(pixels)} != {expected}")
- out=Path(output); out.parent.mkdir(parents=True,exist_ok=True); _write_png(out,width,height,channels,pixels)
+ data=base64.b64decode(complete["image"]); wire_format=complete.get("format","raw").lower()
+ out=Path(output); out.parent.mkdir(parents=True,exist_ok=True)
+ if wire_format=="png":
+  if not data.startswith(bytes.fromhex("89504e470d0a1a0a")): raise RuntimeError("Local Dream declared PNG but returned invalid PNG bytes")
+  out.write_bytes(data)
+ elif wire_format=="jpeg":
+  if not data.startswith(bytes.fromhex("ffd8")): raise RuntimeError("Local Dream declared JPEG but returned invalid JPEG bytes")
+  out.write_bytes(data)
+ else:
+  expected=width*height*channels
+  if len(data)!=expected: raise RuntimeError(f"Local Dream raw image payload length {len(data)} != {expected}")
+  _write_png(out,width,height,channels,data)
  return {"asset_uri":str(out),"provider":"local-dream","profile":profile,"server_url":server_url or DEFAULT_URL,
-         "request":payload,"width":width,"height":height,"channels":channels,"progress":progress,
+         "request":payload,"width":width,"height":height,"channels":channels,"wire_format":wire_format,"progress":progress,
          "generation_time_ms":complete.get("generation_time_ms"),"round_trip_ms":round((time.monotonic()-started)*1000)}
 
 def _write_png(path,width,height,channels,pixels):
