@@ -10,6 +10,7 @@ from .core import Store, load_personas
 from .autonomy import plan_next_batch
 from .policy import recommend
 from .moa import deliberate
+from .localdream import generate as localdream_generate
 from .rag import LocalRAG
 from .orchestration import write_n8n
 from .production import free_production_plan, write_job
@@ -26,6 +27,15 @@ def main(argv=None):
     sub.add_parser('personas')
     sub.add_parser('stats')
     sub.add_parser('events')
+    gen = sub.add_parser('generate-local')
+    gen.add_argument('--prompt', required=True)
+    gen.add_argument('--output', required=True)
+    gen.add_argument('--negative-prompt', default='')
+    gen.add_argument('--size', type=int, default=1024)
+    gen.add_argument('--steps', type=int, default=8)
+    gen.add_argument('--cfg', type=float, default=1.0)
+    gen.add_argument('--seed', type=int)
+    gen.add_argument('--server-url')
     nxt = sub.add_parser('next-batch')
     nxt.add_argument('--theme', required=True)
     nxt.add_argument('--channel', required=True)
@@ -86,6 +96,9 @@ def main(argv=None):
             output = store.stats(personas)
         elif args.command == 'events':
             output = store.events()
+        elif args.command == 'generate-local':
+            output = localdream_generate(args.prompt,args.output,args.negative_prompt,args.size,args.steps,args.cfg,args.seed,args.server_url)
+            store.record_event('asset_generated', output)
         elif args.command == 'next-batch':
             output = plan_next_batch(store, personas, args.theme, args.channel, args.output_dir, args.seed, args.avatar)
         elif args.command == 'moa-plan':
