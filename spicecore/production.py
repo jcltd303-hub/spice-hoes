@@ -23,8 +23,8 @@ class ProductionTask:
 
 
 FREE_TOOLS = {
-    "image": "Google Flow / Nano Banana 2",
-    "upscale": "free web upscaler",
+    "image": "Local Dream HTTP (S24 Ultra)",
+    "upscale": "Local Dream upscaler / native output",
     "motion": "Google Flow / VEO 3.1 Fast",
     "avatar": "Pavo AI",
     "orchestrator": "n8n Community Edition",
@@ -38,11 +38,11 @@ def free_production_plan(brief: dict, use_avatar: bool = False) -> list[dict]:
     tasks = [
         ProductionTask(
             "image", FREE_TOOLS["image"], "browser",
-            "Generate a 9:16 still using the locked master reference sheet. Prompt: " + prompt,
+            "Generate the production still on the S24 Ultra through Local Dream HTTP. Prompt: " + prompt,
         ),
         ProductionTask(
             "upscale", FREE_TOOLS["upscale"], "browser",
-            "Upscale the approved 1K still to 2K or 4K before motion generation.",
+            "Keep generation/upscaling on-device with Local Dream; record the resulting asset URI and generation lineage.",
         ),
     ]
     if use_avatar:
