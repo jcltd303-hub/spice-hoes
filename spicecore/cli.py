@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .core import Store, load_personas
 from .policy import recommend
+from .production import free_production_plan, write_job
 from .web import make_handler
 from .workflow import build_briefs
 
@@ -25,6 +26,13 @@ def main(argv=None):
     briefs.add_argument('--theme', required=True)
     briefs.add_argument('--channel', required=True)
     briefs.add_argument('--seed', type=int)
+    plan = sub.add_parser('free-plan')
+    plan.add_argument('--theme', required=True)
+    plan.add_argument('--channel', required=True)
+    plan.add_argument('--persona')
+    plan.add_argument('--seed', type=int)
+    plan.add_argument('--avatar', action='store_true')
+    plan.add_argument('--output-dir', default='jobs')
     serve = sub.add_parser('serve')
     serve.add_argument('--port', type=int, default=8765)
     rec = sub.add_parser('recommend')
@@ -63,6 +71,19 @@ def main(argv=None):
             output = store.events()
         elif args.command == 'briefs':
             output = build_briefs(personas, args.theme, args.channel, args.seed)
+        elif args.command == 'free-plan':
+            briefs = build_briefs(personas, args.theme, args.channel, args.seed)
+            if args.persona:
+                briefs = [b for b in briefs if b['persona_id'] == args.persona]
+                if not briefs:
+                    parser.error('Unknown persona')
+            jobs = []
+            for brief in briefs:
+                path = Path(args.output_dir) / f"{brief['persona_id']}-{args.theme}.json"
+                write_job(brief, path, args.avatar)
+                jobs.append({'persona_id': brief['persona_id'], 'job': str(path),
+                             'production': free_production_plan(brief, args.avatar)})
+            output = jobs
         elif args.command == 'serve':
             token = secrets.token_urlsafe(24)
             server = HTTPServer(('127.0.0.1', args.port), make_handler(store, personas, token))
