@@ -13,6 +13,7 @@ from pathlib import Path
 from spicecore.core import Store, load_personas
 from spicecore.workflow import build_briefs, render_dashboard, apply_review
 from spicecore.web import make_handler
+from spicecore.production import FREE_TOOLS, free_production_plan, write_job
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,6 +84,28 @@ class WorkflowTests(unittest.TestCase):
                              cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(len(json.loads(run.stdout)), 5)
+
+    def test_free_plan_uses_guide_zero_cost_stack(self):
+        brief = build_briefs(self.people, 'outfit-choice', 'Instagram', seed=4)[0]
+        plan = free_production_plan(brief)
+        self.assertEqual([step['cost_cents'] for step in plan], [0] * len(plan))
+        tools = {step['tool'] for step in plan}
+        self.assertIn(FREE_TOOLS['image'], tools)
+        self.assertIn(FREE_TOOLS['motion'], tools)
+        self.assertIn(FREE_TOOLS['assembly'], tools)
+        self.assertIn(FREE_TOOLS['orchestrator'], tools)
+
+    def test_avatar_plan_can_use_pavo(self):
+        brief = build_briefs(self.people, 'talking-head', 'TikTok', seed=2)[0]
+        plan = free_production_plan(brief, use_avatar=True)
+        self.assertIn(FREE_TOOLS['avatar'], {step['tool'] for step in plan})
+
+    def test_job_manifest_is_machine_readable(self):
+        brief = build_briefs(self.people, 'city-night', 'TikTok', seed=1)[0]
+        path = write_job(brief, Path(self.tmp.name) / 'job.json')
+        payload = json.loads(path.read_text())
+        self.assertEqual(payload['brief']['persona_id'], brief['persona_id'])
+        self.assertTrue(payload['production'])
 
 
 if __name__ == '__main__':
