@@ -48,7 +48,8 @@ def render_dashboard(store: Store, personas: list[dict], csrf_token: str) -> str
                           for d in ('approved', 'revise', 'rejected'))
         cards.append(f'''<article><h3>{safe(row['persona_id'])} · {safe(row['theme'])}</h3>
           <p>{safe(row['channel'])} · {safe(row['format'])} · {safe(row['offer'])}</p>
-          <p>Asset: {safe(row['asset_uri'] or 'pending generation')}</p>
+          {f'<img class="asset" src="/asset/{safe(row["id"])}?token={safe(csrf_token)}" alt="Generated asset for {safe(row["persona_id"])}" loading="eager">' if row['asset_uri'] else ''}
+          <p class="asset-path">Asset: {safe(row['asset_uri'] or 'pending generation')}</p>
           <pre>{safe(row['prompt'] or '')}</pre>
           <form method="post" action="/review">
             <input type="hidden" name="token" value="{safe(csrf_token)}">
@@ -63,6 +64,8 @@ def render_dashboard(store: Store, personas: list[dict], csrf_token: str) -> str
       body{{font:16px system-ui;background:#171320;color:#f7f1fb;max-width:900px;margin:auto;padding:24px}}
       article{{background:#292135;border:1px solid #62546f;border-radius:14px;padding:18px;margin:14px 0}}
       input,button{{font:inherit;margin:6px;padding:8px;border-radius:7px}}button{{cursor:pointer}}
+      .asset{{display:block;width:100%;max-height:75vh;object-fit:contain;background:#0e0b12;border-radius:12px;margin:12px 0}}
+      .asset-path{{font-size:.8rem;opacity:.7;overflow-wrap:anywhere}}
       pre{{white-space:pre-wrap;overflow-wrap:anywhere}}table{{width:100%;text-align:left}}th,td{{padding:8px;border-bottom:1px solid #62546f}}
       </style><h1>Review queue</h1><p>Local operator tool. Approval records a decision; it does not publish content.</p>
       {''.join(cards) or '<p>No candidates waiting.</p>'}
