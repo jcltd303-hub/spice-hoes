@@ -5,9 +5,6 @@ action, but ActionGate remains the only path to live authorization.
 """
 from __future__ import annotations
 
-import asyncio
-import hashlib
-import json
 import uuid
 
 from .moa import run_moa
@@ -71,7 +68,7 @@ async def plan_cycle(store, personas, knowledge, client, budget, *, objective,
         return {'status': 'failed', 'task_id': task_id, 'allocation': allocation,
                 'decision': decision}
 
-    proposal = decision['chosen_proposal']
+    proposal = decision['selected_proposal']
     cid = store.propose(
         persona, objective, 'moa-proposal', channel, offer,
         prompt=proposal, model='moa', seed=str(seed) if seed is not None else None,
