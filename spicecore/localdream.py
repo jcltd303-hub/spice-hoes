@@ -3,6 +3,8 @@ import base64
 import hashlib
 import json
 import struct
+import socket
+import threading
 import time
 import urllib.request
 import zlib
@@ -50,6 +52,22 @@ class LocalDreamClient:
         started = time.monotonic()
         request = urllib.request.Request('http://127.0.0.1:8081/generate', data=json.dumps(settings, allow_nan=False).encode(), headers={'Content-Type':'application/json'}, method='POST')
         response = self.opener(request, timeout=self.timeout)
+        expired = threading.Event()
+        transport = getattr(getattr(getattr(response, 'fp', None), 'raw', None), '_sock', None)
+        def expire():
+            expired.set()
+            if transport is not None:
+                try:
+                    transport.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+            elif hasattr(response, 'abort'):
+                response.abort()
+        # A watchdog shuts down the underlying socket even while HTTPResponse is
+        # parsing buffered chunk framing. It performs no reads and is always joined.
+        deadline = threading.Timer(max(0, self.timeout - (time.monotonic() - started)), expire)
+        deadline.name = 'localdream-deadline'
+        deadline.start()
         try:
             if response.status != 200 or response.headers.get('Content-Type', '').split(';')[0] != 'text/event-stream':
                 raise ValueError('Local Dream returned HTTP/JSON error')
@@ -83,7 +101,13 @@ class LocalDreamClient:
                             return self._result(event, settings, started)
                 if not part:
                     raise ValueError('Missing complete SSE event')
+        except Exception as exc:
+            if expired.is_set() or time.monotonic() - started >= self.timeout:
+                raise TimeoutError('Generation deadline exceeded') from exc
+            raise
         finally:
+            deadline.cancel()
+            deadline.join()
             response.close()
 
     def _result(self, event, settings, started):
