@@ -55,9 +55,10 @@ def main(argv=None):
     gen.add_argument('--prompt', required=True)
     gen.add_argument('--output', required=True)
     gen.add_argument('--negative-prompt', default='')
-    gen.add_argument('--size', type=int, default=1024)
-    gen.add_argument('--steps', type=int, default=8)
-    gen.add_argument('--cfg', type=float, default=1.0)
+    gen.add_argument('--size', type=int)
+    gen.add_argument('--steps', type=int)
+    gen.add_argument('--cfg', type=float)
+    gen.add_argument('--profile', choices=('sdxl-dmd2-fast','sdxl-quality','sd15-quality'), default='sdxl-quality')
     gen.add_argument('--seed', type=int)
     gen.add_argument('--server-url')
     nxt = sub.add_parser('next-batch')
@@ -126,7 +127,7 @@ def main(argv=None):
         elif args.command == 'produce-job':
             output = produce_job(store, personas, args.job, args.assets_dir, args.server_url, args.size, args.steps, args.cfg, args.negative_prompt, args.candidates, args.profile)
         elif args.command == 'generate-local':
-            output = localdream_generate(args.prompt,args.output,args.negative_prompt,args.size,args.steps,args.cfg,args.seed,args.server_url)
+            output = localdream_generate(args.prompt,args.output,args.negative_prompt,args.size,args.steps,args.cfg,args.seed,args.server_url,profile=args.profile)
             store.record_event('asset_generated', output)
         elif args.command == 'next-batch':
             output = plan_next_batch(store, personas, args.theme, args.channel, args.output_dir, args.seed, args.avatar)
