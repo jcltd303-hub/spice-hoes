@@ -32,8 +32,8 @@ def _write_png(path,width,height,channels,pixels):
     import struct,zlib
     if channels not in (3,4): raise RuntimeError("Only RGB/RGBA Local Dream output is supported")
     color=2 if channels==3 else 6
-    rows=b"".join(b"\\x00"+pixels[y*width*channels:(y+1)*width*channels] for y in range(height))
+    rows=b"".join(b"\x00"+pixels[y*width*channels:(y+1)*width*channels] for y in range(height))
     def chunk(kind,data):
         return struct.pack(">I",len(data))+kind+data+struct.pack(">I",zlib.crc32(kind+data)&0xffffffff)
-    png=b"\\x89PNG\\r\\n\\x1a\\n"+chunk(b"IHDR",struct.pack(">IIBBBBB",width,height,8,color,0,0,0))+chunk(b"IDAT",zlib.compress(rows,6))+chunk(b"IEND",b"")
+    png=b"\x89PNG\r\n\x1a\n"+chunk(b"IHDR",struct.pack(">IIBBBBB",width,height,8,color,0,0,0))+chunk(b"IDAT",zlib.compress(rows,6))+chunk(b"IEND",b"")
     path.write_bytes(png)
