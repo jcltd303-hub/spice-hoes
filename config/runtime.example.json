@@ -1,0 +1,63 @@
+{
+  "dry_run": true,
+  "endpoint": "https://OWNER-RESOURCE.openai.azure.com",
+  "approved_endpoints": [
+    "https://OWNER-RESOURCE.openai.azure.com"
+  ],
+  "api_version": "2024-10-21",
+  "region": "OWNER-VERIFIED-REGION",
+  "daily_cap_cents": null,
+  "credit": {
+    "eligible": false,
+    "evidence": null,
+    "expires_at": "2000-01-01T00:00:00+00:00"
+  },
+  "limits": {
+    "layers": 3,
+    "max_attempts": 2,
+    "timeout_seconds": 30,
+    "max_input_tokens": 8192,
+    "max_output_tokens": 1024,
+    "maximum_call_cents": null
+  },
+  "identity": {
+    "managed_identity_client_id": null
+  },
+  "deployments": {
+    "research": {
+      "name": "OWNER-DEPLOYMENT-research",
+      "input_cents_per_million": null,
+      "output_cents_per_million": null
+    },
+    "persona": {
+      "name": "OWNER-DEPLOYMENT-persona",
+      "input_cents_per_million": null,
+      "output_cents_per_million": null
+    },
+    "creative": {
+      "name": "OWNER-DEPLOYMENT-creative",
+      "input_cents_per_million": null,
+      "output_cents_per_million": null
+    },
+    "commerce": {
+      "name": "OWNER-DEPLOYMENT-commerce",
+      "input_cents_per_million": null,
+      "output_cents_per_million": null
+    },
+    "evidence_critic": {
+      "name": "OWNER-DEPLOYMENT-evidence_critic",
+      "input_cents_per_million": null,
+      "output_cents_per_million": null
+    },
+    "quality_critic": {
+      "name": "OWNER-DEPLOYMENT-quality_critic",
+      "input_cents_per_million": null,
+      "output_cents_per_million": null
+    },
+    "aggregator": {
+      "name": "OWNER-DEPLOYMENT-aggregator",
+      "input_cents_per_million": null,
+      "output_cents_per_million": null
+    }
+  }
+}
