@@ -92,3 +92,7 @@ Task 5: GREEN source3fcf088; Actions36750476135 Ran77 tests OK; RED2bfcc806/run3
 Task 5: fix round1/5 dispatched (1 open: trickle stream deadline; fix base3fcf088); minor oversized stream fixture to fix.
 Task 5: fix round1/5 (size fixture addressed, deadline open; commits3fcf088..36f7ecb); scoped reviewer found read1 chunk framing can still buffer indefinitely.
 Task 5: fix round2/5 dispatched (hard socket deadline and chunked regression; base36f7ecb).
+Task 5: fix round2/5 (deadline addressed,0open; commits36f7ecb..428112c7); CI36752203425 Ran79 OK; scoped review2 clean.
+Task 5: minor (deferred): initial header phase and image-processing total deadline; final reviewer triage.
+Task 5: complete (remote1f5afcc..428112c7, review clean).
+Task 6: dispatched; base428112c7f4b3b74a9f4c3e45312b106662d3029e.

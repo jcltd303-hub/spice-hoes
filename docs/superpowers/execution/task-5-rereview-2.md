@@ -1,0 +1,11 @@
+**HTTPResponse.read(65536) can buffer trickle SSE beyond total deadline** — ADDRESSED, spicecore/localdream.py:57-73,104-113. The timer captures the actual urllib response socket and shuts it down at the remaining monotonic budget, so a buffered chunk-size/extension or trailer read no longer depends solely on socket inactivity or reaching the post-read check. Deadline-caused read/parser errors normalize to TimeoutError; cancellation and join precede response closure. tests/test_localdream.py:84-120 exercises a real chunked HTTPResponse/socketpair with a 400ms trickled extension and an 80ms budget, and checks bounded return, closure and thread cleanup.
+
+**Size-limit fixture did not reach actual stream cap** — ADDRESSED (preserved), tests/test_localdream.py:38-43. This round does not alter the prior explicit stream-overflow and decoded-image-limit regressions.
+
+**New Breakage in the Fix Diff** — None found.
+
+**Out-of-Scope Observations** — spicecore/localdream.py:54-55: the timer starts only after opener returns; trickled initial response headers remain governed by per-socket inactivity timeout and can exceed the configured total budget. This is a pre-existing connection/header-phase limitation, explicitly disclosed in the appended report and outside this response-body fix. Non-blocking for this scoped round; retain for whole-branch review. Image processing after a complete SSE event also has no final deadline check (spicecore/localdream.py:101-102,115-138); the response-body watchdog interrupts transport, not CPU work. This pre-existing behavior is outside the framing finding and fix diff.
+
+**Checks** — Read task brief, previous findings, appended report and supplied round2 diff once; inspected source at head428112c7f4b3b74a9f4c3e45312b106662d3029e. Applied the scoped re-review-prompt resource. Report names test_chunked_socket_trickle_deadline, records RED79 tests/one failure (elapsed0.403 >0.25) on9681eecff6d1169fe3576db996bb2389f17b6b52, and GREEN79 tests/OK in1.622s on428112c7 (Actions36752203425). The new fixture directly covers the remaining chunk-framing mechanism. No suite rerun or runtime execution claimed.
+
+**Fix round:** All findings addressed, no new Critical/Important breakage.

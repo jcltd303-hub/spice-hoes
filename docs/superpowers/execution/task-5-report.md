@@ -55,3 +55,24 @@ Exact result: Ran78 tests in1.811s; OK.
 No unnecessary suite rerun after this verified fix.
 
 Self-review: checked read1 path, remaining-budget socket timeout, closure in finally, explicit limit error assertions and preservation of existing fragmented SSE behavior. Earlier report socket-read deadline limitation is corrected for streamed response reads. urllib connection/response-header handling still uses configured connection timeout; no live networking/device claim is made.
+
+## Fix round2: interrupt buffered HTTP chunk framing
+Rereviewer found round1 incomplete: HTTPResponse.read1 still calls buffered readline for chunk headers/extensions and trailers. A trickling framing line can exceed the total response-body budget even when individual socket operations do not time out.
+
+Changes: spicecore/localdream.py starts a remaining-budget watchdog holding the actual response socket. At expiry it marks the deadline and calls socket.shutdown(SHUT_RDWR), interrupting buffered framing and body reads. It performs no background reads. Every success/error path cancels and joins the watchdog before closing the response; deadline-caused transport/parser exceptions become TimeoutError. The existing read1 and remaining-budget per-read timeout remain.
+
+Regression: tests/test_localdream.py test_chunked_socket_trickle_deadline constructs an actual socket.socketpair and HTTPResponse with Transfer-Encoding:chunked. A peer thread sends one valid chunk extension one byte every10ms for400ms, while client budget is80ms. It asserts TimeoutError under250ms, response closure and no surviving watchdog or peer thread. Peer cleanup is bounded and joined.
+
+RED: TEST-only head9681eecff6d1169fe3576db996bb2389f17b6b52, Actions run36752061996.
+Command: python3 -m unittest discover -s tests -v.
+Exact relevant result:79tests,1failure, test_chunked_socket_trickle_deadline elapsed0.403 >0.25.
+This confirms the pre-fix implementation remained blocked inside buffered chunk framing.
+
+GREEN: source head428112c7f4b3b74a9f4c3e45312b106662d3029e, Actions run36752203425 success.
+Command: python3 -m unittest discover -s tests -v.
+Exact result: Ran79tests in1.622s; OK.
+No repeated full suite after verification.
+
+Self-review: verified real socket shutdown releases buffered parser, timed error normalization, cancellation/join cleanup, and preservation of prior nonchunked deterministic regression and image bounds.
+
+Explicit limitation: the hard cancellation deadline applies after urllib returns the response, including all response-body chunk framing/trailers. Connection and initial response-header parsing use the configured urllib socket timeout; adversarial trickled initial headers are not protected by a separate total-request watchdog. This does not claim a hard whole-request deadline. The controller accepted keeping this wave scoped to the original response-read/chunk-framing finding. Actual trusted loopback Local Dream behavior and S24 networking remain live validation.
