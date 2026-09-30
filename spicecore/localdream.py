@@ -15,6 +15,32 @@ def _post_json(path,payload,server_url=None,timeout=900,accept="application/json
  req=Request((server_url or DEFAULT_URL).rstrip("/")+path,data=json.dumps(payload).encode(),headers={"Content-Type":"application/json","Accept":accept},method="POST")
  return urlopen(req,timeout=timeout)
 
+
+def probe(prompt="test photograph",server_url=None,timeout=900):
+ """Call Local Dream without converting its image; persist enough facts to diagnose wire compatibility."""
+ payload={"prompt":prompt,"negative_prompt":"","steps":20,"cfg":7.0,"output_format":"png"}
+ complete=None; events=[]
+ with _post_json("/generate",payload,server_url,timeout,"text/event-stream") as response:
+  content_type=response.headers.get("Content-Type","")
+  for raw in response:
+   line=raw.decode("utf-8").strip()
+   if not line.startswith("data: "): continue
+   data=line[6:]
+   if data=="[DONE]": break
+   msg=json.loads(data); events.append({k:msg.get(k) for k in ("type","step","total_steps","format","width","height","channels","seed","message") if k in msg})
+   if msg.get("type")=="complete": complete=msg
+ if not complete: return {"ok":False,"content_type":content_type,"events":events,"request":payload}
+ data=base64.b64decode(complete.get("image",""))
+ fmt=str(complete.get("format","raw")).lower()
+ png=data.startswith(bytes.fromhex("89504e470d0a1a0a")); jpeg=data.startswith(bytes.fromhex("ffd8"))
+ expected=None
+ if all(k in complete for k in ("width","height","channels")): expected=int(complete["width"])*int(complete["height"])*int(complete["channels"])
+ return {"ok":bool(data),"content_type":content_type,"format":fmt,"decoded_bytes":len(data),
+         "first_16_hex":data[:16].hex(),"valid_png_signature":png,"valid_jpeg_signature":jpeg,
+         "expected_raw_bytes":expected,"raw_length_matches":expected==len(data) if expected is not None else None,
+         "width":complete.get("width"),"height":complete.get("height"),"channels":complete.get("channels"),
+         "seed":complete.get("seed"),"events":events,"request":payload}
+
 def tokenize(prompt,server_url=None,timeout=30):
  with _post_json("/tokenize",{"prompt":prompt},server_url,timeout) as r:
   return json.loads(r.read().decode())
