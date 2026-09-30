@@ -77,6 +77,30 @@ class WorkflowTests(unittest.TestCase):
             server.server_close()
             worker.join()
 
+    def test_review_page_autoloads_generated_png(self):
+        asset_dir = ROOT / 'assets' / 'generated' / 'test-review'
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        asset = asset_dir / 'preview.png'
+        asset.write_bytes(bytes.fromhex('89504e470d0a1a0a'))
+        cid = self.store.propose(self.people[0], 'night', 'still', 'Instagram', 'portrait',
+                                 asset_uri=str(asset))
+        server = HTTPServer(('127.0.0.1', 0), make_handler(self.store, self.people, 'secret'))
+        worker = threading.Thread(target=server.serve_forever, daemon=True); worker.start()
+        base = f'http://127.0.0.1:{server.server_port}'
+        try:
+            page = urllib.request.urlopen(base + '/?token=secret').read().decode()
+            self.assertIn(f'/asset/{cid}?token=secret', page)
+            response = urllib.request.urlopen(base + f'/asset/{cid}?token=secret')
+            self.assertEqual(response.read(), bytes.fromhex('89504e470d0a1a0a'))
+            with self.assertRaises(urllib.error.HTTPError) as denied:
+                urllib.request.urlopen(base + f'/asset/{cid}')
+            self.assertEqual(denied.exception.code, 403)
+        finally:
+            server.shutdown(); server.server_close(); worker.join()
+            asset.unlink(missing_ok=True)
+            try: asset_dir.rmdir()
+            except OSError: pass
+
     def test_cli_outputs_five_creative_briefs(self):
         run = subprocess.run([sys.executable, '-m', 'spicecore.cli', '--personas',
                               str(ROOT / 'personas'), '--db', str(Path(self.tmp.name) / 'cli.sqlite'),
