@@ -1,6 +1,6 @@
 # Spice Hoes experiment core
 
-This is a runnable local loop from [project.md](project.md). It contains five **fictional adult** YAML personas, a local SQLite evidence ledger, generated creative briefs, a browser review queue, an approval gate, and an exploratory recommendation policy. It does not create images, email reviewers, publish posts, or message anyone automatically. Those integrations need real accounts, credentials, provider terms, and verified content workflows.
+This is a runnable local loop from [project.md](project.md). It contains five **fictional adult** YAML personas, a local SQLite evidence ledger, generated creative briefs, a browser review queue, an approval gate, and an exploratory recommendation policy. The default production path now follows the guide's free stack. Browser-only generators are emitted as auditable jobs rather than treated as imaginary APIs; local assembly is automated with FFmpeg. Publishing and account actions still require approved platform integrations and credentials.
 
 ## Start locally
 
@@ -12,6 +12,7 @@ python3 -m unittest discover -s tests -v
 python3 -m spicecore.cli init
 python3 -m spicecore.cli recommend --seed 42
 python3 -m spicecore.cli briefs --theme outfit-choice --channel Instagram --seed 42
+python3 -m spicecore.cli free-plan --theme outfit-choice --channel TikTok --seed 42
 python3 -m spicecore.cli serve
 ```
 
@@ -35,3 +36,23 @@ Creative briefs are hypotheses for an external generator or a human creator. `pr
 ## Boundaries and next adapters
 
 Add a generation adapter and asset-quality review, an authenticated review app with email notifications, approved distribution integrations, and a private cloud object store. Preserve the `policy_decision` event so changes can be audited. GitHub Actions may test the code and run small scheduled imports; it is not a production database or persistent worker. Keep credentials and private content outside the repository.
+
+
+## Free production stack
+
+`free-plan` materializes one JSON job per persona under `jobs/`. The default route mirrors the source guide's zero-cost workflow:
+
+1. Google Flow / Nano Banana 2 — 9:16 identity-consistent still from the master reference.
+2. Free web upscaler — approved 1K still to 2K/4K before animation.
+3. Google Flow / VEO 3.1 Fast — Frames-to-Video motion. Pass `--avatar` to substitute Pavo AI for a free talking-avatar route.
+4. FFmpeg — local clip joining and caption burn-in.
+5. n8n Community Edition — self-hosted task/approval/publishing handoff orchestration.
+
+Example:
+
+```bash
+python3 -m spicecore.cli free-plan --theme city-nights --channel TikTok --persona zara_voss --output-dir jobs
+python3 -m spicecore.cli free-plan --theme talking-head --channel TikTok --persona zara_voss --avatar
+```
+
+All generated production stages declare `cost_cents: 0`. This means **tooling cost in the planner**, not a guarantee that a third-party service will remain free or available. The paid Higgsfield, ElevenLabs, and Fal.ai routes are no longer required by the core architecture.
