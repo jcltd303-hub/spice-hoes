@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .core import Store, load_personas
 from .autonomy import plan_next_batch
+from .assetflow import produce_job
 from .policy import recommend
 from .moa import deliberate
 from .localdream import generate as localdream_generate
@@ -27,6 +28,25 @@ def main(argv=None):
     sub.add_parser('personas')
     sub.add_parser('stats')
     sub.add_parser('events')
+    auto = sub.add_parser('auto-assets')
+    auto.add_argument('--theme', required=True)
+    auto.add_argument('--channel', required=True)
+    auto.add_argument('--seed', type=int)
+    auto.add_argument('--output-dir', default='jobs')
+    auto.add_argument('--assets-dir', default='assets/generated')
+    auto.add_argument('--server-url')
+    auto.add_argument('--size', type=int, default=1024)
+    auto.add_argument('--steps', type=int, default=8)
+    auto.add_argument('--cfg', type=float, default=1.0)
+    auto.add_argument('--negative-prompt', default='')
+    resume = sub.add_parser('produce-job')
+    resume.add_argument('job')
+    resume.add_argument('--assets-dir', default='assets/generated')
+    resume.add_argument('--server-url')
+    resume.add_argument('--size', type=int, default=1024)
+    resume.add_argument('--steps', type=int, default=8)
+    resume.add_argument('--cfg', type=float, default=1.0)
+    resume.add_argument('--negative-prompt', default='')
     gen = sub.add_parser('generate-local')
     gen.add_argument('--prompt', required=True)
     gen.add_argument('--output', required=True)
@@ -96,6 +116,11 @@ def main(argv=None):
             output = store.stats(personas)
         elif args.command == 'events':
             output = store.events()
+        elif args.command == 'auto-assets':
+            planned = plan_next_batch(store, personas, args.theme, args.channel, args.output_dir, args.seed, False)
+            output = produce_job(store, personas, planned['job'], args.assets_dir, args.server_url, args.size, args.steps, args.cfg, args.negative_prompt)
+        elif args.command == 'produce-job':
+            output = produce_job(store, personas, args.job, args.assets_dir, args.server_url, args.size, args.steps, args.cfg, args.negative_prompt)
         elif args.command == 'generate-local':
             output = localdream_generate(args.prompt,args.output,args.negative_prompt,args.size,args.steps,args.cfg,args.seed,args.server_url)
             store.record_event('asset_generated', output)
