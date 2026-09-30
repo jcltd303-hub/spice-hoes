@@ -49,6 +49,9 @@ class MoATest(unittest.IsolatedAsyncioTestCase):
         client = Client(self.budget)
         result = await run_moa(self.task, self.evidence, client, self.budget)
         self.assertEqual(result['status'], 'complete')
+        self.assertEqual(result['selected_proposer'], 'research')
+        self.assertEqual(result['selected_proposal'], 'proposal research')
+        self.assertEqual(result['selected_proposal_evidence_ids'], ['chunk1'])
         for role, messages, limits in client.calls[:2]:
             self.assertNotIn('proposal research', json.dumps(messages))
             self.assertNotIn('proposal persona', json.dumps(messages))
