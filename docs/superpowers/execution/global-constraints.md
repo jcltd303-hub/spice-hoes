@@ -1,0 +1,10 @@
+- No third-party inference fallback.
+- At least two independent proposers plus critic and aggregator are required for a successful MoA run.
+- Limit each run to three layers, explicit token limits, bounded timeout and retries.
+- No recursively spawning agents.
+- Apply tenant/persona/access/expiry filters BEFORE ranking.
+- Start in dry-run.
+- Offline tests do not prove Azure deployment, device compatibility or platform integration.
+- Preserve existing local commands and stored experiments; keep secrets and private assets outside git.
+- Production hosting, reasoning and storage use Azure; image generation uses Local Dream on S24 exclusively.
+- Live spending requires verified credit eligibility and owner-configured ceiling. Unknown eligibility disables live operation.
