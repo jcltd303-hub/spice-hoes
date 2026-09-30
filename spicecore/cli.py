@@ -8,6 +8,9 @@ from pathlib import Path
 
 from .core import Store, load_personas
 from .policy import recommend
+from .moa import deliberate
+from .rag import LocalRAG
+from .orchestration import write_n8n
 from .production import free_production_plan, write_job
 from .web import make_handler
 from .workflow import build_briefs
@@ -22,6 +25,13 @@ def main(argv=None):
     sub.add_parser('personas')
     sub.add_parser('stats')
     sub.add_parser('events')
+    moa = sub.add_parser('moa-plan')
+    moa.add_argument('--theme', required=True)
+    moa.add_argument('--channel', required=True)
+    moa.add_argument('--persona', required=True)
+    moa.add_argument('--seed', type=int)
+    export = sub.add_parser('export-n8n')
+    export.add_argument('--output', default='n8n/spicecore-free.json')
     briefs = sub.add_parser('briefs')
     briefs.add_argument('--theme', required=True)
     briefs.add_argument('--channel', required=True)
@@ -69,6 +79,16 @@ def main(argv=None):
             output = store.stats(personas)
         elif args.command == 'events':
             output = store.events()
+        elif args.command == 'moa-plan':
+            persona = next((p for p in personas if p['id'] == args.persona), None)
+            if persona is None: parser.error('Unknown persona')
+            brief = next(b for b in build_briefs(personas, args.theme, args.channel, args.seed) if b['persona_id'] == args.persona)
+            rag = LocalRAG.from_paths(['project.md', 'identity', 'personas'])
+            context = rag.search(f"{persona['name']} {args.theme} {args.channel} monetization identity")
+            output = deliberate(persona, brief, store.stats(personas), context, args.seed)
+            store.record_event('moa_decision', output)
+        elif args.command == 'export-n8n':
+            output = {'workflow': str(write_n8n(args.output))}
         elif args.command == 'briefs':
             output = build_briefs(personas, args.theme, args.channel, args.seed)
         elif args.command == 'free-plan':
