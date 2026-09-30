@@ -6,8 +6,8 @@ from urllib.request import Request,urlopen
 
 DEFAULT_URL=os.environ.get("LOCAL_DREAM_URL","http://127.0.0.1:8081")
 PROFILES={
- "sdxl-fast":{"scheduler":"LCM","steps":8,"cfg":1.0,"width":576,"height":1024},
- "sdxl-quality":{"scheduler":"DPM++ 2M Karras","steps":25,"cfg":6.0,"width":576,"height":1024},
+ "sdxl-dmd2-fast":{"scheduler":"lcm","steps":8,"cfg":1.0,"aspect_ratio":"9:16"},
+ "sdxl-quality":{"scheduler":"dpm_karras","steps":25,"cfg":6.0,"aspect_ratio":"9:16"},
  "sd15-quality":{"scheduler":"DPM++ 2M Karras","steps":25,"cfg":6.0,"width":512,"height":768},
 }
 
@@ -32,6 +32,7 @@ def generate(prompt,output,negative_prompt="",size=None,steps=None,cfg=None,seed
  if height is not None: payload["height"]=int(height)
  scheduler=scheduler or settings.get("scheduler")
  if scheduler: payload["scheduler"]=scheduler
+ aspect_ratio=aspect_ratio or settings.get("aspect_ratio")
  if aspect_ratio: payload["aspect_ratio"]=aspect_ratio
  if seed is not None: payload["seed"]=int(seed)
  if image is not None: payload["image"]=image
