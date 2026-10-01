@@ -1,9 +1,4 @@
-"""Minimal auditable Deep-Q learner for later-stage portfolio allocation.
-
-The learner is deliberately gated: it does not replace the contextual bandit until
-there is a real replay buffer. It uses a one-hidden-layer neural network implemented
-with the standard library to avoid a heavyweight runtime dependency.
-"""
+"""Auditable persistent Deep-Q learner for later-stage portfolio allocation."""
 
 from __future__ import annotations
 
@@ -19,8 +14,10 @@ class InsufficientExperience(RuntimeError):
 
 
 class DeepRLPolicy:
+    POLICY_VERSION = "tiny-dqn-v2"
+
     def __init__(self, store, action_ids: list[str], hidden: int = 12, seed: int = 7,
-                 min_experiences: int = 128, gamma: float = 0.92):
+                 min_experiences: int = 128, gamma: float = 0.92, autoload: bool = True):
         if len(action_ids) < 2:
             raise ValueError("DeepRL requires at least two actions")
         self.store = store
@@ -31,12 +28,9 @@ class DeepRLPolicy:
         self.rng = random.Random(seed)
         self.input_size = 6
         self._ensure_schema()
-        self.w1 = [[self.rng.uniform(-0.1, 0.1) for _ in range(self.hidden)]
-                   for _ in range(self.input_size)]
-        self.b1 = [0.0] * self.hidden
-        self.w2 = [[self.rng.uniform(-0.1, 0.1) for _ in self.action_ids]
-                   for _ in range(self.hidden)]
-        self.b2 = [0.0] * len(self.action_ids)
+        self._initialize_weights()
+        if autoload:
+            self.load_latest()
 
     def _ensure_schema(self):
         self.store.db.executescript(
@@ -50,9 +44,28 @@ class DeepRLPolicy:
                 next_state_json TEXT NOT NULL,
                 done INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS rl_policy_snapshot (
+                id TEXT PRIMARY KEY,
+                ts TEXT NOT NULL,
+                policy_version TEXT NOT NULL,
+                action_ids_json TEXT NOT NULL,
+                hidden INTEGER NOT NULL,
+                gamma REAL NOT NULL,
+                weights_json TEXT NOT NULL,
+                experiences INTEGER NOT NULL,
+                final_mse REAL
+            );
             """
         )
         self.store.db.commit()
+
+    def _initialize_weights(self):
+        self.w1 = [[self.rng.uniform(-0.1, 0.1) for _ in range(self.hidden)]
+                   for _ in range(self.input_size)]
+        self.b1 = [0.0] * self.hidden
+        self.w2 = [[self.rng.uniform(-0.1, 0.1) for _ in self.action_ids]
+                   for _ in range(self.hidden)]
+        self.b2 = [0.0] * len(self.action_ids)
 
     @staticmethod
     def features(stats: list[dict]) -> list[float]:
@@ -72,11 +85,19 @@ class DeepRLPolicy:
         ]
 
     def record(self, state: list[float], action_id: str, reward_cents: int,
-               next_state: list[float], done: bool = False) -> str:
+               next_state: list[float], done: bool = False,
+               external_id: str | None = None) -> str:
         if action_id not in self.action_ids:
             raise ValueError("Unknown action")
         if len(state) != self.input_size or len(next_state) != self.input_size:
             raise ValueError("Unexpected state width")
+        if external_id:
+            row = self.store.db.execute(
+                "SELECT payload FROM events WHERE external_id=?", (external_id,)
+            ).fetchone()
+            if row:
+                return json.loads(row["payload"])["experience_id"]
+
         item_id = str(uuid.uuid4())
         with self.store.db:
             self.store.db.execute(
@@ -85,9 +106,11 @@ class DeepRLPolicy:
                  reward_cents / 100.0, json.dumps(next_state), 1 if done else 0),
             )
             self.store._event("rl_experience_recorded", {
-                "experience_id": item_id, "action_id": action_id,
-                "reward_cents": reward_cents, "done": bool(done),
-            })
+                "experience_id": item_id,
+                "action_id": action_id,
+                "reward_cents": reward_cents,
+                "done": bool(done),
+            }, external_id)
         return item_id
 
     def count(self) -> int:
@@ -103,7 +126,56 @@ class DeepRLPolicy:
             out.append(self.b2[a] + sum(hidden[j] * self.w2[j][a] for j in range(self.hidden)))
         return hidden, out
 
-    def train(self, epochs: int = 20, learning_rate: float = 0.01) -> dict:
+    def snapshot(self, final_mse: float | None = None) -> dict:
+        payload = {
+            "w1": self.w1,
+            "b1": self.b1,
+            "w2": self.w2,
+            "b2": self.b2,
+        }
+        snapshot_id = str(uuid.uuid4())
+        ts = datetime.now(timezone.utc).isoformat()
+        experiences = self.count()
+        with self.store.db:
+            self.store.db.execute(
+                """INSERT INTO rl_policy_snapshot
+                   (id,ts,policy_version,action_ids_json,hidden,gamma,weights_json,experiences,final_mse)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                (snapshot_id, ts, self.POLICY_VERSION, json.dumps(self.action_ids),
+                 self.hidden, self.gamma, json.dumps(payload), experiences, final_mse),
+            )
+            self.store._event("rl_policy_snapshot_saved", {
+                "snapshot_id": snapshot_id,
+                "policy_version": self.POLICY_VERSION,
+                "experiences": experiences,
+                "final_mse": final_mse,
+            })
+        return {
+            "snapshot_id": snapshot_id,
+            "policy_version": self.POLICY_VERSION,
+            "experiences": experiences,
+            "final_mse": final_mse,
+        }
+
+    def load_latest(self) -> bool:
+        row = self.store.db.execute(
+            "SELECT * FROM rl_policy_snapshot ORDER BY ts DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return False
+        action_ids = json.loads(row["action_ids_json"])
+        if action_ids != self.action_ids or row["hidden"] != self.hidden:
+            return False
+        weights = json.loads(row["weights_json"])
+        self.w1 = weights["w1"]
+        self.b1 = weights["b1"]
+        self.w2 = weights["w2"]
+        self.b2 = weights["b2"]
+        self.gamma = float(row["gamma"])
+        return True
+
+    def train(self, epochs: int = 20, learning_rate: float = 0.01,
+              save_snapshot: bool = True) -> dict:
         n = self.count()
         if n < self.min_experiences:
             raise InsufficientExperience(f"need {self.min_experiences} experiences, have {n}")
@@ -134,13 +206,17 @@ class DeepRLPolicy:
                         self.w1[i][j] -= learning_rate * grad_hidden * state[i]
                     self.b1[j] -= learning_rate * grad_hidden
             losses.append(epoch_loss / len(rows))
+
+        final_mse = round(losses[-1], 6)
         result = {
-            "policy_version": "tiny-dqn-v1",
+            "policy_version": self.POLICY_VERSION,
             "experiences": n,
             "epochs": epochs,
-            "final_mse": round(losses[-1], 6),
+            "final_mse": final_mse,
         }
         self.store.record_event("rl_training_completed", result)
+        if save_snapshot:
+            result["snapshot"] = self.snapshot(final_mse)
         return result
 
     def select(self, state: list[float], epsilon: float = 0.05, seed: int | None = None) -> dict:
@@ -157,7 +233,7 @@ class DeepRLPolicy:
             index = max(range(len(q)), key=lambda i: (q[i], -i))
             method = "exploit"
         result = {
-            "policy_version": "tiny-dqn-v1",
+            "policy_version": self.POLICY_VERSION,
             "method": method,
             "action_id": self.action_ids[index],
             "q_values": {aid: round(value, 6) for aid, value in zip(self.action_ids, q)},

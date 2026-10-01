@@ -7,6 +7,8 @@ from http.server import HTTPServer
 from pathlib import Path
 
 from .assetgen import AssetGenerator
+from .autonomy import AutonomyEngine
+from .deeprl import DeepRLPolicy
 from .core import Store, load_personas
 from .memory import KnowledgeBase
 from .moa import MixtureOfAgents
@@ -97,6 +99,25 @@ def main(argv=None):
     moa.add_argument("objective")
     moa.add_argument("--persona")
 
+    auto = sub.add_parser("autonomy-cycle")
+    auto.add_argument("objective")
+    auto.add_argument("--theme", required=True)
+    auto.add_argument("--channel", required=True)
+    auto.add_argument("--offer", required=True)
+    auto.add_argument("--scene", default="")
+    auto.add_argument("--seed", type=int)
+    auto.add_argument("--cost-cents", type=int, default=0)
+
+    settle = sub.add_parser("autonomy-settle")
+    settle.add_argument("cycle_id")
+    settle.add_argument("--done", action="store_true")
+
+    rltrain = sub.add_parser("rl-train")
+    rltrain.add_argument("--epochs", type=int, default=20)
+    rltrain.add_argument("--learning-rate", type=float, default=0.01)
+
+    sub.add_parser("rl-status")
+
     args = parser.parse_args(argv)
     personas = load_personas(args.personas)
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
@@ -184,6 +205,47 @@ def main(argv=None):
                 if persona is None:
                     parser.error("Unknown persona")
             output = MixtureOfAgents(AzureChatProvider(), store).deliberate(args.objective, persona)
+        elif args.command == "autonomy-cycle":
+            engine = AutonomyEngine(
+                store,
+                personas,
+                MixtureOfAgents(AzureChatProvider(), store),
+                AssetGenerator(store, provider=LocalDreamProvider()),
+            )
+            output = engine.run_cycle(
+                args.objective,
+                args.theme,
+                args.channel,
+                args.offer,
+                scene=args.scene,
+                seed=args.seed,
+                cost_cents=args.cost_cents,
+            )
+        elif args.command == "autonomy-settle":
+            engine = AutonomyEngine(
+                store,
+                personas,
+                MixtureOfAgents(AzureChatProvider(), store),
+                AssetGenerator(store, provider=LocalDreamProvider()),
+            )
+            output = engine.settle_cycle(args.cycle_id, done=args.done)
+        elif args.command == "rl-train":
+            policy = DeepRLPolicy(store, [p["id"] for p in personas])
+            output = policy.train(
+                epochs=args.epochs,
+                learning_rate=args.learning_rate,
+            )
+        elif args.command == "rl-status":
+            policy = DeepRLPolicy(store, [p["id"] for p in personas])
+            row = store.db.execute(
+                "SELECT * FROM rl_policy_snapshot ORDER BY ts DESC LIMIT 1"
+            ).fetchone()
+            output = {
+                "experiences": policy.count(),
+                "minimum_experiences": policy.min_experiences,
+                "ready": policy.count() >= policy.min_experiences,
+                "latest_snapshot": dict(row) if row else None,
+            }
         print(json.dumps(output, indent=2, ensure_ascii=False))
     finally:
         store.close()
