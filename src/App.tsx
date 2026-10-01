@@ -35,6 +35,16 @@ export default function App() {
   const [runtimePolicy, setRuntimePolicy] = useState<any | null>(null);
   const [rlStatus, setRlStatus] = useState<any | null>(null);
   const [autopilotStatus, setAutopilotStatus] = useState<any | null>(null);
+  const [doctorStatus, setDoctorStatus] = useState<any | null>(null);
+  const [autopilotForm, setAutopilotForm] = useState({
+    objective: 'Choose the next measurable content experiment that maximizes attributable net revenue',
+    channel: 'Instagram',
+    offer: 'affiliate',
+    variants: 3,
+    cost_cents_per_asset: 0,
+    seed: '',
+  });
+  const [autopilotResult, setAutopilotResult] = useState<any | null>(null);
   const [controlBusy, setControlBusy] = useState(false);
   const [controlError, setControlError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -49,7 +59,7 @@ export default function App() {
 
   const fetchData = async () => {
     try {
-      const [pRes, cRes, sRes, rRes, eRes, mRes, schRes, policyRes, rlRes, autopilotRes] = await Promise.all([
+      const [pRes, cRes, sRes, rRes, eRes, mRes, schRes, policyRes, rlRes, autopilotRes, doctorRes] = await Promise.all([
         fetch('/api/personas').then(r => r.json()),
         fetch('/api/candidates').then(r => r.json()),
         fetch('/api/stats').then(r => r.json()),
@@ -60,6 +70,7 @@ export default function App() {
         fetch('/api/runtime-policy').then(r => r.json()),
         fetch('/api/rl/status').then(r => r.json()),
         fetch('/api/autopilot/status').then(r => r.json()),
+        fetch('/api/doctor').then(r => r.json()),
       ]);
       setPersonas(pRes || []);
       setCandidates(cRes || []);
@@ -71,6 +82,7 @@ export default function App() {
       setRuntimePolicy(policyRes?.error ? null : policyRes);
       setRlStatus(rlRes?.error ? null : rlRes);
       setAutopilotStatus(autopilotRes?.error ? null : autopilotRes);
+      setDoctorStatus(doctorRes?.error ? null : doctorRes);
     } catch (err) {
       console.error('Error fetching data:', err);
     } finally {
@@ -233,6 +245,30 @@ export default function App() {
       await fetchData();
     } catch (err: any) {
       setControlError(err.message || 'RL training failed');
+    } finally {
+      setControlBusy(false);
+    }
+  };
+
+  const handleAutopilotRun = async () => {
+    setControlBusy(true);
+    setControlError('');
+    setAutopilotResult(null);
+    try {
+      const res = await fetch('/api/autopilot/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...autopilotForm,
+          seed: autopilotForm.seed === '' ? null : Number(autopilotForm.seed),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Autopilot run failed');
+      setAutopilotResult(data);
+      await fetchData();
+    } catch (err: any) {
+      setControlError(err.message || 'Autopilot run failed');
     } finally {
       setControlBusy(false);
     }
@@ -940,6 +976,25 @@ export default function App() {
               </div>
             </div>
 
+            {doctorStatus && (
+              <div className={`p-4 rounded-2xl border ${doctorStatus.healthy ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-rose-500/10 border-rose-500/30'}`}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-wider text-gray-300">Operations Doctor</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      DB {doctorStatus.integrity?.quick_check} · {doctorStatus.counts?.events || 0} events · {doctorStatus.counts?.knowledge_unembedded || 0} unembedded knowledge items
+                    </div>
+                  </div>
+                  <span className={`text-xs font-mono px-2 py-1 rounded border ${doctorStatus.healthy ? 'text-emerald-300 border-emerald-500/30' : 'text-rose-300 border-rose-500/30'}`}>
+                    {doctorStatus.healthy ? 'healthy' : 'attention required'}
+                  </span>
+                </div>
+                {doctorStatus.warnings?.length > 0 && (
+                  <div className="text-xs text-amber-300 mt-2 font-mono">Warnings: {doctorStatus.warnings.join(', ')}</div>
+                )}
+              </div>
+            )}
+
             {autopilotStatus && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-[#1b1526] p-4 rounded-2xl border border-[#362a4a]">
@@ -1043,6 +1098,36 @@ export default function App() {
             )}
 
             {controlError && <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono">{controlError}</div>}
+
+            <div className="bg-[#1b1526] p-6 rounded-2xl border border-[#362a4a] space-y-4">
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Guarded Autopilot Launch</h3>
+                <p className="text-xs text-gray-400 mt-1">Uses the active budget and review-queue limits. External Azure/local-dream calls occur only when you run it.</p>
+              </div>
+              <textarea
+                rows={3}
+                value={autopilotForm.objective}
+                onChange={(e) => setAutopilotForm({ ...autopilotForm, objective: e.target.value })}
+                className="w-full bg-[#120e1a] border border-[#3b2e52] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-pink-500"
+              />
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                <input value={autopilotForm.channel} onChange={(e) => setAutopilotForm({ ...autopilotForm, channel: e.target.value })} placeholder="Channel" className="bg-[#120e1a] border border-[#3b2e52] rounded-lg px-2 py-2 text-xs text-white" />
+                <input value={autopilotForm.offer} onChange={(e) => setAutopilotForm({ ...autopilotForm, offer: e.target.value })} placeholder="Offer" className="bg-[#120e1a] border border-[#3b2e52] rounded-lg px-2 py-2 text-xs text-white" />
+                <input type="number" min="2" max="6" value={autopilotForm.variants} onChange={(e) => setAutopilotForm({ ...autopilotForm, variants: Number(e.target.value) })} aria-label="Variants" className="bg-[#120e1a] border border-[#3b2e52] rounded-lg px-2 py-2 text-xs text-white" />
+                <input type="number" min="0" value={autopilotForm.cost_cents_per_asset} onChange={(e) => setAutopilotForm({ ...autopilotForm, cost_cents_per_asset: Number(e.target.value) })} aria-label="Cost cents per asset" className="bg-[#120e1a] border border-[#3b2e52] rounded-lg px-2 py-2 text-xs text-white" />
+                <input type="number" value={autopilotForm.seed} onChange={(e) => setAutopilotForm({ ...autopilotForm, seed: e.target.value })} placeholder="Seed optional" className="bg-[#120e1a] border border-[#3b2e52] rounded-lg px-2 py-2 text-xs text-white" />
+              </div>
+              <button
+                onClick={handleAutopilotRun}
+                disabled={controlBusy || !autopilotForm.objective.trim() || !autopilotForm.channel.trim() || !autopilotForm.offer.trim()}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 disabled:opacity-40 text-white text-xs font-bold"
+              >
+                {controlBusy ? 'Running guarded cycle…' : 'Run Guarded Autopilot Cycle'}
+              </button>
+              {autopilotResult && (
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-[11px] font-mono bg-[#100c17] border border-[#292038] rounded-xl p-3 text-gray-300">{JSON.stringify(autopilotResult, null, 2)}</pre>
+              )}
+            </div>
 
             <div className="bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-transparent p-6 rounded-2xl border border-amber-500/30">
               <div className="text-xs text-amber-400 font-bold uppercase tracking-wider mb-1">Next Candidate Allocation Pick</div>
