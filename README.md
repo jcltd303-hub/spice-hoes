@@ -22,7 +22,7 @@ python3 -m spicecore.cli serve
 
 ## RAG knowledge base
 
-Only approved knowledge is retrieved by the MoA path. Every inserted item and every deliberation is logged.
+Only approved knowledge is retrieved by the MoA path. Retrieval is lexical by default and upgrades to hybrid lexical + semantic search when an Azure embedding deployment is configured. Stored embeddings retain their model identifier so old knowledge can be backfilled or re-embedded deliberately. Every inserted item and every deliberation is logged.
 
 ```bash
 python3 -m spicecore.cli knowledge-add \
@@ -33,6 +33,16 @@ python3 -m spicecore.cli knowledge-add \
 
 python3 -m spicecore.cli knowledge-search "mirror outfits conversion"
 ```
+
+Optional semantic retrieval:
+
+```bash
+export AZURE_OPENAI_EMBEDDING_DEPLOYMENT='YOUR-EMBEDDING-DEPLOYMENT'
+python3 -m spicecore.cli knowledge-backfill
+python3 -m spicecore.cli knowledge-search "fashion garment performance"
+```
+
+If the embedding deployment is not configured, the same commands continue using deterministic lexical retrieval.
 
 ## Mixture of Agents on Azure
 
@@ -94,7 +104,7 @@ Azure is the text-reasoning lane; local-dream on the S24 is the image lane. Prov
 
 ## DeepRL
 
-`spicecore.deeprl.DeepRLPolicy` implements a small one-hidden-layer DQN-style value network over portfolio state. It stores explicit state/action/reward/next-state transitions in SQLite and is deliberately gated by `min_experiences` (128 by default). Until the replay buffer reaches that threshold, the existing contextual bandit remains the allocation policy.
+`spicecore.deeprl.DeepRLPolicy` implements a small one-hidden-layer DQN-style value network over portfolio state. It stores explicit state/action/reward/next-state transitions in SQLite, persists versioned policy snapshots across process restarts, and is deliberately gated by `min_experiences` (128 by default). Until the replay buffer reaches that threshold, the existing contextual bandit remains the allocation policy.
 
 That gate is intentional: the project does not call sparse early observations “DeepRL.” Once enough transitions exist, training and decisions are themselves recorded as `rl_training_completed` and `rl_policy_decision` events.
 
