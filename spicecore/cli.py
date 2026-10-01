@@ -159,6 +159,7 @@ def main(argv=None):
     outcome.add_argument('--amount-cents', type=int, default=0)
     outcome.add_argument('--external-id')
     args = parser.parse_args(argv)
+    output = None
     personas = load_personas(args.personas)
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
     store = Store(args.db)
@@ -264,6 +265,8 @@ def main(argv=None):
             output = store.publish(args.candidate_id, args.url)
         elif args.command == 'outcome':
             output = store.record_outcome(args.candidate_id, args.kind, args.amount_cents, args.external_id)
+        if output is None:
+            raise RuntimeError(f"Command dispatch produced no output: {args.command}")
         print(json.dumps(output, indent=2, ensure_ascii=False))
     finally:
         store.close()
