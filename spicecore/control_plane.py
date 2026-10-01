@@ -18,6 +18,7 @@ from .autopilot import CoreAutopilot
 from .core import Store, load_personas
 from .deeprl import DeepRLPolicy
 from .experiments import ExperimentPlanner
+from .media.repository import MediaJobRepository
 from .memory import KnowledgeBase
 from .moa import MixtureOfAgents
 from .operations import Operations
@@ -288,6 +289,42 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
             str(payload.get("theme", "")),
             str(payload.get("channel", "")),
             int(payload["seed"]) if payload.get("seed") is not None else None,
+        )
+
+    if action == "media_jobs":
+        status = str(payload.get("status", "")).strip() or None
+        return MediaJobRepository(store).list(status=status)
+
+    if action == "media_create":
+        candidate_id = str(payload.get("candidate_id", ""))
+        candidate = store.candidate(candidate_id)
+        persona_id = str(payload.get("persona_id", ""))
+        if candidate["persona_id"] != persona_id:
+            raise ValueError("media job persona_id does not match candidate")
+        source_asset_uri = str(payload.get("source_asset_uri") or candidate.get("asset_uri") or "").strip()
+        if not source_asset_uri:
+            raise ValueError("source_asset_uri is required")
+        script = str(payload.get("script", "")).strip()
+        if not script:
+            raise ValueError("script is required")
+        return MediaJobRepository(store).create(
+            persona_id=persona_id,
+            candidate_id=candidate_id,
+            source_asset_uri=source_asset_uri,
+            script=script,
+            aspect_ratio=str(payload.get("aspect_ratio", "9:16")),
+            soundtrack=payload.get("soundtrack"),
+            cta=payload.get("cta"),
+            offer=payload.get("offer") or candidate.get("offer"),
+            product_id=payload.get("product_id"),
+        )
+
+    if action == "media_review":
+        return MediaJobRepository(store).review(
+            str(payload.get("media_job_id", "")),
+            str(payload.get("decision", "")),
+            str(payload.get("reviewer", "")),
+            str(payload.get("note", "")),
         )
 
     if action == "knowledge":
