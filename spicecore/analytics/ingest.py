@@ -46,10 +46,14 @@ class AnalyticsIngestor:
                 # Record impressions if > 0
                 if metrics.impressions > 0:
                     try:
-                        self.store.record_outcome(
-                            cid=metrics.candidate_id,
-                            kind="impression",
-                            amount_cents=0,
+                        self.store.record_event(
+                            "impression",
+                            {
+                                "candidate_id": metrics.candidate_id,
+                                "persona_id": metrics.persona_id,
+                                "amount_cents": 0,
+                                "count": int(metrics.impressions),
+                            },
                             external_id=f"{metrics.external_id}_imp",
                         )
                     except Exception as err:
@@ -58,10 +62,14 @@ class AnalyticsIngestor:
                 # Record clicks if > 0
                 if metrics.link_clicks > 0:
                     try:
-                        self.store.record_outcome(
-                            cid=metrics.candidate_id,
-                            kind="click",
-                            amount_cents=0,
+                        self.store.record_event(
+                            "click",
+                            {
+                                "candidate_id": metrics.candidate_id,
+                                "persona_id": metrics.persona_id,
+                                "amount_cents": 0,
+                                "count": int(metrics.link_clicks),
+                            },
                             external_id=f"{metrics.external_id}_clk",
                         )
                     except Exception as err:
