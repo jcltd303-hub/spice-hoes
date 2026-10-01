@@ -36,7 +36,7 @@ def main(argv=None):
     scene.add_argument('--persona', default='celeste_vale')
     scene.add_argument('--output')
     scene.add_argument('--seed', type=int, default=100)
-    scene.add_argument('--denoise', type=float, default=0.35)
+    scene.add_argument('--denoise', type=float, default=0.45)
     scene.add_argument('--server-url')
     scene.add_argument('--reference-dir', default='identity/references')
     sel = sub.add_parser('select-identity')
