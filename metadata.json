@@ -1,0 +1,8 @@
+{
+  "name": "Spice Hoes Experiment & Review Desk",
+  "description": "Autonomous AI influencer experimentation platform, persona dossier registry, human-in-the-loop review desk, and contextual bandit decision ledger.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
