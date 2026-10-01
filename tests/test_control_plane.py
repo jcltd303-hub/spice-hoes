@@ -142,6 +142,14 @@ class ControlPlaneTests(unittest.TestCase):
         )
         self.assertEqual(hits[0]["id"], item["id"])
 
+    def test_doctor_reports_integrity_and_backlogs(self):
+        result = dispatch("doctor", {}, self.store, self.personas)
+        self.assertTrue(result["integrity"]["healthy"])
+        self.assertEqual(result["counts"]["candidates_total"], 0)
+        self.assertEqual(result["counts"]["pending_review"], 0)
+        self.assertIn("rl", result)
+        self.assertEqual(result["warnings"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
