@@ -280,6 +280,42 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
 
     if action == "autopilot_run":
         runtime = RuntimePolicy(store).current()["values"]
+        objective = str(payload.get("objective", ""))
+        channel = str(payload.get("channel", ""))
+        offer = str(payload.get("offer", ""))
+        variants = int(payload.get("variants", 3))
+        cost_cents_per_asset = int(payload.get("cost_cents_per_asset", 0))
+        seed = int(payload["seed"]) if payload.get("seed") is not None else None
+
+        preflight_engine = CoreAutopilot(
+            store,
+            personas,
+            None,
+            None,
+            None,
+            min_experiences=runtime["rl_min_experiences"],
+        )
+        gate = preflight_engine.preflight(
+            objective,
+            channel,
+            offer,
+            variant_count=variants,
+            cost_cents_per_asset=cost_cents_per_asset,
+            max_pending_review=runtime["max_pending_review"],
+            daily_budget_cents=runtime["daily_budget_cents"],
+        )
+        if not gate["allowed"]:
+            return preflight_engine.run_once(
+                objective,
+                channel,
+                offer,
+                variant_count=variants,
+                seed=seed,
+                cost_cents_per_asset=cost_cents_per_asset,
+                max_pending_review=runtime["max_pending_review"],
+                daily_budget_cents=runtime["daily_budget_cents"],
+            )
+
         provider = AzureChatProvider()
         planner = ExperimentPlanner(provider, store)
         engine = CoreAutopilot(
@@ -291,12 +327,12 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
             min_experiences=runtime["rl_min_experiences"],
         )
         return engine.run_once(
-            str(payload.get("objective", "")),
-            str(payload.get("channel", "")),
-            str(payload.get("offer", "")),
-            variant_count=int(payload.get("variants", 3)),
-            seed=(int(payload["seed"]) if payload.get("seed") is not None else None),
-            cost_cents_per_asset=int(payload.get("cost_cents_per_asset", 0)),
+            objective,
+            channel,
+            offer,
+            variant_count=variants,
+            seed=seed,
+            cost_cents_per_asset=cost_cents_per_asset,
             max_pending_review=runtime["max_pending_review"],
             daily_budget_cents=runtime["daily_budget_cents"],
         )
