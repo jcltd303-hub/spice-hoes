@@ -30,7 +30,7 @@ class MoATests(unittest.TestCase):
         provider = FakeProvider()
         moa = MixtureOfAgents(provider, self.store)
         moa.knowledge.add("guide", "Revenue", "Track attributable net revenue and retention.", ["metrics"])
-        result = moa.deliberate("Choose the next measurable content experiment", {"id": "zara", "age": 29})
+        result = moa.deliberate("Choose the next measurable content experiment for net revenue and retention", {"id": "zara", "age": 29})
         self.assertEqual(result["architecture"], "moa-v1")
         self.assertEqual(len(result["experts"]), 4)
         self.assertEqual(len(provider.calls), 5)
