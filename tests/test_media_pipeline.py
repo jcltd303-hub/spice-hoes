@@ -8,7 +8,7 @@ from spicecore.media.models import MediaJob, RenderState
 from spicecore.media.pipeline import MediaPipeline
 from spicecore.media.providers.lipsync import MockLipSyncProvider
 from spicecore.media.providers.video import MockVideoProvider
-from spicecore.media.providers.voice import MockVoiceProvider, ElevenLabsVoiceProvider
+from spicecore.media.providers.voice import MockVoiceProvider, ElevenLabsVoiceProvider, VoiceProfile
 from spicecore.media.providers.video import LumaVideoProvider
 from spicecore.media.providers.lipsync import SyncLabsLipSyncProvider
 
@@ -119,19 +119,7 @@ class TestMediaPipeline(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             ElevenLabsVoiceProvider(api_key="configured").synthesize(
                 "hello",
-                self.pipeline.create_job(
-                    persona_id="zara_voss",
-                    candidate_id="cand",
-                    source_asset_uri="x.jpg",
-                    script="hello",
-                ).voice_profile and __import__("spicecore.media.providers.voice", fromlist=["VoiceProfile"]).VoiceProfile.from_dict(
-                    self.pipeline.create_job(
-                        persona_id="zara_voss",
-                        candidate_id="cand2",
-                        source_asset_uri="x.jpg",
-                        script="hello",
-                    ).voice_profile
-                )
+                VoiceProfile(persona_id="zara_voss", voice_profile_id="test"),
             )
         with self.assertRaises(RuntimeError):
             SyncLabsLipSyncProvider(api_key="configured").sync("video.mp4", "audio.wav")
