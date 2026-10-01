@@ -282,3 +282,16 @@ class LocalDreamProvider:
             self._headers(),
             timeout=120,
         )
+
+    def score_quality(self, image_base64: str, image_mime_type: str,
+                      channel: str = "") -> dict:
+        return _post_json(
+            f"{self.base_url}/quality/score",
+            {
+                "image_base64": image_base64,
+                "image_mime_type": image_mime_type,
+                "channel": channel,
+            },
+            self._headers(),
+            timeout=120,
+        )
