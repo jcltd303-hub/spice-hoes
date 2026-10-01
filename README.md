@@ -156,6 +156,31 @@ python3 -m spicecore.cli engagement-outbox
 
 The draft policy keeps the fictional persona transparent: it must not claim to be a real human, pressure users to spend, imply spending proves affection, or request card/banking details. The approved outbox is intentionally separate from any platform send adapter.
 
+## Offer economics and commerce attribution
+
+Offers are first-class records with explicit type, expected payout, variable commerce cost, active state, and USD-denominated unit economics. Candidates can be linked to an offer with a unique tracking token.
+
+```bash
+python3 -m spicecore.cli offer-create \
+  --name "Travel Tote Affiliate" \
+  --kind affiliate \
+  --expected-payout-cents 900 \
+  --variable-cost-cents 100
+
+python3 -m spicecore.cli offer-register CANDIDATE_ID OFFER_ID \
+  --url https://shop.example/item
+
+python3 -m spicecore.cli offer-event TRACKING_TOKEN click \
+  --external-id click-123
+
+python3 -m spicecore.cli offer-event TRACKING_TOKEN purchase \
+  --external-id order-456
+
+python3 -m spicecore.cli offer-performance OFFER_ID
+```
+
+Purchase events can use the offer's configured expected payout when no amount is supplied. Variable commerce cost is recorded separately from distribution spend and flows into persona stats, experiment results, and RL reward. External event IDs keep imports idempotent. The current monetary ledger is intentionally USD-only until explicit multi-currency conversion is added.
+
 ## Reviewed publish/outcome loop
 
 ```bash

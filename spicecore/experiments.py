@@ -225,6 +225,7 @@ class ExperimentPlanner:
                 "revenue_cents": 0,
                 "refund_cents": 0,
                 "distribution_cost_cents": 0,
+                "commerce_cost_cents": 0,
                 "generation_cost_cents": 0,
                 "net_cents": 0,
             }
@@ -235,7 +236,7 @@ class ExperimentPlanner:
                 metrics["generation_cost_cents"] = int(candidate["cost_cents"])
                 rows = self.store.db.execute(
                     """SELECT kind,payload FROM events
-                       WHERE kind IN ('impression','click','purchase','refund','distribution_cost')"""
+                       WHERE kind IN ('impression','click','purchase','refund','distribution_cost','commerce_cost')"""
                 ).fetchall()
                 for row in rows:
                     payload = json.loads(row["payload"])
@@ -253,10 +254,13 @@ class ExperimentPlanner:
                         metrics["refund_cents"] += amount
                     elif kind == "distribution_cost":
                         metrics["distribution_cost_cents"] += amount
+                    elif kind == "commerce_cost":
+                        metrics["commerce_cost_cents"] += amount
                 metrics["net_cents"] = (
                     metrics["revenue_cents"]
                     - metrics["refund_cents"]
                     - metrics["distribution_cost_cents"]
+                    - metrics["commerce_cost_cents"]
                     - metrics["generation_cost_cents"]
                 )
 
