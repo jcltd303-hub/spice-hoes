@@ -65,15 +65,11 @@ class TikTokPublisher(Publisher):
         now_iso = datetime.now(timezone.utc).isoformat()
 
         if not self.access_token:
-            # Synthetic / test mode when API key is not configured
-            post_id = f"tt_{idempotency_key.replace(':', '_') if idempotency_key else uuid.uuid4().hex[:10]}"
             return PublishResult(
-                success=True,
+                success=False,
                 platform="tiktok",
-                external_post_id=post_id,
-                canonical_url=f"https://www.tiktok.com/@{account_id}/video/{post_id}",
-                published_at=now_iso,
-                response_metadata={"mode": "simulated", "disclosure_applied": True},
+                error_message="TIKTOK_ACCESS_TOKEN is not configured",
+                retryable=False,
             )
 
         try:
@@ -124,7 +120,7 @@ class TikTokPublisher(Publisher):
 
     def delete(self, external_post_id: str, account_id: str) -> bool:
         if not self.access_token:
-            return True
+            return False
         try:
             self._http_request(f"post/delete/?video_id={external_post_id}", method="DELETE")
             return True
@@ -133,20 +129,7 @@ class TikTokPublisher(Publisher):
 
     def fetch_metrics(self, external_post_id: str, account_id: str) -> PlatformMetrics:
         if not self.access_token:
-            return PlatformMetrics(
-                platform="tiktok",
-                post_id=external_post_id,
-                impressions=2400,
-                views=2150,
-                watch_time_ms=19350000,
-                completion_rate=0.74,
-                likes=310,
-                comments=42,
-                shares=38,
-                saves=85,
-                profile_visits=64,
-                link_clicks=29,
-            )
+            raise RuntimeError("TIKTOK_ACCESS_TOKEN is not configured")
 
         try:
             payload = {"filters": {"video_ids": [external_post_id]}}
