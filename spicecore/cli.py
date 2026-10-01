@@ -23,6 +23,7 @@ from .policy import recommend
 from .providers import OpenAICompatibleChatProvider, OpenAICompatibleEmbeddingProvider, LocalDreamProvider, ProviderError
 from .web import make_handler
 from .workflow import build_briefs
+from .ui import SpiceUI
 
 
 def _optional_embedder():
@@ -70,6 +71,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="spicecore")
     parser.add_argument("--db", default="data/experiments.sqlite")
     parser.add_argument("--personas", default="personas")
+    parser.add_argument("--json", action="store_true", help="machine-readable JSON output")
+    parser.add_argument("--no-color", action="store_true", help="disable terminal color")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init")
     sub.add_parser("personas")
@@ -263,6 +266,8 @@ def main(argv=None):
     pset.add_argument("--note", default="")
 
     args = parser.parse_args(argv)
+    ui = SpiceUI(force_json=args.json, no_color=args.no_color)
+    ui.header(args.command)
     personas = load_personas(args.personas)
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
     store = Store(args.db)
@@ -341,7 +346,7 @@ def main(argv=None):
         elif args.command == "knowledge-backfill":
             embedder = _optional_embedder()
             if embedder is None:
-                parser.error("AZURE_OPENAI_EMBEDDING_DEPLOYMENT is not configured")
+                parser.error("MOA_EMBEDDING_MODEL is not configured")
             output = KnowledgeBase(store, embedder=embedder).backfill_embeddings(limit=args.limit)
         elif args.command == "moa":
             persona = None
@@ -449,7 +454,9 @@ def main(argv=None):
                 _asset_generator(store),
                 min_experiences=values["rl_min_experiences"],
             )
-            output = engine.run_once(
+            ui.start_progress("Starting autopilot")
+            try:
+                output = engine.run_once(
                 args.objective,
                 args.channel,
                 args.offer,
@@ -466,7 +473,10 @@ def main(argv=None):
                     if args.daily_budget_cents is not None
                     else values["daily_budget_cents"]
                 ),
-            )
+                progress=ui.update_progress,
+                )
+            finally:
+                ui.stop_progress()
         elif args.command == "autopilot-settle":
             values = _runtime_values(store)
             provider = OpenAICompatibleChatProvider()
@@ -590,7 +600,7 @@ def main(argv=None):
             output = Operations(store, personas).doctor()
         elif args.command == "backup":
             output = Operations(store, personas).backup(args.destination)
-        print(json.dumps(output, indent=2, ensure_ascii=False))
+        ui.result(output, args.command)
     finally:
         store.close()
 
