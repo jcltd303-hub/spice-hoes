@@ -1,0 +1,166 @@
+name: Build Face Embedding QNN
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/face-embedding-qnn.yml"
+      - "internal/identity/**"
+      - "internal/nativecore/**"
+      - "cmd/spicemedia/**"
+
+permissions:
+  contents: read
+
+env:
+  QAIRT_VERSION: "2.50.40.260831"
+  QAIRT_URL: "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.50.40.260831/v2.50.40.260831.zip"
+  BUFFALO_URL: "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip"
+  ARCFACE_SHA256: "4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Qualcomm AI Runtime SDK
+        id: cache-qairt
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/qairt
+          key: qairt-${{ runner.os }}-${{ env.QAIRT_VERSION }}
+
+      - name: Download Qualcomm AI Runtime SDK
+        if: steps.cache-qairt.outputs.cache-hit != 'true'
+        run: |
+          rm -rf "$RUNNER_TEMP/qairt"
+          mkdir -p "$RUNNER_TEMP/qairt"
+          curl --fail --location --retry 4 --retry-delay 5 "$QAIRT_URL" -o "$RUNNER_TEMP/qairt.zip"
+          unzip -q "$RUNNER_TEMP/qairt.zip" -d "$RUNNER_TEMP/qairt"
+
+      - name: Locate QNN SDK
+        run: |
+          QNN_INCLUDE="$(find "$RUNNER_TEMP/qairt" -type d -path '*/include/QNN' -print -quit)"
+          test -n "$QNN_INCLUDE"
+          QNN_SDK_ROOT="$(dirname "$(dirname "$QNN_INCLUDE")")"
+          echo "QNN_SDK_ROOT=$QNN_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$QNN_SDK_ROOT/bin/x86_64-linux-clang" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install converter Python dependencies
+        run: python -m pip install numpy onnx onnxruntime
+
+      - name: Download official InsightFace buffalo_l ArcFace model
+        run: |
+          mkdir -p work
+          curl --fail --location --retry 4 "$BUFFALO_URL" -o work/buffalo_l.zip
+          unzip -q work/buffalo_l.zip -d work/buffalo
+          test -s work/buffalo/w600k_r50.onnx
+          echo "$ARCFACE_SHA256  work/buffalo/w600k_r50.onnx" | sha256sum -c -
+
+      - name: Inspect ArcFace ONNX contract
+        run: |
+          python - <<'PY' > work/contract.env
+          import onnx
+          m=onnx.load("work/buffalo/w600k_r50.onnx")
+          inp=m.graph.input[0]
+          out=m.graph.output[0]
+          print("INPUT_NAME="+inp.name)
+          print("OUTPUT_NAME="+out.name)
+          dims=[d.dim_value for d in inp.type.tensor_type.shape.dim]
+          print("INPUT_DIMS="+",".join(str(x) for x in dims))
+          odims=[d.dim_value for d in out.type.tensor_type.shape.dim]
+          print("OUTPUT_DIMS="+",".join(str(x) for x in odims))
+          PY
+          cat work/contract.env
+          . work/contract.env
+          test "$INPUT_DIMS" = "1,3,112,112"
+          case "$OUTPUT_DIMS" in
+            1,512|512) ;;
+            *) echo "::error::Unexpected ArcFace output dims: $OUTPUT_DIMS"; exit 1 ;;
+          esac
+
+      - name: Build representative calibration tensors
+        run: |
+          . work/contract.env
+          mkdir -p work/calibration
+          python - <<'PY'
+          import numpy as np, pathlib
+          root=pathlib.Path("work/calibration")
+          rng=np.random.default_rng(20261001)
+          lines=[]
+          for i in range(64):
+              # ArcFace input normalization is (pixel-127.5)/127.5.
+              # Smooth-ish synthetic fields cover the full normalized range
+              # reproducibly without bundling face photographs into CI.
+              x=rng.normal(0.0,0.45,(1,3,112,112)).clip(-1,1).astype(np.float32)
+              p=root/f"cal_{i:03d}.raw"
+              x.tofile(p)
+              lines.append(str(p))
+          (root/"input_list.txt").write_text("\n".join(lines)+"\n")
+          PY
+
+      - name: Convert ArcFace ONNX to quantized QNN
+        run: |
+          set -eu
+          . work/contract.env
+          CONVERTER="$QNN_SDK_ROOT/bin/x86_64-linux-clang/qnn-onnx-converter"
+          if [ ! -f "$CONVERTER" ]; then
+            CONVERTER="$(find "$QNN_SDK_ROOT/bin" -name qnn-onnx-converter -type f -print -quit)"
+          fi
+          test -n "$CONVERTER"
+          python "$CONVERTER"             --input_network work/buffalo/w600k_r50.onnx             --input_dim "$INPUT_NAME" 1,3,112,112             --output_path work/arcface_w600k_r50.cpp             --input_list work/calibration/input_list.txt
+
+      - name: Build host model library
+        run: |
+          GEN="$QNN_SDK_ROOT/bin/x86_64-linux-clang/qnn-model-lib-generator"
+          if [ ! -f "$GEN" ]; then
+            GEN="$(find "$QNN_SDK_ROOT/bin" -name qnn-model-lib-generator -type f -print -quit)"
+          fi
+          test -n "$GEN"
+          python "$GEN"             -c work/arcface_w600k_r50.cpp             -b work/arcface_w600k_r50.bin             -o work/model_libs             -t x86_64-linux-clang
+          test -s work/model_libs/x86_64-linux-clang/libarcface_w600k_r50.so
+
+      - name: Generate Snapdragon v75 HTP context
+        run: |
+          set -eu
+          EXT="$(find "$QNN_SDK_ROOT/lib/x86_64-linux-clang" -name 'libQnnHtpNetRunExtensions.so' -print -quit)"
+          BACKEND="$QNN_SDK_ROOT/lib/x86_64-linux-clang/libQnnHtp.so"
+          CBG="$QNN_SDK_ROOT/bin/x86_64-linux-clang/qnn-context-binary-generator"
+          test -s "$BACKEND"
+          test -x "$CBG"
+          test -s "$EXT"
+          cat > work/htp_v75.json <<EOF
+          {
+            "graphs": [{"graph_names": ["arcface_w600k_r50"], "vtcm_mb": 8}],
+            "devices": [{"htp_arch": "v75"}]
+          }
+          EOF
+          cat > work/backend_ext.json <<EOF
+          {
+            "backend_extensions": {
+              "shared_library_path": "$EXT",
+              "config_file_path": "$(pwd)/work/htp_v75.json"
+            }
+          }
+          EOF
+          mkdir -p work/context
+          "$CBG"             --backend "$BACKEND"             --model work/model_libs/x86_64-linux-clang/libarcface_w600k_r50.so             --binary_file arcface_w600k_r50             --output_dir work/context             --config_file work/backend_ext.json
+          CONTEXT="$(find work/context -type f \( -name 'arcface_w600k_r50*.bin' -o -name 'arcface_w600k_r50*.serialized.bin' \) -print -quit)"
+          test -n "$CONTEXT"
+          mkdir -p artifact/models/face
+          cp "$CONTEXT" artifact/models/face/arcface_w600k_r50.bin
+          cp work/contract.env artifact/models/face/arcface_contract.env
+          echo "$ARCFACE_SHA256" > artifact/models/face/source_onnx_sha256.txt
+
+      - name: Upload face embedding context
+        uses: actions/upload-artifact@v4
+        with:
+          name: spice-arcface-qnn-v75
+          path: artifact/
+          if-no-files-found: error
