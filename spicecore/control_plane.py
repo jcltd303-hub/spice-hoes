@@ -250,6 +250,35 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
             learning_rate=float(payload.get("learning_rate", 0.01)),
         )
 
+    if action == "autopilot_status":
+        from datetime import datetime, timezone
+        runtime = RuntimePolicy(store).current()
+        today = datetime.now(timezone.utc).date().isoformat()
+        pending = int(store.db.execute(
+            "SELECT COUNT(*) FROM candidates WHERE status='proposed'"
+        ).fetchone()[0])
+        spent = int(store.db.execute(
+            "SELECT COALESCE(SUM(cost_cents),0) FROM candidates WHERE substr(created_at,1,10)=?",
+            (today,),
+        ).fetchone()[0])
+        table = store.db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='autopilot_run'"
+        ).fetchone()
+        recent = []
+        if table:
+            rows = store.db.execute(
+                "SELECT id,ts,objective,status,reason,persona_id,plan_id,created_candidates,estimated_cost_cents "
+                "FROM autopilot_run ORDER BY ts DESC LIMIT 10"
+            ).fetchall()
+            recent = [dict(row) for row in rows]
+        return {
+            "pending_review": pending,
+            "max_pending_review": runtime["values"]["max_pending_review"],
+            "spent_today_cents": spent,
+            "daily_budget_cents": runtime["values"]["daily_budget_cents"],
+            "recent_runs": recent,
+        }
+
     if action == "knowledge_add":
         kb = KnowledgeBase(store)
         tags = payload.get("tags") or []
