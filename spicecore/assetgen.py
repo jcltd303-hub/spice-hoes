@@ -130,6 +130,7 @@ class AssetGenerator:
         identity = IdentityGate(
             self.provider, threshold=self.identity_threshold
         ).score(image_bytes, mime, references)
+        quality = self.quality_gate.score(image_bytes, mime, channel)
 
         candidate_id = self.store.propose(
             persona=persona,
