@@ -46,7 +46,7 @@ def main(argv=None):
     lxfer.add_argument('scene_asset')
     lxfer.add_argument('--persona', default='celeste_vale')
     lxfer.add_argument('--output')
-    lxfer.add_argument('--command')
+    lxfer.add_argument('--runner-command')
     lxfer.add_argument('--reference-dir', default='identity/references')
     xfer = sub.add_parser('identity-transfer')
     xfer.add_argument('scene_asset')
@@ -184,7 +184,7 @@ def main(argv=None):
             if persona is None: parser.error('Unknown persona')
             source=Path(args.scene_asset)
             out=args.output or str(source.with_name(source.stem+'-identity-local.png'))
-            output=transfer_identity_local(store,args.persona,args.scene_asset,out,args.command,args.reference_dir,persona)
+            output=transfer_identity_local(store,args.persona,args.scene_asset,out,args.runner_command,args.reference_dir,persona)
         elif args.command == 'identity-transfer':
             persona = next((p for p in personas if p['id'] == args.persona), None)
             if persona is None: parser.error('Unknown persona')
