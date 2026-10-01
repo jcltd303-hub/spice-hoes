@@ -92,6 +92,38 @@ func arcFaceEmbedding(manager *nativecore.Manager, raw []byte) ([]float64,map[st
     return ident.Normalize(vec),meta,alignment,nil
 }
 
+func commandDetect() {
+    payload:=readObject()
+    raw,err:=decodeB64(payload["image_base64"]); if err!=nil { fail(err) }
+    manager:=nativecore.FromEnv()
+    if manager.FaceDetector=="" { fail(fmt.Errorf("SPICE_FACE_DETECT_MODEL is not configured")) }
+
+    prep,err:=ident.SCRFDInput(raw); if err!=nil { fail(err) }
+    ctx,cancel:=context.WithTimeout(context.Background(),2*time.Minute); defer cancel()
+    outputs,meta,err:=manager.Detect(ctx,prep.Tensor); if err!=nil { fail(err) }
+    faces,err:=ident.DecodeSCRFD(outputs,prep,0.5,0.4); if err!=nil { fail(err) }
+
+    result:=make([]map[string]any,0,len(faces))
+    for _,face:=range faces {
+        points:=make([][]float64,0,5)
+        for _,p:=range face.Landmarks {
+            points=append(points,[]float64{p.X,p.Y})
+        }
+        result=append(result,map[string]any{
+            "score":face.Score,
+            "box":[]float64{face.X1,face.Y1,face.X2,face.Y2},
+            "landmarks":points,
+        })
+    }
+    write(map[string]any{
+        "faces":result,
+        "count":len(result),
+        "model":"scrfd-10g-qnn",
+        "npu":true,
+        "latency_ms":meta["latency_ms"],
+    })
+}
+
 func commandEmbed() {
     payload:=readObject()
     raw,err:=decodeB64(payload["image_base64"]); if err!=nil { fail(err) }
@@ -172,10 +204,11 @@ func commandHealth() {
 }
 
 func main() {
-    if len(os.Args)!=2 { fail(fmt.Errorf("usage: spicemedia generate|quality|embed|identity|health")) }
+    if len(os.Args)!=2 { fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|identity|health")) }
     switch os.Args[1] {
     case "generate": commandGenerate()
     case "quality": commandQuality()
+    case "detect": commandDetect()
     case "embed": commandEmbed()
     case "identity": commandIdentity()
     case "health": commandHealth()
