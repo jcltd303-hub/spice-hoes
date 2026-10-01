@@ -68,8 +68,12 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(row["net_cents"], 489)
 
     def test_policy_decision_is_audited(self):
+        baseline = len(self.store.events())
         result = dispatch("recommend", {"seed": 4}, self.store, self.personas)
         self.assertIn(result["persona_id"], {p["id"] for p in self.personas})
+        self.assertEqual(len(self.store.events()), baseline)
+
+        dispatch("recommend", {"seed": 4, "audit": True}, self.store, self.personas)
         self.assertEqual(self.store.events()[-1]["kind"], "policy_decision")
 
     def test_simulation_records_real_outcomes(self):
