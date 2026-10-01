@@ -11,6 +11,8 @@ import os
 import sys
 from pathlib import Path
 
+from .analytics.ingest import AnalyticsIngestor
+from .analytics.normalize import NormalizedMetrics
 from .assetgen import AssetGenerator
 from .autopilot import CoreAutopilot
 from .core import Store, load_personas
@@ -22,6 +24,7 @@ from .operations import Operations
 from .policy import recommend
 from .providers import AzureChatProvider, AzureEmbeddingProvider, LocalDreamProvider, ProviderError
 from .runtime_policy import RuntimePolicy
+from .thompson_sampling import recommend_thompson_sampling
 from .workflow import build_briefs
 
 
@@ -216,6 +219,63 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
         if bool(payload.get("audit", False)):
             store.record_event("policy_decision", result)
         return result
+
+    if action == "recommend_thompson":
+        seed = payload.get("seed")
+        recent_history = payload.get("recent_history") or []
+        if not isinstance(recent_history, list):
+            raise ValueError("recent_history must be an array")
+        result = recommend_thompson_sampling(
+            store.stats(personas),
+            recent_history=[str(x) for x in recent_history],
+            seed=int(seed) if seed is not None else None,
+            fatigue_decay_rate=float(payload.get("fatigue_decay_rate", 0.20)),
+        )
+        if bool(payload.get("audit", False)):
+            store.record_event("policy_decision", result)
+        return result
+
+    if action == "analytics_ingest":
+        metrics_payload = payload.get("metrics")
+        if not isinstance(metrics_payload, dict):
+            raise ValueError("metrics must be an object")
+        metrics = NormalizedMetrics.from_dict(metrics_payload)
+        candidate = store.candidate(metrics.candidate_id)
+        if candidate["persona_id"] != metrics.persona_id:
+            raise ValueError("metrics persona_id does not match candidate")
+        if candidate["status"] != "published":
+            raise ValueError("analytics can only be ingested for published candidates")
+        result = AnalyticsIngestor(store).ingest(metrics)
+        return {
+            "result": result,
+            "stats": store.stats(personas),
+        }
+
+    if action == "capabilities":
+        env = os.environ
+        return {
+            "analytics": {
+                "normalized_ingest": True,
+                "idempotent_external_ids": True,
+            },
+            "distribution": {
+                "instagram": bool(env.get("INSTAGRAM_ACCESS_TOKEN") and env.get("INSTAGRAM_BUSINESS_ACCOUNT_ID")),
+                "tiktok": bool(env.get("TIKTOK_ACCESS_TOKEN")),
+                "youtube": bool(env.get("YOUTUBE_ACCESS_TOKEN")),
+            },
+            "media": {
+                "ffmpeg": bool(__import__("shutil").which("ffmpeg")),
+                "luma": bool(env.get("LUMA_API_KEY")),
+                "elevenlabs": bool(env.get("ELEVENLABS_API_KEY")),
+                "synclabs": bool(env.get("SYNCLABS_API_KEY")),
+                "local_dream": bool(env.get("LOCAL_DREAM_URL")),
+            },
+            "policy": {
+                "epsilon_greedy": True,
+                "thompson_sampling": True,
+                "deeprl": True,
+            },
+        }
 
     if action == "briefs":
         return build_briefs(
