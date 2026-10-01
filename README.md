@@ -55,6 +55,37 @@ python3 -m spicecore.cli moa \
 
 MoA v1 runs four independent experts in parallel—revenue, creative, growth, and risk—then sends those outputs to a fifth aggregator. Retrieval references, expert outputs, provider identity, and synthesis are recorded in the event ledger. The system never stores or fabricates hidden chain-of-thought.
 
+## Asset generation
+
+The repo can now call the S24/local-dream endpoint directly, persist the returned image under ignored `data/assets/`, write a sidecar JSON record, create a review candidate, and append an `asset_generated` event.
+
+Single asset:
+
+```bash
+export LOCAL_DREAM_URL='http://127.0.0.1:7860'
+
+python3 -m spicecore.cli generate \
+  --persona zara_voss \
+  --theme city-nights \
+  --scene 'mirror selfie before a night-market set' \
+  --channel Instagram \
+  --offer affiliate \
+  --seed 42
+```
+
+Batch across all five personas:
+
+```bash
+python3 -m spicecore.cli generate-batch \
+  --theme outfit-choice \
+  --channel TikTok \
+  --offer affiliate \
+  --count-per-persona 3 \
+  --seed 1000
+```
+
+Every generated file remains `proposed` until a human approves it. The prompt builder carries forward the persona's adult status and visual identity anchors, adds realism/identity-consistency instructions, and rejects non-adult/non-fictional persona records.
+
 ## Local-dream / S24 media lane
 
 `spicecore.providers.LocalDreamProvider` is the only image-generation adapter in this branch. It defaults to `http://127.0.0.1:7860/generate` and accepts `LOCAL_DREAM_URL` and optional `LOCAL_DREAM_TOKEN`. Generated assets should be persisted to private storage and then registered with `propose`; do not commit identity references or private generated assets.
