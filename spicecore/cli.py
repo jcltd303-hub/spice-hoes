@@ -134,6 +134,9 @@ def main(argv=None):
     eget = sub.add_parser("experiment-show")
     eget.add_argument("plan_id")
 
+    eres = sub.add_parser("experiment-results")
+    eres.add_argument("plan_id")
+
     args = parser.parse_args(argv)
     personas = load_personas(args.personas)
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
@@ -296,6 +299,8 @@ def main(argv=None):
             )
         elif args.command == "experiment-show":
             output = ExperimentPlanner(AzureChatProvider(), store).get(args.plan_id)
+        elif args.command == "experiment-results":
+            output = ExperimentPlanner(AzureChatProvider(), store).results(args.plan_id)
         print(json.dumps(output, indent=2, ensure_ascii=False))
     finally:
         store.close()
