@@ -66,6 +66,7 @@ fi
 
 echo
 echo "Installed Go media runtime."
+echo "Python is not required for spicemedia runtime; model conversion happens only in GitHub Actions."
 echo "Next, export the existing generation model if needed:"
 echo "  ./scripts/import-local-dream-model.sh cyber_realistic_v10"
 echo "Then load config:"
