@@ -11,6 +11,33 @@ class ExperimentPlanError(ValueError):
     pass
 
 
+def _decode_json(value: str) -> dict:
+    """Decode strict JSON plus common fenced/free-model variants."""
+    text = (value or "").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+    start, end = text.find("{"), text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            parsed = json.loads(text[start:end + 1])
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+    raise ExperimentPlanError("planner returned invalid JSON")
+
+
 class ExperimentPlanner:
     def __init__(self, provider, store):
         self.provider = provider
@@ -124,17 +151,26 @@ class ExperimentPlanner:
                 }],
             },
         }
-        raw = self.provider.chat(
-            "You convert strategy into controlled experiments. Return JSON only. "
-            "Keep all variants identical except the intended creative variable where practical. "
-            "Do not invent observed performance data.",
-            json.dumps(prompt, ensure_ascii=False, sort_keys=True),
-            temperature=0.2,
+        system = (
+            "You convert strategy into controlled experiments. Return one JSON object only. "
+            "Keep variants identical except the intended creative variable where practical. "
+            "Do not invent observed performance data. Match the requested schema exactly."
         )
         try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ExperimentPlanError("planner returned invalid JSON") from exc
+            raw = self.provider.chat(
+                system,
+                json.dumps(prompt, ensure_ascii=False, sort_keys=True),
+                temperature=0.15,
+                response_format={"type": "json_object"},
+                max_tokens=1400,
+            )
+        except TypeError:
+            raw = self.provider.chat(
+                system,
+                json.dumps(prompt, ensure_ascii=False, sort_keys=True),
+                temperature=0.15,
+            )
+        parsed = _decode_json(raw)
         normalized = self._validate_plan(parsed, variant_count)
 
         plan_id = str(uuid.uuid4())
@@ -177,11 +213,14 @@ class ExperimentPlanner:
         return record
 
     def execute(self, plan: dict, persona: dict, generator,
-                base_seed: int | None = None, cost_cents_per_asset: int = 0) -> list[dict]:
+                base_seed: int | None = None, cost_cents_per_asset: int = 0,
+                progress=None) -> list[dict]:
         if plan["persona_id"] != persona["id"]:
             raise ExperimentPlanError("plan/persona mismatch")
         outputs = []
         for index, variant in enumerate(plan["variants"]):
+            if progress:
+                progress(index, len(plan["variants"]), "Generating " + variant["id"])
             seed = None if base_seed is None else base_seed + index
             result = generator.generate(
                 persona=persona,
@@ -211,6 +250,8 @@ class ExperimentPlanner:
                 "candidate_id": result["candidate_id"],
                 "asset": result,
             })
+            if progress:
+                progress(index + 1, len(plan["variants"]), "Generated " + variant["id"])
         return outputs
 
 
