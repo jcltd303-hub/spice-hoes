@@ -259,7 +259,7 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
                 "idempotent_external_ids": True,
             },
             "distribution": {
-                "instagram": bool(env.get("INSTAGRAM_ACCESS_TOKEN") and env.get("INSTAGRAM_BUSINESS_ACCOUNT_ID")),
+                "instagram": bool(env.get("INSTAGRAM_ACCESS_TOKEN")),
                 "tiktok": bool(env.get("TIKTOK_ACCESS_TOKEN")),
                 "youtube": bool(env.get("YOUTUBE_ACCESS_TOKEN")),
             },
