@@ -24,6 +24,7 @@ from .providers import OpenAICompatibleChatProvider, OpenAICompatibleEmbeddingPr
 from .web import make_handler
 from .workflow import build_briefs
 from .ui import SpiceUI
+from .media_benchmark import benchmark_media
 
 
 def _optional_embedder():
@@ -205,6 +206,13 @@ def main(argv=None):
     apsettle.add_argument("--min-impressions", type=int)
 
     sub.add_parser("autopilot-status")
+
+    bench = sub.add_parser("media-benchmark")
+    bench.add_argument("--prompt", required=True)
+    bench.add_argument("--negative-prompt", default="")
+    bench.add_argument("--seed", type=int, default=42)
+    bench.add_argument("--width", type=int, default=768)
+    bench.add_argument("--height", type=int, default=1024)
 
     eingest = sub.add_parser("engagement-ingest")
     eingest.add_argument("--persona", required=True)
@@ -514,6 +522,18 @@ def main(argv=None):
                 "rl_minimum_experiences": engine.policy.min_experiences,
                 "rl_ready": engine.policy.count() >= engine.policy.min_experiences,
             }
+        elif args.command == "media-benchmark":
+            ui.start_progress("Benchmarking media providers")
+            try:
+                output = benchmark_media(
+                    prompt=args.prompt,
+                    negative_prompt=args.negative_prompt,
+                    seed=args.seed,
+                    width=args.width,
+                    height=args.height,
+                )
+            finally:
+                ui.stop_progress()
         elif args.command == "engagement-ingest":
             persona = next((p for p in personas if p["id"] == args.persona), None)
             if persona is None:
