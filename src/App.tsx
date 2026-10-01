@@ -922,17 +922,17 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 5: DECISION ENGINE (BANDIT) */}
+        {/* TAB 5: DECISION ENGINE */}
         {activeTab === 'engine' && recommendation && (
           <div className="space-y-6">
             <div className="bg-[#1a1424] p-5 rounded-2xl border border-[#2e233d] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <TrendingUp className="w-5 h-5 text-amber-400" />
-                  Contextual Bandit Allocation Engine
+                  Allocation &amp; Autonomy Engine
                 </h2>
                 <p className="text-sm text-gray-400 mt-1">
-                  Transparent decision accounting. Predictions are empirical smoothed estimates, not invented internal thoughts.
+                  Canonical runtime limits, DeepRL readiness, budget pressure, and transparent allocation estimates.
                 </p>
               </div>
               <div className="text-xs font-mono px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300">
@@ -944,37 +944,22 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-[#1b1526] p-4 rounded-2xl border border-[#362a4a]">
                   <div className="text-[11px] uppercase tracking-wider text-gray-400 font-bold">Review Queue Pressure</div>
-                  <div className="text-xl font-bold text-white mt-1">
-                    {autopilotStatus.pending_review} / {autopilotStatus.max_pending_review}
-                  </div>
+                  <div className="text-xl font-bold text-white mt-1">{autopilotStatus.pending_review} / {autopilotStatus.max_pending_review}</div>
                   <div className="h-2 bg-[#120e1a] rounded-full overflow-hidden mt-3">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-500 to-amber-500"
-                      style={{ width: `${Math.min(100, (autopilotStatus.pending_review / Math.max(1, autopilotStatus.max_pending_review)) * 100)}%` }}
-                    />
+                    <div className="h-full bg-gradient-to-r from-emerald-500 to-amber-500" style={{ width: `${Math.min(100, (autopilotStatus.pending_review / Math.max(1, autopilotStatus.max_pending_review)) * 100)}%` }} />
                   </div>
                 </div>
-
                 <div className="bg-[#1b1526] p-4 rounded-2xl border border-[#362a4a]">
                   <div className="text-[11px] uppercase tracking-wider text-gray-400 font-bold">Spend Today</div>
-                  <div className="text-xl font-bold text-white mt-1">
-                    USD {(autopilotStatus.spent_today_cents / 100).toFixed(2)}
-                    <span className="text-xs text-gray-500 font-normal"> / USD {(autopilotStatus.daily_budget_cents / 100).toFixed(2)}</span>
-                  </div>
+                  <div className="text-xl font-bold text-white mt-1">USD {(autopilotStatus.spent_today_cents / 100).toFixed(2)} <span className="text-xs text-gray-500 font-normal">/ USD {(autopilotStatus.daily_budget_cents / 100).toFixed(2)}</span></div>
                   <div className="h-2 bg-[#120e1a] rounded-full overflow-hidden mt-3">
-                    <div
-                      className="h-full bg-gradient-to-r from-purple-500 to-pink-500"
-                      style={{ width: `${Math.min(100, (autopilotStatus.spent_today_cents / Math.max(1, autopilotStatus.daily_budget_cents)) * 100)}%` }}
-                    />
+                    <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500" style={{ width: `${Math.min(100, (autopilotStatus.spent_today_cents / Math.max(1, autopilotStatus.daily_budget_cents)) * 100)}%` }} />
                   </div>
                 </div>
-
                 <div className="bg-[#1b1526] p-4 rounded-2xl border border-[#362a4a]">
-                  <div className="text-[11px] uppercase tracking-wider text-gray-400 font-bold">Autopilot Runs</div>
+                  <div className="text-[11px] uppercase tracking-wider text-gray-400 font-bold">Recent Autopilot Runs</div>
                   <div className="text-xl font-bold text-white mt-1">{autopilotStatus.recent_runs?.length || 0}</div>
-                  <div className="text-xs text-gray-400 mt-2">
-                    {autopilotStatus.recent_runs?.[0] ? `Latest: ${autopilotStatus.recent_runs[0].status}${autopilotStatus.recent_runs[0].reason ? ' · ' + autopilotStatus.recent_runs[0].reason : ''}` : 'No recorded autonomous runs yet'}
-                  </div>
+                  <div className="text-xs text-gray-400 mt-2">{autopilotStatus.recent_runs?.[0] ? `Latest: ${autopilotStatus.recent_runs[0].status}` : "No recorded runs yet"}</div>
                 </div>
               </div>
             )}
@@ -986,11 +971,9 @@ export default function App() {
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <h3 className="text-sm font-bold text-white uppercase tracking-wider">Runtime Operating Policy</h3>
-                        <p className="text-xs text-gray-400 mt-1">Version {runtimePolicy.version} · last actor: {runtimePolicy.actor}</p>
+                        <p className="text-xs text-gray-400 mt-1">Version {runtimePolicy.version} · actor {runtimePolicy.actor}</p>
                       </div>
-                      <span className="text-[11px] font-mono px-2 py-1 rounded bg-purple-500/15 border border-purple-500/30 text-purple-300">
-                        canonical
-                      </span>
+                      <span className="text-[11px] font-mono px-2 py-1 rounded bg-purple-500/15 border border-purple-500/30 text-purple-300">canonical</span>
                     </div>
                     <div className="space-y-3">
                       {[
@@ -1002,55 +985,89 @@ export default function App() {
                         <label key={String(key)} className="block">
                           <div className="flex items-center justify-between text-xs mb-1">
                             <span className="text-gray-300">{String(label)}</span>
-                            <span className="font-mono text-white">
-                              {String(key).includes('cents')
-                                ? '            <div className="bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-transparent p-6 rounded-2xl border border-amber-500/30">
-              <div className="text-xs text-amber-400 font-bold uppercase tracking-wider mb-1">
-                Next Candidate Allocation Pick
+                            <span className="font-mono text-white">{String(key).includes("cents") ? `USD ${((runtimePolicy.values?.[String(key)] || 0) / 100).toFixed(2)}` : runtimePolicy.values?.[String(key)]}</span>
+                          </div>
+                          <input
+                            type="number"
+                            min={String(key) === 'max_pending_review' || String(key) === 'rl_min_experiences' ? 1 : 0}
+                            step={Number(step)}
+                            disabled={controlBusy}
+                            value={runtimePolicy.values?.[String(key)] ?? ""}
+                            onChange={(e) => setRuntimePolicy({ ...runtimePolicy, values: { ...runtimePolicy.values, [String(key)]: Number(e.target.value) } })}
+                            onBlur={(e) => handlePolicyChange(String(key), Number(e.target.value))}
+                            className="w-full bg-[#120e1a] border border-[#3b2e52] rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-purple-500 disabled:opacity-50"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#2b203c]">
+                      {[
+                        ['identity_threshold', 'Identity'],
+                        ['quality_threshold', 'Quality'],
+                        ['reference_strength', 'Reference'],
+                      ].map(([key, label]) => (
+                        <label key={String(key)} className="text-[11px] text-gray-400">
+                          {String(label)}
+                          <input
+                            type="number" min="0" max="1" step="0.01" disabled={controlBusy}
+                            value={runtimePolicy.values?.[String(key)] ?? ""}
+                            onChange={(e) => setRuntimePolicy({ ...runtimePolicy, values: { ...runtimePolicy.values, [String(key)]: Number(e.target.value) } })}
+                            onBlur={(e) => handlePolicyChange(String(key), Number(e.target.value))}
+                            className="mt-1 w-full bg-[#120e1a] border border-[#3b2e52] rounded-lg px-2 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-purple-500 disabled:opacity-50"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {rlStatus && (
+                  <div className="bg-[#1b1526] p-6 rounded-2xl border border-[#362a4a] space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-white uppercase tracking-wider">Persistent DeepRL</h3>
+                        <p className="text-xs text-gray-400 mt-1">{rlStatus.policy_version}</p>
+                      </div>
+                      <span className={`text-[11px] font-mono px-2 py-1 rounded border ${rlStatus.ready ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300" : "bg-amber-500/15 border-amber-500/30 text-amber-300"}`}>{rlStatus.ready ? "ready" : "gated"}</span>
+                    </div>
+                    <div className="bg-[#120e1a] border border-[#2d223f] rounded-xl p-4">
+                      <div className="flex items-center justify-between text-xs font-mono mb-2"><span className="text-gray-400">Replay experience</span><span className="text-white font-bold">{rlStatus.experiences} / {rlStatus.minimum_experiences}</span></div>
+                      <div className="h-3 bg-[#211a2f] rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-purple-600 to-amber-500 rounded-full" style={{ width: `${Math.min(100, (rlStatus.experiences / Math.max(1, rlStatus.minimum_experiences)) * 100)}%` }} /></div>
+                    </div>
+                    <button onClick={handleTrainRL} disabled={!rlStatus.ready || controlBusy} className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-[#2a2333] disabled:text-gray-500 text-white text-xs font-semibold transition-colors">
+                      {rlStatus.ready ? (controlBusy ? "Training…" : "Train & Save RL Snapshot") : `Need ${Math.max(0, rlStatus.minimum_experiences - rlStatus.experiences)} more experiences`}
+                    </button>
+                  </div>
+                )}
               </div>
+            )}
+
+            {controlError && <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono">{controlError}</div>}
+
+            <div className="bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-transparent p-6 rounded-2xl border border-amber-500/30">
+              <div className="text-xs text-amber-400 font-bold uppercase tracking-wider mb-1">Next Candidate Allocation Pick</div>
               <div className="text-2xl font-bold text-white flex items-center gap-3">
                 {recommendation.name} ({recommendation.persona_id})
-                <span className="text-sm font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                  {(recommendation.selection_probability * 100).toFixed(1)}% Selection Probability
-                </span>
+                <span className="text-sm font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">{(recommendation.selection_probability * 100).toFixed(1)}% Selection Probability</span>
               </div>
-              <p className="text-xs text-gray-300 mt-2 font-mono">
-                Estimated Net Outcome: ${(recommendation.estimated_net_cents_per_published / 100).toFixed(2)} / publication · {recommendation.supporting_published_count} previous tests
-              </p>
-              <div className="text-xs text-gray-400 mt-3 pt-3 border-t border-[#3b2e52] font-mono">
-                {recommendation.uncertainty_note} · {recommendation.ranking_change_condition}
-              </div>
+              <p className="text-xs text-gray-300 mt-2 font-mono">Estimated Net Outcome: USD {(recommendation.estimated_net_cents_per_published / 100).toFixed(2)} / publication · {recommendation.supporting_published_count} previous tests</p>
+              <div className="text-xs text-gray-400 mt-3 pt-3 border-t border-[#3b2e52] font-mono">{recommendation.uncertainty_note} · {recommendation.ranking_change_condition}</div>
             </div>
 
-            {/* Multi-Armed Bandit Distribution */}
             <div className="bg-[#1b1526] p-6 rounded-2xl border border-[#362a4a] space-y-4">
-              <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider">
-                Current Bandit Arm Probabilities &amp; Estimated Returns
-              </h3>
-
+              <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider">Current Bandit Arm Probabilities &amp; Estimated Returns</h3>
               <div className="space-y-4">
                 {recommendation.all_arms.map(arm => {
                   const persona = personas.find(p => p.id === arm.persona_id);
                   const isLeader = arm.persona_id === recommendation.persona_id;
-
                   return (
                     <div key={arm.persona_id} className="space-y-1.5">
                       <div className="flex items-center justify-between text-xs font-mono">
-                        <span className={`font-semibold ${isLeader ? 'text-amber-300' : 'text-gray-300'}`}>
-                          {persona?.name || arm.persona_id} ({persona?.type})
-                        </span>
-                        <div className="flex items-center gap-4 text-gray-400">
-                          <span>Est: ${(arm.estimated_net_cents_per_published / 100).toFixed(2)}/pub</span>
-                          <span className="font-bold text-white">{(arm.selection_probability * 100).toFixed(1)}%</span>
-                        </div>
+                        <span className={`font-semibold ${isLeader ? "text-amber-300" : "text-gray-300"}`}>{persona?.name || arm.persona_id} ({persona?.type})</span>
+                        <div className="flex items-center gap-4 text-gray-400"><span>Est: USD {(arm.estimated_net_cents_per_published / 100).toFixed(2)}/pub</span><span className="font-bold text-white">{(arm.selection_probability * 100).toFixed(1)}%</span></div>
                       </div>
                       <div className="h-3 w-full bg-[#120e1a] rounded-full overflow-hidden border border-[#2d223f]">
-                        <div 
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            isLeader ? 'bg-gradient-to-r from-amber-500 to-pink-500' : 'bg-purple-600'
-                          }`}
-                          style={{ width: `${Math.max(5, arm.selection_probability * 100)}%` }}
-                        />
+                        <div className={`h-full rounded-full transition-all duration-500 ${isLeader ? "bg-gradient-to-r from-amber-500 to-pink-500" : "bg-purple-600"}`} style={{ width: `${Math.max(5, arm.selection_probability * 100)}%` }} />
                       </div>
                     </div>
                   );
