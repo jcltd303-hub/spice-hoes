@@ -17,6 +17,7 @@ from .memory import KnowledgeBase
 from .learning import LearningController
 from .moa import MixtureOfAgents
 from .offers import OfferRegistry, OFFER_KINDS
+from .operations import Operations
 from .policy import recommend
 from .providers import AzureChatProvider, AzureEmbeddingProvider, LocalDreamProvider, ProviderError
 from .web import make_handler
@@ -210,6 +211,11 @@ def main(argv=None):
     ostatus = sub.add_parser("offer-status")
     ostatus.add_argument("offer_id")
     ostatus.add_argument("state", choices=("active", "inactive"))
+
+    sub.add_parser("doctor")
+
+    backup = sub.add_parser("backup")
+    backup.add_argument("destination")
 
     args = parser.parse_args(argv)
     personas = load_personas(args.personas)
@@ -501,6 +507,10 @@ def main(argv=None):
                 args.offer_id,
                 args.state == "active",
             )
+        elif args.command == "doctor":
+            output = Operations(store, personas).doctor()
+        elif args.command == "backup":
+            output = Operations(store, personas).backup(args.destination)
         print(json.dumps(output, indent=2, ensure_ascii=False))
     finally:
         store.close()
