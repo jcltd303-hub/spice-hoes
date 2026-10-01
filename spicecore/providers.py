@@ -29,6 +29,42 @@ def _post_json(url: str, payload: dict, headers: dict[str, str], timeout: int = 
         raise ProviderError(str(exc)) from exc
 
 
+def _post_sse_complete(url: str, payload: dict, headers: dict[str, str],
+                       timeout: int = 600) -> dict:
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream", **headers},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            event = ""
+            for raw in response:
+                line = raw.decode("utf-8", errors="replace").strip()
+                if line.startswith("event:"):
+                    event = line.split(":", 1)[1].strip()
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                data = json.loads(line.split(":", 1)[1].strip())
+                if event == "error":
+                    raise ProviderError(str(data.get("message", "generation failed")))
+                if event == "complete":
+                    image = data.get("image")
+                    if not isinstance(image, str) or not image:
+                        raise ProviderError("generation completed without image")
+                    fmt = str(data.get("format", "png")).lower()
+                    return {
+                        "image_base64": image,
+                        "mime_type": "image/jpeg" if fmt in ("jpg", "jpeg") else "image/png",
+                        **{k: v for k, v in data.items() if k not in ("type", "image", "format")},
+                    }
+    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+        raise ProviderError(str(exc)) from exc
+    raise ProviderError("generation stream ended without complete event")
+
+
 def _validate_b64(value: str) -> None:
     raw = value.split(",", 1)[1] if value.startswith("data:") and "," in value else value
     base64.b64decode(raw, validate=True)
@@ -248,11 +284,11 @@ class LocalDreamProvider:
             payload["references"] = references
             payload["reference_strength"] = reference_strength
 
-        data = _post_json(
+        data = _post_sse_complete(
             f"{self.base_url}/generate",
             payload,
             self._headers(),
-            timeout=180,
+            timeout=600,
         )
         if isinstance(data.get("image_base64"), str):
             _validate_b64(data["image_base64"])
