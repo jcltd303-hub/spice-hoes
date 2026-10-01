@@ -56,6 +56,15 @@ SPICE_FACE_DETECT_MODEL=$ROOT/models/face/scrfd_10g.bin
 EOF
 
 echo
+echo "Installing hoes launcher into Termux PATH..."
+if [[ -n "${PREFIX:-}" && -d "$PREFIX/bin" ]]; then
+  install -m 0755 "$ROOT/scripts/hoes" "$PREFIX/bin/hoes"
+  echo "Installed: $PREFIX/bin/hoes"
+else
+  echo "PREFIX/bin unavailable; use $ROOT/scripts/hoes directly."
+fi
+
+echo
 echo "Installed Go media runtime."
 echo "Next, export the existing generation model if needed:"
 echo "  ./scripts/import-local-dream-model.sh cyber_realistic_v10"
