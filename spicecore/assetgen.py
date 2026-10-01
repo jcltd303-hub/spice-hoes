@@ -84,7 +84,7 @@ class AssetGenerator:
                  asset_dir: str | Path = "data/assets",
                  reference_root: str | Path = "data/references",
                  identity_threshold: float = 0.82,
-                 reference_strength: float = 0.85):
+                 reference_strength: float = 0.85, quality_threshold: float = 0.78):
         self.store = store
         self.provider = provider or LocalDreamProvider()
         self.asset_dir = Path(asset_dir)
