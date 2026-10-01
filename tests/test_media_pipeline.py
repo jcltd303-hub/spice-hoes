@@ -8,7 +8,9 @@ from spicecore.media.models import MediaJob, RenderState
 from spicecore.media.pipeline import MediaPipeline
 from spicecore.media.providers.lipsync import MockLipSyncProvider
 from spicecore.media.providers.video import MockVideoProvider
-from spicecore.media.providers.voice import MockVoiceProvider
+from spicecore.media.providers.voice import MockVoiceProvider, ElevenLabsVoiceProvider
+from spicecore.media.providers.video import LumaVideoProvider
+from spicecore.media.providers.lipsync import SyncLabsLipSyncProvider
 
 
 class TestMediaPipeline(unittest.TestCase):
@@ -110,6 +112,29 @@ class TestMediaPipeline(unittest.TestCase):
         # Test rejection
         self.pipeline.review(rendered_job, decision="rejected", reviewer="operator_john", note="Not on brand")
         self.assertEqual(rendered_job.status, RenderState.REJECTED)
+
+    def test_real_media_adapters_fail_closed_when_not_wired(self):
+        with self.assertRaises(RuntimeError):
+            LumaVideoProvider(api_key="configured").image_to_video("x.jpg", "prompt")
+        with self.assertRaises(RuntimeError):
+            ElevenLabsVoiceProvider(api_key="configured").synthesize(
+                "hello",
+                self.pipeline.create_job(
+                    persona_id="zara_voss",
+                    candidate_id="cand",
+                    source_asset_uri="x.jpg",
+                    script="hello",
+                ).voice_profile and __import__("spicecore.media.providers.voice", fromlist=["VoiceProfile"]).VoiceProfile.from_dict(
+                    self.pipeline.create_job(
+                        persona_id="zara_voss",
+                        candidate_id="cand2",
+                        source_asset_uri="x.jpg",
+                        script="hello",
+                    ).voice_profile
+                )
+            )
+        with self.assertRaises(RuntimeError):
+            SyncLabsLipSyncProvider(api_key="configured").sync("video.mp4", "audio.wav")
 
 
 if __name__ == "__main__":
