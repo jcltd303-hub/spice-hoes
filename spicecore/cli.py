@@ -21,6 +21,7 @@ from .operations import Operations
 from .runtime_policy import RuntimePolicy
 from .policy import recommend
 from .providers import AzureChatProvider, AzureEmbeddingProvider, LocalDreamProvider, ProviderError
+from .privacy import DataLifecycle
 from .web import make_handler
 from .workflow import build_briefs
 
@@ -261,6 +262,11 @@ def main(argv=None):
     pset.add_argument("--set", dest="changes", action="append", required=True)
     pset.add_argument("--actor", required=True)
     pset.add_argument("--note", default="")
+
+    purge = sub.add_parser("privacy-purge-engagement")
+    purge.add_argument("--days", type=int, default=30)
+    purge.add_argument("--apply", action="store_true")
+    purge.add_argument("--actor", default="operator")
 
     args = parser.parse_args(argv)
     personas = load_personas(args.personas)
@@ -585,6 +591,12 @@ def main(argv=None):
                 _parse_policy_changes(args.changes),
                 actor=args.actor,
                 note=args.note,
+            )
+        elif args.command == "privacy-purge-engagement":
+            output = DataLifecycle(store).purge_engagement(
+                retention_days=args.days,
+                apply=args.apply,
+                actor=args.actor,
             )
         elif args.command == "doctor":
             output = Operations(store, personas).doctor()

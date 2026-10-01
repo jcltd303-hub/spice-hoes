@@ -225,6 +225,27 @@ python3 -m spicecore.cli policy-history
 
 Every change creates and activates a new policy version; old versions remain in the ledger for reproducibility. Autopilot and learning commands use the active version unless a run-level override is explicitly supplied.
 
+## Engagement privacy retention
+
+Engagement text can be redacted after a configurable retention window while preserving conversation IDs, review states, metrics, and audit events.
+
+Preview cleanup first:
+
+```bash
+python3 -m spicecore.cli privacy-purge-engagement --days 30
+```
+
+Apply it explicitly:
+
+```bash
+python3 -m spicecore.cli privacy-purge-engagement \
+  --days 30 \
+  --apply \
+  --actor privacy-job
+```
+
+Dry-run is the default. Messages tied to drafts still awaiting human review are protected. Applied retention replaces old reviewed message/draft bodies with a purge marker rather than deleting relational rows.
+
 ## Operational health and backups
 
 The core SQLite ledger now enables WAL mode, normal synchronous durability, foreign keys, and a 5-second busy timeout for safer concurrent local workers.
