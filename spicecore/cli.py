@@ -10,6 +10,7 @@ from .core import Store, load_personas
 from .autonomy import plan_next_batch
 from .assetflow import produce_job
 from .identityflow import run_identity_batch
+from .identityref import select_identity
 from .policy import recommend
 from .moa import deliberate
 from .localdream import generate as localdream_generate, probe as localdream_probe
@@ -29,6 +30,10 @@ def main(argv=None):
     sub.add_parser('personas')
     sub.add_parser('stats')
     sub.add_parser('events')
+    sel = sub.add_parser('select-identity')
+    sel.add_argument('candidate_id')
+    sel.add_argument('--persona', default='celeste_vale')
+    sel.add_argument('--reference-dir', default='identity/references')
     ident = sub.add_parser('identity-batch')
     ident.add_argument('--persona', default='celeste_vale')
     ident.add_argument('--seed', type=int, default=42)
@@ -132,6 +137,8 @@ def main(argv=None):
             output = store.stats(personas)
         elif args.command == 'events':
             output = store.events()
+        elif args.command == 'select-identity':
+            output = select_identity(store,args.persona,args.candidate_id,args.reference_dir)
         elif args.command == 'identity-batch':
             output = run_identity_batch(store,personas,args.persona,args.output_dir,args.assets_dir,args.server_url,args.seed,args.candidates)
         elif args.command == 'auto-assets':
