@@ -12,6 +12,7 @@ from pathlib import Path
 from .core import Store
 from .identity import IdentityGate, load_reference_pack
 from .providers import LocalDreamProvider
+from .quality import QualityGate
 
 
 DEFAULT_NEGATIVE = (
