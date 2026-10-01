@@ -154,7 +154,7 @@ class Store:
             for row in rows:
                 item = json.loads(row['payload'])
                 if item['persona_id'] == p['id']:
-                    sums[row['kind']] += item['amount_cents'] if row['kind'] in ('purchase', 'refund', 'distribution_cost', 'commerce_cost') else 1
+                    sums[row['kind']] += item['amount_cents'] if row['kind'] in ('purchase', 'refund', 'distribution_cost', 'commerce_cost') else int(item.get('count', 1))
             result.append({'persona_id': p['id'], 'name': p['name'], 'published': published,
                            'impressions': sums['impression'], 'clicks': sums['click'],
                            'revenue_cents': sums['purchase'], 'refund_cents': sums['refund'],
