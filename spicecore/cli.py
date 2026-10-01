@@ -13,6 +13,7 @@ from .deeprl import DeepRLPolicy
 from .experiments import ExperimentPlanner
 from .core import Store, load_personas
 from .memory import KnowledgeBase
+from .learning import LearningController
 from .moa import MixtureOfAgents
 from .policy import recommend
 from .providers import AzureChatProvider, AzureEmbeddingProvider, LocalDreamProvider, ProviderError
@@ -157,6 +158,10 @@ def main(argv=None):
     ap.add_argument("--cost-cents-per-asset", type=int, default=0)
     ap.add_argument("--max-pending-review", type=int, default=12)
     ap.add_argument("--daily-budget-cents", type=int, default=5000)
+
+    apsettle = sub.add_parser("autopilot-settle")
+    apsettle.add_argument("run_id")
+    apsettle.add_argument("--min-impressions", type=int, default=100)
 
     sub.add_parser("autopilot-status")
 
@@ -348,6 +353,19 @@ def main(argv=None):
                 cost_cents_per_asset=args.cost_cents_per_asset,
                 max_pending_review=args.max_pending_review,
                 daily_budget_cents=args.daily_budget_cents,
+            )
+        elif args.command == "autopilot-settle":
+            provider = AzureChatProvider()
+            planner = ExperimentPlanner(provider, store)
+            knowledge = KnowledgeBase(store, embedder=_optional_embedder())
+            output = LearningController(
+                store,
+                personas,
+                planner,
+                knowledge,
+            ).settle_autopilot_run(
+                args.run_id,
+                min_impressions_per_published_variant=args.min_impressions,
             )
         elif args.command == "autopilot-status":
             provider = AzureChatProvider()
