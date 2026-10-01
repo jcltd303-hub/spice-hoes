@@ -91,6 +91,20 @@ class ExperimentPlannerTests(unittest.TestCase):
         self.assertIn("experiment_plan_created", kinds)
         self.assertEqual(kinds.count("experiment_variant_generated"), 3)
 
+        for index, item in enumerate(results):
+            cid = item["candidate_id"]
+            self.store.review(cid, "approved", "operator")
+            self.store.publish(cid, f"https://example.org/{index}")
+            self.store.record_outcome(cid, "impression", external_id=f"imp-{index}")
+            if index == 1:
+                self.store.record_outcome(cid, "click", external_id="click-1")
+                self.store.record_outcome(cid, "purchase", 500, "purchase-1")
+
+        summary = planner.results(plan["plan_id"])
+        self.assertEqual(summary["variants"][1]["net_cents"], 475)
+        self.assertEqual(summary["variants"][1]["click_rate"], 1.0)
+        self.assertEqual(summary["observed_leader_by_net_cents"], "v2")
+
     def test_invalid_variant_count_is_rejected(self):
         planner = ExperimentPlanner(FakeProvider(), self.store)
         with self.assertRaises(ExperimentPlanError):
