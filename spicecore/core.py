@@ -131,12 +131,12 @@ class Store:
 
     def record_outcome(self, cid: str, kind: str, amount_cents: int = 0,
                        external_id: str | None = None) -> dict:
-        if kind not in ('impression', 'click', 'purchase', 'refund', 'distribution_cost') or amount_cents < 0:
+        if kind not in ('impression', 'click', 'purchase', 'refund', 'distribution_cost', 'commerce_cost') or amount_cents < 0:
             raise ValueError('Invalid outcome')
         current = self.candidate(cid)
         if current['status'] != 'published':
             raise ValueError('Outcomes require published candidates')
-        if kind in ('purchase', 'refund', 'distribution_cost') and amount_cents == 0:
+        if kind in ('purchase', 'refund', 'distribution_cost', 'commerce_cost') and amount_cents == 0:
             raise ValueError('Monetary outcome requires a positive amount')
         return self.record_event(kind, {'candidate_id': cid, 'persona_id': current['persona_id'],
                                        'amount_cents': amount_cents}, external_id)
@@ -147,16 +147,17 @@ class Store:
             published = self.db.execute("SELECT COUNT(*) FROM candidates WHERE persona_id=? AND status='published'", (p['id'],)).fetchone()[0]
             cost = self.db.execute('SELECT COALESCE(SUM(cost_cents),0) FROM candidates WHERE persona_id=?', (p['id'],)).fetchone()[0]
             rows = self.db.execute('SELECT kind,payload FROM events WHERE kind IN (\'impression\',\'click\',\'purchase\',\'refund\',\'distribution_cost\')').fetchall()
-            sums = {'impression': 0, 'click': 0, 'purchase': 0, 'refund': 0, 'distribution_cost': 0}
+            sums = {'impression': 0, 'click': 0, 'purchase': 0, 'refund': 0, 'distribution_cost': 0, 'commerce_cost': 0}
             for row in rows:
                 item = json.loads(row['payload'])
                 if item['persona_id'] == p['id']:
-                    sums[row['kind']] += item['amount_cents'] if row['kind'] in ('purchase', 'refund', 'distribution_cost') else 1
+                    sums[row['kind']] += item['amount_cents'] if row['kind'] in ('purchase', 'refund', 'distribution_cost', 'commerce_cost') else 1
             result.append({'persona_id': p['id'], 'name': p['name'], 'published': published,
                            'impressions': sums['impression'], 'clicks': sums['click'],
                            'revenue_cents': sums['purchase'], 'refund_cents': sums['refund'],
-                           'cost_cents': cost + sums['distribution_cost'],
-                           'net_cents': sums['purchase'] - sums['refund'] - cost - sums['distribution_cost']})
+                           'cost_cents': cost + sums['distribution_cost'] + sums['commerce_cost'],
+                           'commerce_cost_cents': sums['commerce_cost'],
+                           'net_cents': sums['purchase'] - sums['refund'] - cost - sums['distribution_cost'] - sums['commerce_cost']})
         return result
 
     def events(self) -> list[dict]:
