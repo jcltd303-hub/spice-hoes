@@ -22,9 +22,11 @@ def load_reference(persona_id="celeste_vale",reference_dir="identity/references"
 
 def scene_prompt(scene,identity_reference=True):
  if scene not in SCENES: raise ValueError("Unknown scene")
- return ("Photorealistic editorial photograph of the exact same original fictional adult woman shown in the supplied reference image. "
-         "Preserve her recognizable face geometry, eyes, brows, nose, lips, skin tone and texture, beauty mark, and hair identity. "
-         +SCENES[scene]+". Camera pulled back several meters: vertical three-quarter-body editorial photograph framed from head through below the knees, both hands visible when natural, substantial environment visible around her, subject occupying roughly half the frame. Do not reproduce the close-up/headshot composition of the reference. Natural anatomy, realistic skin, believable 50mm camera optics. Change pose, clothing, camera framing and setting; one woman only.")
+ if identity_reference:
+  identity="Photorealistic editorial photograph of the exact same original fictional adult woman shown in the supplied reference image. Preserve her recognizable face geometry, eyes, brows, nose, lips, skin tone and texture, beauty mark, and hair identity. "
+ else:
+  identity="Photorealistic editorial photograph of one original fictional adult woman, age 32, warm olive skin, dark brown almond eyes, espresso-brown collarbone-length softly wavy hair, understated gold earrings. "
+ return (identity+SCENES[scene]+". Camera pulled back several meters: vertical three-quarter-body editorial photograph framed from head through below the knees, both hands visible when natural, substantial environment visible around her, subject occupying roughly half the frame. Natural anatomy, realistic skin, believable 50mm camera optics. One woman only.")
 
 def copy_to_shared(asset,persona_id,category="scenes"):
  root=os.environ.get("SPICE_SHARED_DIR")
