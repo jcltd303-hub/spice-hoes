@@ -104,6 +104,9 @@ def main(argv=None):
     ksearch.add_argument("query")
     ksearch.add_argument("--limit", type=int, default=6)
 
+    kbackfill = sub.add_parser("knowledge-backfill")
+    kbackfill.add_argument("--limit", type=int)
+
     moa = sub.add_parser("moa")
     moa.add_argument("objective")
     moa.add_argument("--persona")
@@ -237,6 +240,11 @@ def main(argv=None):
             output = kb.add(args.source, args.title, args.body, tags)
         elif args.command == "knowledge-search":
             output = KnowledgeBase(store, embedder=_optional_embedder()).search(args.query, limit=args.limit)
+        elif args.command == "knowledge-backfill":
+            embedder = _optional_embedder()
+            if embedder is None:
+                parser.error("AZURE_OPENAI_EMBEDDING_DEPLOYMENT is not configured")
+            output = KnowledgeBase(store, embedder=embedder).backfill_embeddings(limit=args.limit)
         elif args.command == "moa":
             persona = None
             if args.persona:
