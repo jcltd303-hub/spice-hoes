@@ -18,6 +18,7 @@ from .learning import LearningController
 from .moa import MixtureOfAgents
 from .offers import OfferRegistry, OFFER_KINDS
 from .operations import Operations
+from .runtime_policy import RuntimePolicy
 from .policy import recommend
 from .providers import AzureChatProvider, AzureEmbeddingProvider, LocalDreamProvider, ProviderError
 from .web import make_handler
@@ -29,6 +30,24 @@ def _optional_embedder():
         return AzureEmbeddingProvider()
     except ProviderError:
         return None
+
+
+def _parse_policy_changes(items):
+    changes = {}
+    for item in items:
+        if "=" not in item:
+            raise ValueError("policy changes must use key=value")
+        key, raw = item.split("=", 1)
+        key = key.strip()
+        raw = raw.strip()
+        if not key:
+            raise ValueError("policy key cannot be empty")
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError:
+            value = raw
+        changes[key] = value
+    return changes
 
 
 def main(argv=None):
@@ -159,12 +178,12 @@ def main(argv=None):
     ap.add_argument("--variants", type=int, default=3)
     ap.add_argument("--seed", type=int)
     ap.add_argument("--cost-cents-per-asset", type=int, default=0)
-    ap.add_argument("--max-pending-review", type=int, default=12)
-    ap.add_argument("--daily-budget-cents", type=int, default=5000)
+    ap.add_argument("--max-pending-review", type=int)
+    ap.add_argument("--daily-budget-cents", type=int)
 
     apsettle = sub.add_parser("autopilot-settle")
     apsettle.add_argument("run_id")
-    apsettle.add_argument("--min-impressions", type=int, default=100)
+    apsettle.add_argument("--min-impressions", type=int)
 
     sub.add_parser("autopilot-status")
 
@@ -216,6 +235,16 @@ def main(argv=None):
 
     backup = sub.add_parser("backup")
     backup.add_argument("destination")
+
+    sub.add_parser("policy-show")
+
+    phistory = sub.add_parser("policy-history")
+    phistory.add_argument("--limit", type=int, default=20)
+
+    pset = sub.add_parser("policy-set")
+    pset.add_argument("--set", dest="changes", action="append", required=True)
+    pset.add_argument("--actor", required=True)
+    pset.add_argument("--note", default="")
 
     args = parser.parse_args(argv)
     personas = load_personas(args.personas)
