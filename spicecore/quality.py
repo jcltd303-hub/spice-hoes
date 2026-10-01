@@ -4,9 +4,29 @@ from __future__ import annotations
 
 import base64
 import io
+import json
+import urllib.error
+import urllib.request
 from statistics import mean
 
 from PIL import Image, ImageFilter, ImageStat
+
+
+def _post_quality(base_url: str, token: str, payload: dict) -> dict:
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(
+        base_url.rstrip("/") + "/quality/score",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"quality scorer failed: {exc}") from exc
 
 
 class QualityGate:
@@ -47,12 +67,32 @@ class QualityGate:
                 "local_score": round(local_score, 6),
             }
 
+    def _provider_score(self, image_b64: str, mime_type: str, channel: str) -> dict:
+        if hasattr(self.provider, "score_quality"):
+            return self.provider.score_quality(
+                image_base64=image_b64,
+                image_mime_type=mime_type,
+                channel=channel,
+            )
+        base_url = getattr(self.provider, "base_url", "")
+        if not base_url:
+            raise RuntimeError("quality provider exposes neither score_quality nor base_url")
+        return _post_quality(
+            base_url,
+            getattr(self.provider, "token", ""),
+            {
+                "image_base64": image_b64,
+                "image_mime_type": mime_type,
+                "channel": channel,
+            },
+        )
+
     def score(self, image_bytes: bytes, mime_type: str, channel: str = "") -> dict:
         local = self.local_metrics(image_bytes)
-        provider_result = self.provider.score_quality(
-            image_base64=base64.b64encode(image_bytes).decode("ascii"),
-            image_mime_type=mime_type,
-            channel=channel,
+        provider_result = self._provider_score(
+            base64.b64encode(image_bytes).decode("ascii"),
+            mime_type,
+            channel,
         )
         required = ("anatomy", "hands", "face_visibility", "realism", "composition")
         metrics = {}
