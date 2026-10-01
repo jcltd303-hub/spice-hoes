@@ -1,0 +1,39 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+
+REPO_DIR="${SPICE_HOES_DIR:-$HOME/spice-hoes/2/spice-hoes}"
+
+if [[ ! -d "$REPO_DIR/.git" ]]; then
+  echo "spice-hoes repo not found at: $REPO_DIR" >&2
+  echo "Set SPICE_HOES_DIR to the repo path." >&2
+  exit 1
+fi
+
+cd "$REPO_DIR"
+
+# Always refresh origin/main first.
+git fetch origin main --prune
+
+# Preserve local work instead of blocking or clobbering the update.
+STASHED=0
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  git stash push -u -m "hoes auto-stash before main update" >/dev/null
+  STASHED=1
+fi
+
+# Keep this checkout on main and fast-forward only.
+git switch main >/dev/null 2>&1 || git checkout main >/dev/null 2>&1
+git pull --ff-only origin main
+
+if [[ "$STASHED" -eq 1 ]]; then
+  echo "Local changes were stashed before update."
+  echo "Restore manually with: git stash pop"
+fi
+
+# If no command was supplied, print the updated revision and exit.
+if [[ "$#" -eq 0 ]]; then
+  git log -1 --oneline
+  exit 0
+fi
+
+exec "$@"
