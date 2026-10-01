@@ -247,3 +247,54 @@ Backups are created through SQLite's backup API, checked with `PRAGMA quick_chec
 ## CI and next production adapters
 
 GitHub Actions runs the unit suite on pushes and pull requests. Production still needs authenticated cloud review/email delivery, private object storage, permitted distribution adapters, and first-party commerce/outcome ingestion. Preserve human approval and the event trail while those adapters are added.
+
+
+## Native Go media runtime
+
+Local Dream remains available as the benchmark baseline, but the repository also ships a Go-owned media path.
+
+Build the Go tools:
+
+```bash
+./scripts/build-go-tools.sh
+```
+
+The native runtime is split deliberately: `spicemedia` owns process lifecycle, SSE generation, image metrics, identity comparison, JSON contracts and benchmarking; the proven QNN/HTP diffusion kernels remain in the pinned native core. The GitHub workflow `Build Spice QNN Runtime` builds that core from commit `5fda588dbcf054ac1d20f443f17ead15d4e0cede` and packages only the standalone executable plus Qualcomm runtime libraries.
+
+Expected local layout:
+
+```text
+bin/spicemedia
+runtime/bin/spice-qnn-core
+runtime/lib/libQnnHtp.so
+runtime/lib/libQnnSystem.so
+spice-models/<model-id>/
+```
+
+Configure the Go path:
+
+```bash
+export SPICE_MEDIA_PROVIDER=go
+export SPICE_MEDIA_BIN=bin/spicemedia
+export SPICE_QNN_CORE_BIN=runtime/bin/spice-qnn-core
+export SPICE_QNN_LIB_DIR=runtime/lib
+export SPICE_QNN_MODEL_DIR="$HOME/spice-models/cyber_realistic_v10"
+export SPICE_QNN_TYPE=sd15npu
+export SPICE_QNN_PORT=18081
+```
+
+For the current debug Local Dream APK, an existing downloaded model can be exported once with:
+
+```bash
+./scripts/import-local-dream-model.sh cyber_realistic_v10
+```
+
+Keep the app running on port 8081 when comparing the two paths:
+
+```bash
+python3 -m spicecore.cli media-benchmark \
+  --prompt "photorealistic fictional adult woman, city night market" \
+  --seed 42
+```
+
+The Go identity scorer is currently a deterministic perceptual similarity fallback and reports its model name explicitly. The QNN generation path itself is NPU-backed. A dedicated NPU face/identity encoder can replace that fallback without changing the provider contract.
