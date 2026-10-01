@@ -21,7 +21,7 @@ class FakeProvider:
     def __init__(self, scores=None):
         self.generate_calls = []
         self.score_calls = []
-        self.scores = iter(scores or [0.95] * 5)
+        self.scores = iter(scores or [0.95] * 32)
 
     def generate_image(self, **kwargs):
         self.generate_calls.append(kwargs)
@@ -49,35 +49,51 @@ class MasterReferenceTests(unittest.TestCase):
         self.store.close()
         self.tmp.cleanup()
 
-    def test_build_uses_front_as_anchor_for_remaining_views(self):
+    def test_build_selects_consensus_anchor_and_best_view_attempts(self):
         provider = FakeProvider()
         builder = MasterReferenceBuilder(
             self.store,
             provider=provider,
             staging_root=Path(self.tmp.name) / "staging",
             reference_root=Path(self.tmp.name) / "refs",
+            anchor_candidates=3,
+            attempts_per_view=2,
         )
         manifest = builder.build(self.persona, seed=100)
         self.assertEqual(len(manifest["files"]), len(REFERENCE_VIEWS))
         self.assertTrue(manifest["ready_for_promotion"])
+        self.assertEqual(len(manifest["anchor_diagnostics"]), 3)
+        self.assertEqual(sum(1 for x in manifest["anchor_diagnostics"] if x["selected"]), 1)
         self.assertIsNone(provider.generate_calls[0]["references"])
-        self.assertEqual(len(provider.generate_calls[1]["references"]), 1)
-        self.assertEqual([c["seed"] for c in provider.generate_calls], [100, 101, 102, 103, 104, 105])
-        self.assertEqual(len(provider.score_calls), 5)
+        self.assertEqual(len(provider.generate_calls[3]["references"]), 1)
+        self.assertEqual(
+            [c["seed"] for c in provider.generate_calls],
+            [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112],
+        )
+        # 3 medoid scores + 10 angle-attempt scores
+        self.assertEqual(len(provider.score_calls), 13)
 
     def test_low_identity_view_blocks_promotion(self):
-        provider = FakeProvider(scores=[0.95, 0.95, 0.50, 0.95, 0.95])
+        # Anchor consensus passes; first profile attempts both fail; remaining attempts pass.
+        scores = [0.95, 0.96, 0.94, 0.40, 0.50] + [0.95] * 8
+        provider = FakeProvider(scores=scores)
         builder = MasterReferenceBuilder(
             self.store,
             provider=provider,
             staging_root=Path(self.tmp.name) / "staging",
             reference_root=Path(self.tmp.name) / "refs",
             identity_threshold=0.84,
+            anchor_candidates=3,
+            attempts_per_view=2,
         )
         manifest = builder.build(self.persona)
         self.assertFalse(manifest["ready_for_promotion"])
+        manifest_path = (
+            Path(self.tmp.name) / "staging" / self.persona["id"] /
+            manifest["run_id"] / "manifest.json"
+        )
         with self.assertRaises(ValueError):
-            builder.promote(Path(self.tmp.name) / "staging" / self.persona["id"] / manifest["run_id"] / "manifest.json")
+            builder.promote(manifest_path)
 
     def test_promote_installs_canonical_pack(self):
         provider = FakeProvider()
@@ -87,9 +103,14 @@ class MasterReferenceTests(unittest.TestCase):
             provider=provider,
             staging_root=Path(self.tmp.name) / "staging",
             reference_root=refs,
+            anchor_candidates=3,
+            attempts_per_view=1,
         )
         manifest = builder.build(self.persona)
-        manifest_path = Path(self.tmp.name) / "staging" / self.persona["id"] / manifest["run_id"] / "manifest.json"
+        manifest_path = (
+            Path(self.tmp.name) / "staging" / self.persona["id"] /
+            manifest["run_id"] / "manifest.json"
+        )
         result = builder.promote(manifest_path)
         self.assertEqual(result["file_count"], len(REFERENCE_VIEWS))
         self.assertTrue((refs / self.persona["id"] / "manifest.json").exists())
