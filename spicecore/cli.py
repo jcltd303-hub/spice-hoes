@@ -11,6 +11,7 @@ from .autonomy import plan_next_batch
 from .assetflow import produce_job
 from .identityflow import run_identity_batch
 from .identityref import select_identity
+from .sceneflow import generate_scene,SCENES
 from .policy import recommend
 from .moa import deliberate
 from .localdream import generate as localdream_generate, probe as localdream_probe
@@ -30,6 +31,14 @@ def main(argv=None):
     sub.add_parser('personas')
     sub.add_parser('stats')
     sub.add_parser('events')
+    scene = sub.add_parser('identity-scene')
+    scene.add_argument('scene', choices=tuple(SCENES))
+    scene.add_argument('--persona', default='celeste_vale')
+    scene.add_argument('--output')
+    scene.add_argument('--seed', type=int, default=100)
+    scene.add_argument('--denoise', type=float, default=0.35)
+    scene.add_argument('--server-url')
+    scene.add_argument('--reference-dir', default='identity/references')
     sel = sub.add_parser('select-identity')
     sel.add_argument('candidate_id')
     sel.add_argument('--persona', default='celeste_vale')
@@ -137,6 +146,9 @@ def main(argv=None):
             output = store.stats(personas)
         elif args.command == 'events':
             output = store.events()
+        elif args.command == 'identity-scene':
+            out=args.output or f'assets/generated/{args.persona}/scenes/{args.scene}-{args.seed}.png'
+            output = generate_scene(store,args.persona,args.scene,out,args.seed,args.denoise,args.server_url,args.reference_dir)
         elif args.command == 'select-identity':
             output = select_identity(store,args.persona,args.candidate_id,args.reference_dir)
         elif args.command == 'identity-batch':
