@@ -1,6 +1,6 @@
 # Spice Hoes experiment core
 
-Runnable experiment loop for a portfolio of **fictional adult** AI influencers. The repo now includes an append-only SQLite evidence ledger, versioned personas, a human approval gate, RAG project memory, a true mixture-of-agents (MoA) deliberation path, a gated Deep-Q learner for later-stage allocation, Azure text inference, and a local-dream/S24 image adapter.
+Runnable experiment loop for a portfolio of **fictional adult** AI influencers. The repo now includes an append-only SQLite evidence ledger, versioned personas, a human approval gate, RAG project memory, a true mixture-of-agents (MoA) deliberation path, a gated Deep-Q learner for later-stage allocation, OpenAI-compatible MoA text inference, and a local-dream/S24 image adapter.
 
 The operating objective follows [project.md](project.md): optimize attributable net revenue while accounting for production/distribution cost, refunds, repeat purchase, retention, platform constraints, and evidence quality. Generated recommendations remain proposals until approved.
 
@@ -22,7 +22,7 @@ python3 -m spicecore.cli serve
 
 ## RAG knowledge base
 
-Only approved knowledge is retrieved by the MoA path. Retrieval is lexical by default and upgrades to hybrid lexical + semantic search when an Azure embedding deployment is configured. Stored embeddings retain their model identifier so old knowledge can be backfilled or re-embedded deliberately. Every inserted item and every deliberation is logged.
+Only approved knowledge is retrieved by the MoA path. Retrieval is lexical by default and upgrades to hybrid lexical + semantic search when an OpenAI-compatible embedding model is configured. Stored embeddings retain their model identifier so old knowledge can be backfilled or re-embedded deliberately. Every inserted item and every deliberation is logged.
 
 ```bash
 python3 -m spicecore.cli knowledge-add \
@@ -37,22 +37,21 @@ python3 -m spicecore.cli knowledge-search "mirror outfits conversion"
 Optional semantic retrieval:
 
 ```bash
-export AZURE_OPENAI_EMBEDDING_DEPLOYMENT='YOUR-EMBEDDING-DEPLOYMENT'
+export MOA_EMBEDDING_MODEL='YOUR-EMBEDDING-MODEL'
 python3 -m spicecore.cli knowledge-backfill
 python3 -m spicecore.cli knowledge-search "fashion garment performance"
 ```
 
 If the embedding deployment is not configured, the same commands continue using deterministic lexical retrieval.
 
-## Mixture of Agents on Azure
+## Mixture of Agents
 
-Set Azure credentials outside the repository:
+Set the OpenAI-compatible MoA provider outside the repository:
 
 ```bash
-export AZURE_OPENAI_ENDPOINT='https://YOUR-RESOURCE.openai.azure.com'
-export AZURE_OPENAI_API_KEY='...'
-export AZURE_OPENAI_DEPLOYMENT='YOUR-DEPLOYMENT'
-export AZURE_OPENAI_API_VERSION='2025-04-01-preview'
+export MOA_BASE_URL='https://openrouter.ai/api/v1'
+export MOA_API_KEY='YOUR_OPENROUTER_KEY'
+export MOA_MODEL='openrouter/free'
 ```
 
 Then run:
@@ -72,7 +71,7 @@ The repo can now call the S24/local-dream endpoint directly, persist the returne
 Single asset:
 
 ```bash
-export LOCAL_DREAM_URL='http://127.0.0.1:7860'
+export LOCAL_DREAM_URL='http://127.0.0.1:8081'
 
 python3 -m spicecore.cli generate \
   --persona zara_voss \
@@ -98,9 +97,9 @@ Every generated file remains `proposed` until a human approves it. The prompt bu
 
 ## Local-dream / S24 media lane
 
-`spicecore.providers.LocalDreamProvider` is the only image-generation adapter in this branch. It defaults to `http://127.0.0.1:7860/generate` and accepts `LOCAL_DREAM_URL` and optional `LOCAL_DREAM_TOKEN`. Generated assets should be persisted to private storage and then registered with `propose`; do not commit identity references or private generated assets.
+`spicecore.providers.LocalDreamProvider` is the only image-generation adapter in this branch. It defaults to `http://127.0.0.1:8081/generate` and accepts `LOCAL_DREAM_URL` and optional `LOCAL_DREAM_TOKEN`. Generated assets should be persisted to private storage and then registered with `propose`; do not commit identity references or private generated assets.
 
-Azure is the text-reasoning lane; local-dream on the S24 is the image lane. Provider interfaces remain small so deployments can change without rewriting experiment logic.
+The OpenAI-compatible MoA provider is the text-reasoning lane; local-dream on the S24 is the image lane. Provider interfaces remain small so deployments can change without rewriting experiment logic.
 
 ## DeepRL
 
