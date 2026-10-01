@@ -19,14 +19,22 @@ class ProviderTests(unittest.TestCase):
             post.return_value = {
                 "choices": [{"message": {"content": "OK"}}],
             }
-            result = provider.chat("system", "hello")
+            result = provider.chat(
+                "system",
+                "hello",
+                response_format={"type": "json_object"},
+                max_tokens=700,
+            )
 
         self.assertEqual(result, "OK")
         url, payload, headers = post.call_args.args[:3]
         self.assertEqual(url, "https://openrouter.ai/api/v1/chat/completions")
         self.assertEqual(payload["model"], "openrouter/free")
         self.assertEqual(payload["messages"][1]["content"], "hello")
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertEqual(payload["max_tokens"], 700)
         self.assertEqual(headers["Authorization"], "Bearer key")
+        self.assertEqual(headers["X-Title"], "spice-hoes")
 
     def test_embedding_provider_uses_openai_compatible_contract(self):
         provider = OpenAICompatibleEmbeddingProvider(
