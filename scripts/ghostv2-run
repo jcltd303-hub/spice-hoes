@@ -1,0 +1,7 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+if [ "$#" -ne 3 ]; then echo "usage: ghostv2-run REFERENCE TARGET OUTPUT" >&2; exit 2; fi
+ROOT="${SPICE_GHOSTV2_DIR:-$HOME/ghostv2}"
+[ -f "$ROOT/inference.py" ] || { echo "GhostV2 missing; run scripts/install-ghostv2-termux.sh" >&2; exit 3; }
+cd "$ROOT"
+python inference.py --source_file_path="$1" --target_file_path="$2" --output_file_path="$3"
