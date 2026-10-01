@@ -96,8 +96,13 @@ def generate(prompt,output,negative_prompt="",size=None,steps=None,cfg=None,seed
   expected=width*height*channels
   if len(data)!=expected: raise RuntimeError(f"Local Dream raw image payload length {len(data)} != {expected}")
   _write_png(out,width,height,channels,data)
+ safe_payload=dict(payload)
+ for key in ("image","mask"):
+  if key in safe_payload:
+   value=safe_payload[key]
+   safe_payload[key]={"redacted":True,"encoded_chars":len(value) if isinstance(value,str) else None}
  return {"asset_uri":str(out),"provider":"local-dream","profile":profile,"server_url":server_url or DEFAULT_URL,
-         "request":payload,"width":width,"height":height,"channels":channels,"wire_format":wire_format,"progress":progress,
+         "request":safe_payload,"width":width,"height":height,"channels":channels,"wire_format":wire_format,"progress":progress,
          "generation_time_ms":complete.get("generation_time_ms"),"round_trip_ms":round((time.monotonic()-started)*1000)}
 
 def _write_png(path,width,height,channels,pixels):
