@@ -26,6 +26,7 @@ type Manager struct {
     Port int
     LogPath string
     IdentityVision string
+    FaceDetector string
 }
 
 func FromEnv() *Manager {
@@ -40,7 +41,8 @@ func FromEnv() *Manager {
     modelType := strings.TrimSpace(os.Getenv("SPICE_QNN_TYPE")); if modelType == "" { modelType = "sd15npu" }
     logPath := strings.TrimSpace(os.Getenv("SPICE_QNN_LOG")); if logPath == "" { logPath = "data/spicemedia/qnn-core.log" }
     identityVision := strings.TrimSpace(os.Getenv("SPICE_FACE_EMBED_MODEL"))
-    return &Manager{Binary:bin, ModelDir:modelDir, LibDir:libDir, Type:modelType, Host:host, Port:port, LogPath:logPath, IdentityVision:identityVision}
+    faceDetector := strings.TrimSpace(os.Getenv("SPICE_FACE_DETECT_MODEL"))
+    return &Manager{Binary:bin, ModelDir:modelDir, LibDir:libDir, Type:modelType, Host:host, Port:port, LogPath:logPath, IdentityVision:identityVision, FaceDetector:faceDetector}
 }
 
 func (m *Manager) baseURL() string { return fmt.Sprintf("http://%s:%d", m.Host, m.Port) }
@@ -76,6 +78,12 @@ func (m *Manager) Ensure(ctx context.Context) error {
         if _, err := os.Stat(identityPath); err != nil { return fmt.Errorf("face embedding model unavailable: %w", err) }
         m.IdentityVision = identityPath
         args = append(args, "--identity_vision", m.IdentityVision)
+    }
+    if m.FaceDetector != "" {
+        detectorPath, err := filepath.Abs(m.FaceDetector); if err != nil { return err }
+        if _, err := os.Stat(detectorPath); err != nil { return fmt.Errorf("face detector model unavailable: %w", err) }
+        m.FaceDetector = detectorPath
+        args = append(args, "--face_detector", m.FaceDetector)
     }
     cmd := exec.Command(m.Binary, args...)
     cmd.Stdout = logFile; cmd.Stderr = logFile; cmd.Dir = filepath.Dir(m.Binary)
@@ -136,4 +144,42 @@ func (m *Manager) Embed(ctx context.Context, input []float64) ([]float64, map[st
         vec = append(vec,n)
     }
     return vec,out,nil
+}
+
+
+type TensorOutput struct {
+    Name string
+    Dims []int
+    Values []float64
+}
+
+func (m *Manager) Detect(ctx context.Context, input []float64) ([]TensorOutput, map[string]any, error) {
+    if len(input)==0 { return nil,nil,errors.New("detector input is empty") }
+    if err:=m.Ensure(ctx); err!=nil { return nil,nil,err }
+    body,err:=json.Marshal(map[string]any{"input":input}); if err!=nil { return nil,nil,err }
+    req,err:=http.NewRequestWithContext(ctx,http.MethodPost,m.baseURL()+"/face/detect",bytes.NewReader(body)); if err!=nil { return nil,nil,err }
+    req.Header.Set("Content-Type","application/json")
+    resp,err:=(&http.Client{Timeout:2*time.Minute}).Do(req); if err!=nil { return nil,nil,err }
+    defer resp.Body.Close()
+    raw,err:=io.ReadAll(io.LimitReader(resp.Body,128<<20)); if err!=nil { return nil,nil,err }
+    if resp.StatusCode<200 || resp.StatusCode>=300 { return nil,nil,fmt.Errorf("face detect HTTP %d: %s",resp.StatusCode,strings.TrimSpace(string(raw))) }
+    var payload map[string]any
+    if err:=json.Unmarshal(raw,&payload); err!=nil { return nil,nil,err }
+    rawOutputs,ok:=payload["outputs"].([]any); if !ok || len(rawOutputs)==0 { return nil,nil,errors.New("face detector returned no outputs") }
+    outputs:=make([]TensorOutput,0,len(rawOutputs))
+    for _,item:=range rawOutputs {
+        obj,ok:=item.(map[string]any); if !ok { continue }
+        out:=TensorOutput{}
+        if name,ok:=obj["name"].(string); ok { out.Name=name }
+        if ds,ok:=obj["dims"].([]any); ok {
+            for _,d:=range ds { if n,ok:=d.(float64); ok { out.Dims=append(out.Dims,int(n)) } }
+        }
+        if vs,ok:=obj["values"].([]any); ok {
+            out.Values=make([]float64,0,len(vs))
+            for _,v:=range vs { if n,ok:=v.(float64); ok { out.Values=append(out.Values,n) } }
+        }
+        if len(out.Values)>0 { outputs=append(outputs,out) }
+    }
+    if len(outputs)==0 { return nil,nil,errors.New("face detector returned empty tensor set") }
+    return outputs,payload,nil
 }
