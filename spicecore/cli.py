@@ -11,8 +11,9 @@ from .autonomy import plan_next_batch
 from .assetflow import produce_job
 from .identityflow import run_identity_batch
 from .identityref import select_identity
-from .sceneflow import generate_scene,identity_inpaint,transfer_identity,transfer_identity_local,SCENES
+from .sceneflow import generate_scene,identity_inpaint,transfer_identity,transfer_identity_local,transfer_identity_android,SCENES
 from .localidentity import status as local_identity_status
+from .androididentity import health as android_identity_health
 from .policy import recommend
 from .moa import deliberate
 from .localdream import generate as localdream_generate, probe as localdream_probe
@@ -42,6 +43,13 @@ def main(argv=None):
     scene.add_argument('--reference-dir', default='identity/references')
     scene.add_argument('--composition-only', action='store_true')
     sub.add_parser('identity-local-status')
+    sub.add_parser('identity-android-status')
+    axfer = sub.add_parser('identity-transfer-android')
+    axfer.add_argument('scene_asset')
+    axfer.add_argument('--persona', default='celeste_vale')
+    axfer.add_argument('--output')
+    axfer.add_argument('--endpoint')
+    axfer.add_argument('--reference-dir', default='identity/references')
     lxfer = sub.add_parser('identity-transfer-local')
     lxfer.add_argument('scene_asset')
     lxfer.add_argument('--persona', default='celeste_vale')
@@ -179,6 +187,14 @@ def main(argv=None):
             output = generate_scene(store,args.persona,args.scene,out,args.seed,args.denoise,args.server_url,args.reference_dir,persona,args.composition_only)
         elif args.command == 'identity-local-status':
             output=local_identity_status()
+        elif args.command == 'identity-android-status':
+            output=android_identity_health()
+        elif args.command == 'identity-transfer-android':
+            persona = next((p for p in personas if p['id'] == args.persona), None)
+            if persona is None: parser.error('Unknown persona')
+            source=Path(args.scene_asset)
+            out=args.output or str(source.with_name(source.stem+'-identity-android.png'))
+            output=transfer_identity_android(store,args.persona,args.scene_asset,out,args.endpoint,args.reference_dir,persona)
         elif args.command == 'identity-transfer-local':
             persona = next((p for p in personas if p['id'] == args.persona), None)
             if persona is None: parser.error('Unknown persona')
