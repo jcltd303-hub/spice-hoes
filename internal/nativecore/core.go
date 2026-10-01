@@ -25,6 +25,7 @@ type Manager struct {
     Host string
     Port int
     LogPath string
+    IdentityVision string
 }
 
 func FromEnv() *Manager {
@@ -38,7 +39,8 @@ func FromEnv() *Manager {
     libDir := strings.TrimSpace(os.Getenv("SPICE_QNN_LIB_DIR"))
     modelType := strings.TrimSpace(os.Getenv("SPICE_QNN_TYPE")); if modelType == "" { modelType = "sd15npu" }
     logPath := strings.TrimSpace(os.Getenv("SPICE_QNN_LOG")); if logPath == "" { logPath = "data/spicemedia/qnn-core.log" }
-    return &Manager{Binary:bin, ModelDir:modelDir, LibDir:libDir, Type:modelType, Host:host, Port:port, LogPath:logPath}
+    identityVision := strings.TrimSpace(os.Getenv("SPICE_FACE_EMBED_MODEL"))
+    return &Manager{Binary:bin, ModelDir:modelDir, LibDir:libDir, Type:modelType, Host:host, Port:port, LogPath:logPath, IdentityVision:identityVision}
 }
 
 func (m *Manager) baseURL() string { return fmt.Sprintf("http://%s:%d", m.Host, m.Port) }
@@ -69,6 +71,12 @@ func (m *Manager) Ensure(ctx context.Context) error {
     if err := os.MkdirAll(filepath.Dir(m.LogPath), 0755); err != nil { return err }
     logFile, err := os.OpenFile(m.LogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); if err != nil { return err }
     args := []string{"--type",m.Type,"--model_dir",m.ModelDir,"--lib_dir",m.LibDir,"--port",strconv.Itoa(m.Port)}
+    if m.IdentityVision != "" {
+        identityPath, err := filepath.Abs(m.IdentityVision); if err != nil { return err }
+        if _, err := os.Stat(identityPath); err != nil { return fmt.Errorf("face embedding model unavailable: %w", err) }
+        m.IdentityVision = identityPath
+        args = append(args, "--identity_vision", m.IdentityVision)
+    }
     cmd := exec.Command(m.Binary, args...)
     cmd.Stdout = logFile; cmd.Stderr = logFile; cmd.Dir = filepath.Dir(m.Binary)
     ld := strings.Join([]string{m.LibDir,"/system/lib64","/vendor/lib64","/vendor/lib64/egl"},":")
@@ -106,4 +114,26 @@ func (m *Manager) Generate(ctx context.Context, payload map[string]any) (map[str
     }
     if err := scanner.Err(); err != nil { return nil, err }
     return nil, errors.New("QNN core stream ended without complete event")
+}
+
+func (m *Manager) Embed(ctx context.Context, input []float64) ([]float64, map[string]any, error) {
+    if len(input) == 0 { return nil, nil, errors.New("embedding input is empty") }
+    if err := m.Ensure(ctx); err != nil { return nil, nil, err }
+    payload := map[string]any{"input": input}
+    body, err := json.Marshal(payload); if err != nil { return nil, nil, err }
+    req, err := http.NewRequestWithContext(ctx,http.MethodPost,m.baseURL()+"/identity/embed",bytes.NewReader(body)); if err != nil { return nil,nil,err }
+    req.Header.Set("Content-Type","application/json")
+    resp, err := (&http.Client{Timeout:2*time.Minute}).Do(req); if err != nil { return nil,nil,err }
+    defer resp.Body.Close()
+    raw, err := io.ReadAll(io.LimitReader(resp.Body,32<<20)); if err != nil { return nil,nil,err }
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 { return nil,nil,fmt.Errorf("identity embed HTTP %d: %s",resp.StatusCode,strings.TrimSpace(string(raw))) }
+    var out map[string]any
+    if err := json.Unmarshal(raw,&out); err != nil { return nil,nil,err }
+    values, ok := out["embedding"].([]any); if !ok || len(values)==0 { return nil,nil,errors.New("identity embed returned no vector") }
+    vec := make([]float64,0,len(values))
+    for _,v := range values {
+        n,ok := v.(float64); if !ok { return nil,nil,errors.New("identity embed returned non-numeric vector") }
+        vec = append(vec,n)
+    }
+    return vec,out,nil
 }
