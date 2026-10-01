@@ -178,6 +178,73 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(result["created_candidates"], 0)
         self.assertEqual(self.store.events()[-1]["kind"], "autopilot_run_recorded")
 
+    def test_analytics_ingest_updates_canonical_ledger(self):
+        proposed = dispatch(
+            "propose",
+            {
+                "persona_id": self.personas[0]["id"],
+                "theme": "analytics",
+                "format": "short",
+                "channel": "instagram",
+                "offer": "test",
+                "cost_cents": 25,
+            },
+            self.store,
+            self.personas,
+        )
+        cid = proposed["id"]
+        dispatch(
+            "review",
+            {"candidate_id": cid, "decision": "approved", "reviewer": "tester", "note": ""},
+            self.store,
+            self.personas,
+        )
+        dispatch(
+            "publish",
+            {"candidate_id": cid, "url": "https://example.com/post/1", "external_id": "post_1"},
+            self.store,
+            self.personas,
+        )
+
+        result = dispatch(
+            "analytics_ingest",
+            {
+                "metrics": {
+                    "platform": "instagram",
+                    "post_id": "post_1",
+                    "candidate_id": cid,
+                    "persona_id": self.personas[0]["id"],
+                    "impressions": 100,
+                    "views": 80,
+                    "link_clicks": 7,
+                    "revenue_cents": 900,
+                    "cost_cents": 100,
+                    "external_id": "met_post_1",
+                }
+            },
+            self.store,
+            self.personas,
+        )
+        row = next(x for x in result["stats"] if x["persona_id"] == self.personas[0]["id"])
+        self.assertEqual(row["impressions"], 1)
+        self.assertEqual(row["clicks"], 1)
+        self.assertEqual(row["revenue_cents"], 900)
+        self.assertEqual(row["net_cents"], 775)
+
+    def test_thompson_recommendation_and_capabilities(self):
+        result = dispatch(
+            "recommend_thompson",
+            {"seed": 7, "fatigue_decay_rate": 0.2},
+            self.store,
+            self.personas,
+        )
+        self.assertEqual(result["policy_version"], "bayesian-thompson-sampling-v1")
+        self.assertEqual(len(result["all_arms"]), len(self.personas))
+
+        caps = dispatch("capabilities", {}, self.store, self.personas)
+        self.assertTrue(caps["analytics"]["normalized_ingest"])
+        self.assertTrue(caps["policy"]["thompson_sampling"])
+
 
 if __name__ == "__main__":
     unittest.main()
