@@ -130,6 +130,7 @@ class AssetGenerator:
         identity = IdentityGate(
             self.provider, threshold=self.identity_threshold
         ).score(image_bytes, mime, references)
+        quality = self.quality_gate.score(image_bytes, mime, channel)
 
         candidate_id = self.store.propose(
             persona=persona,
@@ -144,13 +145,24 @@ class AssetGenerator:
             cost_cents=cost_cents,
         )
 
-        # Scored off-model assets never enter the operator review queue.
+        rejection = None
         if identity["scored"] and not identity["passed"]:
+            rejection = (
+                "identity-gate",
+                f"identity score {identity['score']:.4f} below {identity['threshold']:.4f}",
+            )
+        elif not quality["passed"]:
+            rejection = (
+                "quality-gate",
+                f"quality score {quality['score']:.4f} below {quality['threshold']:.4f}",
+            )
+
+        if rejection:
             self.store.review(
                 candidate_id,
                 "rejected",
-                reviewer="identity-gate",
-                note=f"identity score {identity['score']:.4f} below {identity['threshold']:.4f}",
+                reviewer=rejection[0],
+                note=rejection[1],
             )
             status = "rejected"
         else:
@@ -161,6 +173,14 @@ class AssetGenerator:
             "asset_id": asset_id,
             "persona_id": persona["id"],
             **identity,
+        })
+
+        self.store.record_event("quality_checked", {
+            "candidate_id": candidate_id,
+            "asset_id": asset_id,
+            "persona_id": persona["id"],
+            **quality,
+            "final_status": status,
         })
 
         metadata = {
@@ -185,6 +205,7 @@ class AssetGenerator:
             "reference_count": len(references),
             "reference_strength": self.reference_strength,
             "identity": identity,
+            "quality": quality,
             "status": status,
         }
         meta_path = path.with_suffix(path.suffix + ".json")
@@ -209,6 +230,8 @@ class AssetGenerator:
             "reference_count": len(references),
             "identity_score": identity.get("score"),
             "identity_threshold": identity["threshold"],
+            "quality_score": quality["score"],
+            "quality_threshold": quality["threshold"],
             "status": status,
         })
         return {
@@ -221,6 +244,7 @@ class AssetGenerator:
             "provider": self.provider.model_name,
             "reference_count": len(references),
             "identity": identity,
+            "quality": quality,
             "status": status,
         }
 

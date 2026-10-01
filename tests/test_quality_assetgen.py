@@ -60,6 +60,7 @@ class QualityAssetGeneratorTests(unittest.TestCase):
             provider=provider,
             asset_dir=Path(self.tmp.name) / "assets",
             reference_root=Path(self.tmp.name) / "refs",
+            quality_threshold=threshold,
         )
         return QualityAssetGenerator(base, quality_threshold=threshold)
 
