@@ -6,11 +6,12 @@ import secrets
 from http.server import HTTPServer
 from pathlib import Path
 
+from .assetgen import AssetGenerator
 from .core import Store, load_personas
 from .memory import KnowledgeBase
 from .moa import MixtureOfAgents
 from .policy import recommend
-from .providers import AzureChatProvider
+from .providers import AzureChatProvider, LocalDreamProvider
 from .web import make_handler
 from .workflow import build_briefs
 
@@ -42,6 +43,29 @@ def main(argv=None):
     for field in ("asset-uri", "prompt", "model", "seed"):
         prop.add_argument("--" + field)
     prop.add_argument("--cost-cents", type=int, default=0)
+
+    gen = sub.add_parser("generate")
+    gen.add_argument("--persona", required=True)
+    gen.add_argument("--theme", required=True)
+    gen.add_argument("--channel", required=True)
+    gen.add_argument("--offer", required=True)
+    gen.add_argument("--scene", default="")
+    gen.add_argument("--seed", type=int)
+    gen.add_argument("--width", type=int, default=768)
+    gen.add_argument("--height", type=int, default=1024)
+    gen.add_argument("--cost-cents", type=int, default=0)
+    gen.add_argument("--asset-dir", default="data/assets")
+
+    batch = sub.add_parser("generate-batch")
+    batch.add_argument("--theme", required=True)
+    batch.add_argument("--channel", required=True)
+    batch.add_argument("--offer", required=True)
+    batch.add_argument("--count-per-persona", type=int, default=1)
+    batch.add_argument("--seed", type=int)
+    batch.add_argument("--width", type=int, default=768)
+    batch.add_argument("--height", type=int, default=1024)
+    batch.add_argument("--cost-cents", type=int, default=0)
+    batch.add_argument("--asset-dir", default="data/assets")
 
     review = sub.add_parser("review")
     review.add_argument("candidate_id")
@@ -110,6 +134,37 @@ def main(argv=None):
                 persona, args.theme, args.format, args.channel, args.offer,
                 args.asset_uri, args.prompt, args.model, args.seed, args.cost_cents
             )}
+        elif args.command == "generate":
+            persona = next((p for p in personas if p["id"] == args.persona), None)
+            if persona is None:
+                parser.error("Unknown persona")
+            output = AssetGenerator(
+                store, provider=LocalDreamProvider(), asset_dir=args.asset_dir
+            ).generate(
+                persona=persona,
+                theme=args.theme,
+                channel=args.channel,
+                offer=args.offer,
+                scene=args.scene,
+                seed=args.seed,
+                width=args.width,
+                height=args.height,
+                cost_cents=args.cost_cents,
+            )
+        elif args.command == "generate-batch":
+            output = AssetGenerator(
+                store, provider=LocalDreamProvider(), asset_dir=args.asset_dir
+            ).batch(
+                personas=personas,
+                theme=args.theme,
+                channel=args.channel,
+                offer=args.offer,
+                count_per_persona=args.count_per_persona,
+                seed=args.seed,
+                width=args.width,
+                height=args.height,
+                cost_cents=args.cost_cents,
+            )
         elif args.command == "review":
             output = store.review(args.candidate_id, args.decision, args.reviewer, args.note)
         elif args.command == "publish":
