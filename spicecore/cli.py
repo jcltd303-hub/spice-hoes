@@ -375,13 +375,23 @@ def main(argv=None):
             )
             output = engine.settle_cycle(args.cycle_id, done=args.done)
         elif args.command == "rl-train":
-            policy = DeepRLPolicy(store, [p["id"] for p in personas])
+            values = _runtime_values(store)
+            policy = DeepRLPolicy(
+                store,
+                [p["id"] for p in personas],
+                min_experiences=values["rl_min_experiences"],
+            )
             output = policy.train(
                 epochs=args.epochs,
                 learning_rate=args.learning_rate,
             )
         elif args.command == "rl-status":
-            policy = DeepRLPolicy(store, [p["id"] for p in personas])
+            values = _runtime_values(store)
+            policy = DeepRLPolicy(
+                store,
+                [p["id"] for p in personas],
+                min_experiences=values["rl_min_experiences"],
+            )
             row = store.db.execute(
                 "SELECT * FROM rl_policy_snapshot ORDER BY ts DESC LIMIT 1"
             ).fetchone()
@@ -428,6 +438,7 @@ def main(argv=None):
         elif args.command == "experiment-results":
             output = ExperimentPlanner(AzureChatProvider(), store).results(args.plan_id)
         elif args.command == "autopilot-run":
+            values = _runtime_values(store)
             provider = AzureChatProvider()
             planner = ExperimentPlanner(provider, store)
             engine = CoreAutopilot(
@@ -436,6 +447,7 @@ def main(argv=None):
                 MixtureOfAgents(provider, store, embedder=_optional_embedder()),
                 planner,
                 _asset_generator(store),
+                min_experiences=values["rl_min_experiences"],
             )
             output = engine.run_once(
                 args.objective,
@@ -444,10 +456,19 @@ def main(argv=None):
                 variant_count=args.variants,
                 seed=args.seed,
                 cost_cents_per_asset=args.cost_cents_per_asset,
-                max_pending_review=args.max_pending_review,
-                daily_budget_cents=args.daily_budget_cents,
+                max_pending_review=(
+                    args.max_pending_review
+                    if args.max_pending_review is not None
+                    else values["max_pending_review"]
+                ),
+                daily_budget_cents=(
+                    args.daily_budget_cents
+                    if args.daily_budget_cents is not None
+                    else values["daily_budget_cents"]
+                ),
             )
         elif args.command == "autopilot-settle":
+            values = _runtime_values(store)
             provider = AzureChatProvider()
             planner = ExperimentPlanner(provider, store)
             knowledge = KnowledgeBase(store, embedder=_optional_embedder())
@@ -456,11 +477,17 @@ def main(argv=None):
                 personas,
                 planner,
                 knowledge,
+                min_experiences=values["rl_min_experiences"],
             ).settle_autopilot_run(
                 args.run_id,
-                min_impressions_per_published_variant=args.min_impressions,
+                min_impressions_per_published_variant=(
+                    args.min_impressions
+                    if args.min_impressions is not None
+                    else values["min_impressions_to_learn"]
+                ),
             )
         elif args.command == "autopilot-status":
+            values = _runtime_values(store)
             provider = AzureChatProvider()
             engine = CoreAutopilot(
                 store,
@@ -468,6 +495,7 @@ def main(argv=None):
                 MixtureOfAgents(provider, store, embedder=_optional_embedder()),
                 ExperimentPlanner(provider, store),
                 _asset_generator(store),
+                min_experiences=values["rl_min_experiences"],
             )
             output = {
                 "pending_review": engine.pending_review_count(),
@@ -547,6 +575,16 @@ def main(argv=None):
             output = OfferRegistry(store).set_active(
                 args.offer_id,
                 args.state == "active",
+            )
+        elif args.command == "policy-show":
+            output = RuntimePolicy(store).current()
+        elif args.command == "policy-history":
+            output = RuntimePolicy(store).history(limit=args.limit)
+        elif args.command == "policy-set":
+            output = RuntimePolicy(store).update(
+                _parse_policy_changes(args.changes),
+                actor=args.actor,
+                note=args.note,
             )
         elif args.command == "doctor":
             output = Operations(store, personas).doctor()
