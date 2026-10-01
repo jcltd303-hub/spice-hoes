@@ -1,4 +1,4 @@
-"""Provider adapters for the allowed compute lanes: Azure text and local-dream media."""
+"""Provider adapters for OpenAI-compatible text and local-dream media."""
 
 from __future__ import annotations
 
@@ -32,64 +32,72 @@ def _validate_b64(value: str) -> None:
     base64.b64decode(raw, validate=True)
 
 
-class AzureChatProvider:
-    """OpenAI-compatible Azure chat adapter using only stdlib HTTP."""
+class OpenAICompatibleChatProvider:
+    """Generic OpenAI-compatible chat adapter using only stdlib HTTP."""
 
-    def __init__(self, endpoint: str | None = None, api_key: str | None = None,
-                 deployment: str | None = None, api_version: str | None = None):
-        self.endpoint = (endpoint or os.getenv("AZURE_OPENAI_ENDPOINT", "")).rstrip("/")
-        self.api_key = api_key or os.getenv("AZURE_OPENAI_API_KEY", "")
-        self.deployment = deployment or os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
-        self.api_version = api_version or os.getenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
-        if not all((self.endpoint, self.api_key, self.deployment)):
-            raise ProviderError("Azure provider requires endpoint, API key and deployment")
+    def __init__(self, base_url: str | None = None, api_key: str | None = None,
+                 model: str | None = None):
+        self.base_url = (
+            base_url or os.getenv("MOA_BASE_URL", "https://api.fishgame.live/v1")
+        ).rstrip("/")
+        self.api_key = api_key if api_key is not None else os.getenv("MOA_API_KEY", "")
+        self.model = model or os.getenv("MOA_MODEL", "polygloy-moa")
+        if not self.base_url or not self.model:
+            raise ProviderError("MoA provider requires base URL and model")
 
     @property
     def model_name(self) -> str:
-        return f"azure:{self.deployment}"
+        return f"openai-compatible:{self.model}"
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
 
     def chat(self, system: str, user: str, temperature: float = 0.4) -> str:
-        url = (f"{self.endpoint}/openai/deployments/{self.deployment}/chat/completions"
-               f"?api-version={self.api_version}")
-        data = _post_json(url, {
-            "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": user}],
-            "temperature": temperature,
-        }, {"api-key": self.api_key})
+        data = _post_json(
+            f"{self.base_url}/chat/completions",
+            {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "temperature": temperature,
+            },
+            self._headers(),
+        )
         try:
             return data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise ProviderError("Unexpected Azure response") from exc
+            raise ProviderError("Unexpected OpenAI-compatible response") from exc
 
 
-class AzureEmbeddingProvider:
-    """Azure OpenAI v1 embeddings adapter using stdlib HTTP."""
+class OpenAICompatibleEmbeddingProvider:
+    """Optional OpenAI-compatible embeddings adapter."""
 
-    def __init__(self, endpoint: str | None = None, api_key: str | None = None,
-                 deployment: str | None = None):
-        self.endpoint = (endpoint or os.getenv("AZURE_OPENAI_ENDPOINT", "")).rstrip("/")
-        self.api_key = api_key or os.getenv("AZURE_OPENAI_API_KEY", "")
-        self.deployment = deployment or os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "")
-        if not all((self.endpoint, self.api_key, self.deployment)):
-            raise ProviderError(
-                "Azure embedding provider requires endpoint, API key and embedding deployment"
-            )
+    def __init__(self, base_url: str | None = None, api_key: str | None = None,
+                 model: str | None = None):
+        self.base_url = (
+            base_url or os.getenv("MOA_BASE_URL", "https://api.fishgame.live/v1")
+        ).rstrip("/")
+        self.api_key = api_key if api_key is not None else os.getenv("MOA_API_KEY", "")
+        self.model = model or os.getenv("MOA_EMBEDDING_MODEL", "")
+        if not self.base_url or not self.model:
+            raise ProviderError("Embedding provider requires base URL and MOA_EMBEDDING_MODEL")
 
     @property
     def model_name(self) -> str:
-        return f"azure-embedding:{self.deployment}"
+        return f"openai-compatible-embedding:{self.model}"
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
 
     def embed(self, text: str) -> list[float]:
         if not text.strip():
             raise ValueError("embedding input cannot be empty")
         data = _post_json(
-            f"{self.endpoint}/openai/v1/embeddings",
-            {
-                "model": self.deployment,
-                "input": text,
-                "encoding_format": "float",
-            },
-            {"api-key": self.api_key},
+            f"{self.base_url}/embeddings",
+            {"model": self.model, "input": text, "encoding_format": "float"},
+            self._headers(),
             timeout=90,
         )
         try:
@@ -98,7 +106,7 @@ class AzureEmbeddingProvider:
                 raise TypeError
             return [float(x) for x in vector]
         except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise ProviderError("Unexpected Azure embedding response") from exc
+            raise ProviderError("Unexpected embedding response") from exc
 
 
 class LocalDreamProvider:
