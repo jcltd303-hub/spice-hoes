@@ -146,7 +146,7 @@ class Store:
         for p in personas:
             published = self.db.execute("SELECT COUNT(*) FROM candidates WHERE persona_id=? AND status='published'", (p['id'],)).fetchone()[0]
             cost = self.db.execute('SELECT COALESCE(SUM(cost_cents),0) FROM candidates WHERE persona_id=?', (p['id'],)).fetchone()[0]
-            rows = self.db.execute('SELECT kind,payload FROM events WHERE kind IN (\'impression\',\'click\',\'purchase\',\'refund\',\'distribution_cost\')').fetchall()
+            rows = self.db.execute('SELECT kind,payload FROM events WHERE kind IN (\'impression\',\'click\',\'purchase\',\'refund\',\'distribution_cost\',\'commerce_cost\')').fetchall()
             sums = {'impression': 0, 'click': 0, 'purchase': 0, 'refund': 0, 'distribution_cost': 0, 'commerce_cost': 0}
             for row in rows:
                 item = json.loads(row['payload'])
