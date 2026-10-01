@@ -56,6 +56,45 @@ func commandQuality() {
 func commandIdentity() {
     payload:=readObject(); generated,err:=decodeB64(payload["image_base64"]); if err!=nil { fail(err) }
     refs,ok:=payload["references"].([]any); if !ok || len(refs)==0 { fail(fmt.Errorf("identity requires references")) }
+
+    manager:=nativecore.FromEnv()
+    if manager.IdentityVision != "" {
+        input,err:=ident.ArcFaceInput(generated); if err!=nil { fail(err) }
+        ctx,cancel:=context.WithTimeout(context.Background(),2*time.Minute)
+        generatedEmbedding,meta,err:=manager.Embed(ctx,input)
+        cancel()
+        if err==nil {
+            scores:=make([]float64,0,len(refs))
+            for _,item:=range refs {
+                obj,ok:=item.(map[string]any); if !ok { continue }
+                ref,err:=decodeB64(obj["image_base64"]); if err!=nil { continue }
+                refInput,err:=ident.ArcFaceInput(ref); if err!=nil { continue }
+                refCtx,refCancel:=context.WithTimeout(context.Background(),2*time.Minute)
+                refEmbedding,_,err:=manager.Embed(refCtx,refInput)
+                refCancel()
+                if err!=nil { continue }
+                score,err:=ident.Cosine(generatedEmbedding,refEmbedding)
+                if err==nil { scores=append(scores,score) }
+            }
+            if len(scores)>0 {
+                maxScore,sum:=scores[0],0.0
+                for _,s:=range scores { if s>maxScore {maxScore=s}; sum+=s }
+                write(map[string]any{
+                    "score":maxScore,
+                    "mean_score":sum/float64(len(scores)),
+                    "reference_count":len(scores),
+                    "model":"arcface-w600k-r50-qnn",
+                    "embedding_dimensions":len(generatedEmbedding),
+                    "alignment":"center-crop-112",
+                    "npu":true,
+                    "latency_ms":meta["latency_ms"],
+                    "l2_norm":meta["l2_norm"],
+                })
+                return
+            }
+        }
+    }
+
     scores:=make([]float64,0,len(refs))
     for _,item:=range refs {
         obj,ok:=item.(map[string]any); if !ok { continue }
@@ -69,7 +108,9 @@ func commandIdentity() {
         "mean_score":sum/float64(len(scores)),
         "reference_count":len(scores),
         "model":"go-perceptual-identity-v1",
+        "alignment":"none",
         "npu":false,
+        "fallback_reason":"SPICE_FACE_EMBED_MODEL unavailable or NPU embedding failed",
     })
 }
 
