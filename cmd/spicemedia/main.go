@@ -53,22 +53,59 @@ func commandQuality() {
     })
 }
 
+func arcFaceEmbedding(manager *nativecore.Manager, raw []byte) ([]float64,map[string]any,string,error) {
+    alignment:="center-crop-112"
+    var input []float64
+    var err error
+    detectorLatency:=any(nil)
+
+    if manager.FaceDetector!="" {
+        prep,prepErr:=ident.SCRFDInput(raw)
+        if prepErr==nil {
+            ctx,cancel:=context.WithTimeout(context.Background(),2*time.Minute)
+            outputs,meta,detErr:=manager.Detect(ctx,prep.Tensor)
+            cancel()
+            if detErr==nil {
+                faces,decodeErr:=ident.DecodeSCRFD(outputs,prep,0.5,0.4)
+                if decodeErr==nil && len(faces)>0 {
+                    input,err=ident.ArcFaceInputAligned(raw,faces[0].Landmarks)
+                    if err==nil {
+                        alignment="scrfd-5pt-112"
+                        detectorLatency=meta["latency_ms"]
+                    }
+                }
+            }
+        }
+    }
+
+    if input==nil {
+        input,err=ident.ArcFaceInput(raw)
+        if err!=nil { return nil,nil,alignment,err }
+    }
+
+    ctx,cancel:=context.WithTimeout(context.Background(),2*time.Minute)
+    vec,meta,err:=manager.Embed(ctx,input)
+    cancel()
+    if err!=nil { return nil,nil,alignment,err }
+    meta["alignment"]=alignment
+    if detectorLatency!=nil { meta["detector_latency_ms"]=detectorLatency }
+    return ident.Normalize(vec),meta,alignment,nil
+}
+
 func commandEmbed() {
     payload:=readObject()
     raw,err:=decodeB64(payload["image_base64"]); if err!=nil { fail(err) }
-    input,err:=ident.ArcFaceInput(raw); if err!=nil { fail(err) }
     manager:=nativecore.FromEnv()
     if manager.IdentityVision=="" { fail(fmt.Errorf("SPICE_FACE_EMBED_MODEL is not configured")) }
-    ctx,cancel:=context.WithTimeout(context.Background(),2*time.Minute); defer cancel()
-    vec,meta,err:=manager.Embed(ctx,input); if err!=nil { fail(err) }
-    vec=ident.Normalize(vec)
+    vec,meta,alignment,err:=arcFaceEmbedding(manager,raw); if err!=nil { fail(err) }
     write(map[string]any{
         "embedding":vec,
         "dimensions":len(vec),
         "model":"arcface-w600k-r50-qnn",
-        "alignment":"center-crop-112",
+        "alignment":alignment,
         "npu":true,
         "latency_ms":meta["latency_ms"],
+        "detector_latency_ms":meta["detector_latency_ms"],
         "l2_norm":meta["l2_norm"],
     })
 }
@@ -79,19 +116,13 @@ func commandIdentity() {
 
     manager:=nativecore.FromEnv()
     if manager.IdentityVision != "" {
-        input,err:=ident.ArcFaceInput(generated); if err!=nil { fail(err) }
-        ctx,cancel:=context.WithTimeout(context.Background(),2*time.Minute)
-        generatedEmbedding,meta,err:=manager.Embed(ctx,input)
-        cancel()
+        generatedEmbedding,meta,alignment,err:=arcFaceEmbedding(manager,generated)
         if err==nil {
             scores:=make([]float64,0,len(refs))
             for _,item:=range refs {
                 obj,ok:=item.(map[string]any); if !ok { continue }
                 ref,err:=decodeB64(obj["image_base64"]); if err!=nil { continue }
-                refInput,err:=ident.ArcFaceInput(ref); if err!=nil { continue }
-                refCtx,refCancel:=context.WithTimeout(context.Background(),2*time.Minute)
-                refEmbedding,_,err:=manager.Embed(refCtx,refInput)
-                refCancel()
+                refEmbedding,_,_,err:=arcFaceEmbedding(manager,ref)
                 if err!=nil { continue }
                 score,err:=ident.Cosine(generatedEmbedding,refEmbedding)
                 if err==nil { scores=append(scores,score) }
@@ -105,9 +136,10 @@ func commandIdentity() {
                     "reference_count":len(scores),
                     "model":"arcface-w600k-r50-qnn",
                     "embedding_dimensions":len(generatedEmbedding),
-                    "alignment":"center-crop-112",
+                    "alignment":alignment,
                     "npu":true,
                     "latency_ms":meta["latency_ms"],
+                    "detector_latency_ms":meta["detector_latency_ms"],
                     "l2_norm":meta["l2_norm"],
                 })
                 return
