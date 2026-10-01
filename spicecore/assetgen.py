@@ -205,6 +205,7 @@ class AssetGenerator:
             "reference_count": len(references),
             "reference_strength": self.reference_strength,
             "identity": identity,
+            "quality": quality,
             "status": status,
         }
         meta_path = path.with_suffix(path.suffix + ".json")
@@ -229,6 +230,8 @@ class AssetGenerator:
             "reference_count": len(references),
             "identity_score": identity.get("score"),
             "identity_threshold": identity["threshold"],
+            "quality_score": quality["score"],
+            "quality_threshold": quality["threshold"],
             "status": status,
         })
         return {
@@ -241,6 +244,7 @@ class AssetGenerator:
             "provider": self.provider.model_name,
             "reference_count": len(references),
             "identity": identity,
+            "quality": quality,
             "status": status,
         }
 
