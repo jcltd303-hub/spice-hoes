@@ -18,10 +18,11 @@ PNG_1X1 = base64.b64encode(
 class FakeProvider:
     model_name = "local-dream:test"
 
-    def __init__(self, identity_score=0.95):
+    def __init__(self, identity_score=0.95, quality=None):
         self.calls = []
         self.score_calls = []
         self.identity_score = identity_score
+        self.quality = quality or {"anatomy": 0.95, "hands": 0.9, "face_visibility": 0.95, "realism": 0.9, "composition": 0.9}
 
     def generate_image(self, **kwargs):
         self.calls.append(kwargs)
@@ -30,6 +31,9 @@ class FakeProvider:
     def score_identity(self, **kwargs):
         self.score_calls.append(kwargs)
         return {"score": self.identity_score, "model": "fake-identity"}
+
+    def score_quality(self, **kwargs):
+        return {**self.quality, "model": "fake-quality"}
 
 
 class AssetGenerationTests(unittest.TestCase):
@@ -59,6 +63,7 @@ class AssetGenerationTests(unittest.TestCase):
             provider=provider,
             asset_dir=Path(self.tmp.name) / "generated",
             reference_root=Path(self.tmp.name) / "refs",
+            quality_threshold=0.6,
         )
         result = generator.generate(
             self.persona, "city nights", "Instagram", "affiliate", seed=42
@@ -108,6 +113,28 @@ class AssetGenerationTests(unittest.TestCase):
             "SELECT COUNT(*) FROM candidates WHERE status='proposed'"
         ).fetchone()[0]
         self.assertEqual(proposed, 0)
+
+
+    def test_bad_visual_quality_is_rejected_before_review_queue(self):
+        provider = FakeProvider(quality={
+            "anatomy": 0.2,
+            "hands": 0.9,
+            "face_visibility": 0.95,
+            "realism": 0.95,
+            "composition": 0.95,
+        })
+        generator = AssetGenerator(
+            self.store,
+            provider=provider,
+            asset_dir=Path(self.tmp.name) / "generated",
+            reference_root=Path(self.tmp.name) / "refs",
+            quality_threshold=0.4,
+        )
+        result = generator.generate(self.persona, "city nights", "Instagram", "affiliate")
+        self.assertEqual(result["status"], "rejected")
+        self.assertFalse(result["quality"]["passed"])
+        self.assertEqual(self.store.candidate(result["candidate_id"])["status"], "rejected")
+        self.assertTrue(any(e["kind"] == "quality_checked" for e in self.store.events()))
 
     def test_batch_derives_deterministic_seeds(self):
         provider = FakeProvider()
