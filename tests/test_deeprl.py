@@ -29,6 +29,20 @@ class DeepRLTests(unittest.TestCase):
         self.assertIn(decision["action_id"], {"a", "b"})
         self.assertEqual(self.store.events()[-1]["kind"], "rl_policy_decision")
 
+        reloaded = DeepRLPolicy(
+            self.store, ["a", "b"], hidden=4, seed=999, min_experiences=4
+        )
+        self.assertEqual(reloaded.w1, policy.w1)
+        self.assertEqual(reloaded.b2, policy.b2)
+
+
+    def test_record_external_id_is_idempotent(self):
+        policy = DeepRLPolicy(self.store, ["a", "b"], hidden=4, seed=1, min_experiences=1)
+        first = policy.record([0.0] * 6, "a", 100, [0.1] * 6, external_id="cycle-1")
+        second = policy.record([0.0] * 6, "a", 100, [0.1] * 6, external_id="cycle-1")
+        self.assertEqual(first, second)
+        self.assertEqual(policy.count(), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
