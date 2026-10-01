@@ -251,7 +251,7 @@ GitHub Actions runs the unit suite on pushes and pull requests. Production still
 
 ## Native Go media runtime
 
-Local Dream remains available as the benchmark baseline, but the repository also ships a Go-owned media path.
+The device media runtime is Go + native QNN/HTP only. Python is not required on the S24 for generation, face detection, alignment, embedding, or scoring. Python exists only inside the isolated GitHub Actions model-conversion workflow because Qualcomm's `qnn-onnx-converter` is itself a Python entry point.
 
 Build the Go tools:
 
@@ -259,19 +259,35 @@ Build the Go tools:
 ./scripts/build-go-tools.sh
 ```
 
-The native runtime is split deliberately: `spicemedia` owns process lifecycle, SSE generation, image metrics, identity comparison, JSON contracts and benchmarking; the proven QNN/HTP diffusion kernels remain in the pinned native core. The GitHub workflow `Build Spice QNN Runtime` builds that core from commit `5fda588dbcf054ac1d20f443f17ead15d4e0cede` and packages only the standalone executable plus Qualcomm runtime libraries.
+For a clean Termux media setup with no Python dependency:
 
-Expected local layout:
+```bash
+./scripts/setup-go-termux.sh
+```
+
+Runtime layout:
 
 ```text
 bin/spicemedia
 runtime/bin/spice-qnn-core
 runtime/lib/libQnnHtp.so
 runtime/lib/libQnnSystem.so
-spice-models/<model-id>/
+models/face/arcface_w600k_r50.bin
+models/face/scrfd_10g.bin
+spice-models/<generation-model>/
 ```
 
-Configure the Go path:
+The runtime path is:
+
+```text
+spicemedia (Go)
+  -> spice-qnn-core (native C++)
+  -> Qualcomm QNN / Hexagon HTP
+```
+
+Face identity uses SCRFD detection + five-point alignment + ArcFace embeddings. The Go runtime exposes `detect`, `embed`, `identity`, `quality`, `generate`, and `health`.
+
+Configure the Go media lane:
 
 ```bash
 export SPICE_MEDIA_PROVIDER=go
@@ -279,22 +295,32 @@ export SPICE_MEDIA_BIN=bin/spicemedia
 export SPICE_QNN_CORE_BIN=runtime/bin/spice-qnn-core
 export SPICE_QNN_LIB_DIR=runtime/lib
 export SPICE_QNN_MODEL_DIR="$HOME/spice-models/cyber_realistic_v10"
+export SPICE_FACE_EMBED_MODEL=models/face/arcface_w600k_r50.bin
+export SPICE_FACE_DETECT_MODEL=models/face/scrfd_10g.bin
 export SPICE_QNN_TYPE=sd15npu
 export SPICE_QNN_PORT=18081
 ```
 
-For the current debug Local Dream APK, an existing downloaded model can be exported once with:
+The two heavyweight native/model artifacts are intentionally built on demand so ordinary CI remains fast:
 
 ```bash
-./scripts/import-local-dream-model.sh cyber_realistic_v10
+./scripts/build-native-artifacts.sh
 ```
 
-Keep the app running on port 8081 when comparing the two paths:
+After both workflows succeed:
 
 ```bash
-python3 -m spicecore.cli media-benchmark \
-  --prompt "photorealistic fictional adult woman, city night market" \
-  --seed 42
+./scripts/install-spicemedia-termux.sh
+set -a
+source .env.spicemedia
+set +a
 ```
 
-The Go identity scorer is currently a deterministic perceptual similarity fallback and reports its model name explicitly. The QNN generation path itself is NPU-backed. A dedicated NPU face/identity encoder can replace that fallback without changing the provider contract.
+Check the runtime:
+
+```bash
+echo '{}' | ./bin/spicemedia health
+```
+
+Local Dream may remain installed only as an optional benchmark baseline; it is not required by the Go/QNN runtime.
+
