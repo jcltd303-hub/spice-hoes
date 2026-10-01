@@ -195,6 +195,26 @@ python3 -m spicecore.cli events
 
 Unique external IDs make outcome imports idempotent. Do not put private messages, payment-card data, API keys, identity reference packs, or generated adult assets in the repository.
 
+## Operational health and backups
+
+The core SQLite ledger now enables WAL mode, normal synchronous durability, foreign keys, and a 5-second busy timeout for safer concurrent local workers.
+
+Run a production-readiness snapshot:
+
+```bash
+python3 -m spicecore.cli doctor
+```
+
+The doctor reports database integrity plus operational backlogs such as pending content review, unsettled autopilot runs, unembedded knowledge, engagement drafts, active offers, and RL readiness.
+
+Create an online verified backup without stopping the process:
+
+```bash
+python3 -m spicecore.cli backup data/backups/experiments-$(date +%Y%m%d).sqlite
+```
+
+Backups are created through SQLite's backup API, checked with `PRAGMA quick_check`, hashed with SHA-256, and recorded in the event ledger. Existing backup paths are never overwritten.
+
 ## CI and next production adapters
 
 GitHub Actions runs the unit suite on pushes and pull requests. Production still needs authenticated cloud review/email delivery, private object storage, permitted distribution adapters, and first-party commerce/outcome ingestion. Preserve human approval and the event trail while those adapters are added.
