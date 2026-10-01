@@ -38,10 +38,10 @@ class OpenAICompatibleChatProvider:
     def __init__(self, base_url: str | None = None, api_key: str | None = None,
                  model: str | None = None):
         self.base_url = (
-            base_url or os.getenv("MOA_BASE_URL", "https://api.fishgame.live/v1")
+            base_url or os.getenv("MOA_BASE_URL", "https://openrouter.ai/api/v1")
         ).rstrip("/")
         self.api_key = api_key if api_key is not None else os.getenv("MOA_API_KEY", "")
-        self.model = model or os.getenv("MOA_MODEL", "polygloy-moa")
+        self.model = model or os.getenv("MOA_MODEL", "openrouter/free")
         if not self.base_url or not self.model:
             raise ProviderError("MoA provider requires base URL and model")
 
@@ -77,7 +77,7 @@ class OpenAICompatibleEmbeddingProvider:
     def __init__(self, base_url: str | None = None, api_key: str | None = None,
                  model: str | None = None):
         self.base_url = (
-            base_url or os.getenv("MOA_BASE_URL", "https://api.fishgame.live/v1")
+            base_url or os.getenv("MOA_BASE_URL", "https://openrouter.ai/api/v1")
         ).rstrip("/")
         self.api_key = api_key if api_key is not None else os.getenv("MOA_API_KEY", "")
         self.model = model or os.getenv("MOA_EMBEDDING_MODEL", "")
