@@ -50,19 +50,32 @@ class OpenAICompatibleChatProvider:
         return f"openai-compatible:{self.model}"
 
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        referer = os.getenv("OPENROUTER_HTTP_REFERER", "").strip()
+        title = os.getenv("OPENROUTER_APP_TITLE", "spice-hoes").strip()
+        if referer:
+            headers["HTTP-Referer"] = referer
+        if title:
+            headers["X-Title"] = title
+        return headers
 
-    def chat(self, system: str, user: str, temperature: float = 0.4) -> str:
+    def chat(self, system: str, user: str, temperature: float = 0.4,
+             response_format: dict | None = None, max_tokens: int | None = None) -> str:
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": temperature,
+        }
+        if response_format is not None:
+            payload["response_format"] = response_format
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         data = _post_json(
             f"{self.base_url}/chat/completions",
-            {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-                "temperature": temperature,
-            },
+            payload,
             self._headers(),
         )
         try:
