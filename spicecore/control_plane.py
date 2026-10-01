@@ -188,7 +188,8 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
             seed=int(seed) if seed is not None else None,
             exploration=exploration,
         )
-        store.record_event("policy_decision", result)
+        if bool(payload.get("audit", False)):
+            store.record_event("policy_decision", result)
         return result
 
     if action == "briefs":
