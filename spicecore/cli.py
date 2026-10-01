@@ -50,6 +50,22 @@ def _parse_policy_changes(items):
     return changes
 
 
+def _runtime_values(store):
+    return RuntimePolicy(store).current()["values"]
+
+
+def _asset_generator(store, asset_dir="data/assets"):
+    values = _runtime_values(store)
+    return AssetGenerator(
+        store,
+        provider=LocalDreamProvider(),
+        asset_dir=asset_dir,
+        identity_threshold=values["identity_threshold"],
+        reference_strength=values["reference_strength"],
+        quality_threshold=values["quality_threshold"],
+    )
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="spicecore")
     parser.add_argument("--db", default="data/experiments.sqlite")
@@ -287,9 +303,7 @@ def main(argv=None):
             persona = next((p for p in personas if p["id"] == args.persona), None)
             if persona is None:
                 parser.error("Unknown persona")
-            output = AssetGenerator(
-                store, provider=LocalDreamProvider(), asset_dir=args.asset_dir
-            ).generate(
+            output = _asset_generator(store, asset_dir=args.asset_dir).generate(
                 persona=persona,
                 theme=args.theme,
                 channel=args.channel,
@@ -301,9 +315,7 @@ def main(argv=None):
                 cost_cents=args.cost_cents,
             )
         elif args.command == "generate-batch":
-            output = AssetGenerator(
-                store, provider=LocalDreamProvider(), asset_dir=args.asset_dir
-            ).batch(
+            output = _asset_generator(store, asset_dir=args.asset_dir).batch(
                 personas=personas,
                 theme=args.theme,
                 channel=args.channel,
@@ -343,7 +355,7 @@ def main(argv=None):
                 store,
                 personas,
                 MixtureOfAgents(AzureChatProvider(), store, embedder=_optional_embedder()),
-                AssetGenerator(store, provider=LocalDreamProvider()),
+                _asset_generator(store),
             )
             output = engine.run_cycle(
                 args.objective,
@@ -359,7 +371,7 @@ def main(argv=None):
                 store,
                 personas,
                 MixtureOfAgents(AzureChatProvider(), store, embedder=_optional_embedder()),
-                AssetGenerator(store, provider=LocalDreamProvider()),
+                _asset_generator(store),
             )
             output = engine.settle_cycle(args.cycle_id, done=args.done)
         elif args.command == "rl-train":
@@ -407,7 +419,7 @@ def main(argv=None):
             output = planner.execute(
                 plan,
                 persona,
-                AssetGenerator(store, provider=LocalDreamProvider()),
+                _asset_generator(store),
                 base_seed=args.seed,
                 cost_cents_per_asset=args.cost_cents_per_asset,
             )
@@ -423,7 +435,7 @@ def main(argv=None):
                 personas,
                 MixtureOfAgents(provider, store, embedder=_optional_embedder()),
                 planner,
-                AssetGenerator(store, provider=LocalDreamProvider()),
+                _asset_generator(store),
             )
             output = engine.run_once(
                 args.objective,
@@ -455,7 +467,7 @@ def main(argv=None):
                 personas,
                 MixtureOfAgents(provider, store, embedder=_optional_embedder()),
                 ExperimentPlanner(provider, store),
-                AssetGenerator(store, provider=LocalDreamProvider()),
+                _asset_generator(store),
             )
             output = {
                 "pending_review": engine.pending_review_count(),
