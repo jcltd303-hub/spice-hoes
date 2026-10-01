@@ -11,7 +11,7 @@ def produce_job(store,personas,job_path,assets_dir="assets/generated",server_url
  if persona is None: raise ValueError("Job references unknown persona")
  brief=job["brief"]; base_seed=job.get("generation_seed")
  output_dir=Path(assets_dir)/persona["id"]/path.stem
- job["status"]="exploring"; job["profile"]=profile; job["candidate_count"]=candidate_count
+ if job.get("candidate_count") is not None and ids:\n  candidate_count=int(job["candidate_count"])\n job["status"]="exploring"; job["profile"]=profile; job["candidate_count"]=candidate_count
  path.write_text(json.dumps(job,indent=2,ensure_ascii=False)+"\n")
  assets=list(job.get("assets",[])); ids=list(job.get("candidate_ids",[])); resumed_from=len(ids)
  if len(ids)>=candidate_count and job.get("status")=="awaiting_review":
