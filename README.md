@@ -195,6 +195,36 @@ python3 -m spicecore.cli events
 
 Unique external IDs make outcome imports idempotent. Do not put private messages, payment-card data, API keys, identity reference packs, or generated adult assets in the repository.
 
+## Versioned runtime policy
+
+Production limits are stored in an immutable, audited runtime policy rather than only in CLI defaults. The active policy controls:
+
+```text
+daily_budget_cents
+max_pending_review
+min_impressions_to_learn
+rl_min_experiences
+identity_threshold
+quality_threshold
+reference_strength
+```
+
+Inspect or change policy:
+
+```bash
+python3 -m spicecore.cli policy-show
+
+python3 -m spicecore.cli policy-set \
+  --set daily_budget_cents=2500 \
+  --set quality_threshold=0.84 \
+  --actor operator \
+  --note "tighten production limits"
+
+python3 -m spicecore.cli policy-history
+```
+
+Every change creates and activates a new policy version; old versions remain in the ledger for reproducibility. Autopilot and learning commands use the active version unless a run-level override is explicitly supplied.
+
 ## Operational health and backups
 
 The core SQLite ledger now enables WAL mode, normal synchronous durability, foreign keys, and a 5-second busy timeout for safer concurrent local workers.
