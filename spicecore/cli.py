@@ -9,6 +9,7 @@ from pathlib import Path
 from .assetgen import AssetGenerator
 from .autonomy import AutonomyEngine
 from .deeprl import DeepRLPolicy
+from .experiments import ExperimentPlanner
 from .core import Store, load_personas
 from .memory import KnowledgeBase
 from .moa import MixtureOfAgents
@@ -117,6 +118,21 @@ def main(argv=None):
     rltrain.add_argument("--learning-rate", type=float, default=0.01)
 
     sub.add_parser("rl-status")
+
+    eplan = sub.add_parser("experiment-plan")
+    eplan.add_argument("objective")
+    eplan.add_argument("--persona", required=True)
+    eplan.add_argument("--channel", required=True)
+    eplan.add_argument("--offer", required=True)
+    eplan.add_argument("--variants", type=int, default=3)
+
+    erun = sub.add_parser("experiment-run")
+    erun.add_argument("plan_id")
+    erun.add_argument("--seed", type=int)
+    erun.add_argument("--cost-cents-per-asset", type=int, default=0)
+
+    eget = sub.add_parser("experiment-show")
+    eget.add_argument("plan_id")
 
     args = parser.parse_args(argv)
     personas = load_personas(args.personas)
@@ -246,6 +262,40 @@ def main(argv=None):
                 "ready": policy.count() >= policy.min_experiences,
                 "latest_snapshot": dict(row) if row else None,
             }
+        elif args.command == "experiment-plan":
+            persona = next((p for p in personas if p["id"] == args.persona), None)
+            if persona is None:
+                parser.error("Unknown persona")
+            provider = AzureChatProvider()
+            deliberation = MixtureOfAgents(provider, store).deliberate(
+                args.objective, persona
+            )
+            output = ExperimentPlanner(provider, store).plan(
+                args.objective,
+                persona,
+                args.channel,
+                args.offer,
+                deliberation=deliberation,
+                variant_count=args.variants,
+            )
+        elif args.command == "experiment-run":
+            planner = ExperimentPlanner(AzureChatProvider(), store)
+            plan = planner.get(args.plan_id)
+            persona = next(
+                (p for p in personas if p["id"] == plan["persona_id"]),
+                None,
+            )
+            if persona is None:
+                parser.error("Plan references unknown persona")
+            output = planner.execute(
+                plan,
+                persona,
+                AssetGenerator(store, provider=LocalDreamProvider()),
+                base_seed=args.seed,
+                cost_cents_per_asset=args.cost_cents_per_asset,
+            )
+        elif args.command == "experiment-show":
+            output = ExperimentPlanner(AzureChatProvider(), store).get(args.plan_id)
         print(json.dumps(output, indent=2, ensure_ascii=False))
     finally:
         store.close()
