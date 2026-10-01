@@ -46,6 +46,12 @@ def tokenize(prompt,server_url=None,timeout=30):
  with _post_json("/tokenize",{"prompt":prompt},server_url,timeout) as r:
   return json.loads(r.read().decode())
 
+def encode_image_file(path):
+ data=Path(path).read_bytes()
+ if not (data.startswith(bytes.fromhex("89504e470d0a1a0a")) or data.startswith(bytes.fromhex("ffd8"))):
+  raise ValueError("Local Dream reference must be PNG or JPEG")
+ return base64.b64encode(data).decode("ascii")
+
 def generate(prompt,output,negative_prompt="",size=None,steps=None,cfg=None,seed=None,server_url=None,timeout=900,
              width=None,height=None,scheduler=None,aspect_ratio=None,image=None,mask=None,denoise_strength=None,
              use_opencl=None,profile=None):
@@ -62,8 +68,8 @@ def generate(prompt,output,negative_prompt="",size=None,steps=None,cfg=None,seed
  aspect_ratio=aspect_ratio or settings.get("aspect_ratio")
  if aspect_ratio: payload["aspect_ratio"]=aspect_ratio
  if seed is not None: payload["seed"]=int(seed)
- if image is not None: payload["image"]=image
- if mask is not None: payload["mask"]=mask
+ if image is not None: payload["image"]=encode_image_file(image) if isinstance(image,(str,Path)) and Path(image).is_file() else image
+ if mask is not None: payload["mask"]=encode_image_file(mask) if isinstance(mask,(str,Path)) and Path(mask).is_file() else mask
  if denoise_strength is not None: payload["denoise_strength"]=float(denoise_strength)
  if use_opencl is not None: payload["use_opencl"]=bool(use_opencl)
  started=time.monotonic(); complete=None; progress=[]
