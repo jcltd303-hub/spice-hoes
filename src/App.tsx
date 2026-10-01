@@ -34,6 +34,7 @@ export default function App() {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [runtimePolicy, setRuntimePolicy] = useState<any | null>(null);
   const [rlStatus, setRlStatus] = useState<any | null>(null);
+  const [autopilotStatus, setAutopilotStatus] = useState<any | null>(null);
   const [controlBusy, setControlBusy] = useState(false);
   const [controlError, setControlError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -48,7 +49,7 @@ export default function App() {
 
   const fetchData = async () => {
     try {
-      const [pRes, cRes, sRes, rRes, eRes, mRes, schRes, policyRes, rlRes] = await Promise.all([
+      const [pRes, cRes, sRes, rRes, eRes, mRes, schRes, policyRes, rlRes, autopilotRes] = await Promise.all([
         fetch('/api/personas').then(r => r.json()),
         fetch('/api/candidates').then(r => r.json()),
         fetch('/api/stats').then(r => r.json()),
@@ -58,6 +59,7 @@ export default function App() {
         fetch('/api/schedules').then(r => r.json()),
         fetch('/api/runtime-policy').then(r => r.json()),
         fetch('/api/rl/status').then(r => r.json()),
+        fetch('/api/autopilot/status').then(r => r.json()),
       ]);
       setPersonas(pRes || []);
       setCandidates(cRes || []);
@@ -68,6 +70,7 @@ export default function App() {
       setSchedules(schRes || []);
       setRuntimePolicy(policyRes?.error ? null : policyRes);
       setRlStatus(rlRes?.error ? null : rlRes);
+      setAutopilotStatus(autopilotRes?.error ? null : autopilotRes);
     } catch (err) {
       console.error('Error fetching data:', err);
     } finally {
@@ -936,6 +939,45 @@ export default function App() {
                 Policy: {recommendation.policy_version} ({recommendation.method})
               </div>
             </div>
+
+            {autopilotStatus && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-[#1b1526] p-4 rounded-2xl border border-[#362a4a]">
+                  <div className="text-[11px] uppercase tracking-wider text-gray-400 font-bold">Review Queue Pressure</div>
+                  <div className="text-xl font-bold text-white mt-1">
+                    {autopilotStatus.pending_review} / {autopilotStatus.max_pending_review}
+                  </div>
+                  <div className="h-2 bg-[#120e1a] rounded-full overflow-hidden mt-3">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-500 to-amber-500"
+                      style={{ width: `${Math.min(100, (autopilotStatus.pending_review / Math.max(1, autopilotStatus.max_pending_review)) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-[#1b1526] p-4 rounded-2xl border border-[#362a4a]">
+                  <div className="text-[11px] uppercase tracking-wider text-gray-400 font-bold">Spend Today</div>
+                  <div className="text-xl font-bold text-white mt-1">
+                    USD {(autopilotStatus.spent_today_cents / 100).toFixed(2)}
+                    <span className="text-xs text-gray-500 font-normal"> / USD {(autopilotStatus.daily_budget_cents / 100).toFixed(2)}</span>
+                  </div>
+                  <div className="h-2 bg-[#120e1a] rounded-full overflow-hidden mt-3">
+                    <div
+                      className="h-full bg-gradient-to-r from-purple-500 to-pink-500"
+                      style={{ width: `${Math.min(100, (autopilotStatus.spent_today_cents / Math.max(1, autopilotStatus.daily_budget_cents)) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-[#1b1526] p-4 rounded-2xl border border-[#362a4a]">
+                  <div className="text-[11px] uppercase tracking-wider text-gray-400 font-bold">Autopilot Runs</div>
+                  <div className="text-xl font-bold text-white mt-1">{autopilotStatus.recent_runs?.length || 0}</div>
+                  <div className="text-xs text-gray-400 mt-2">
+                    {autopilotStatus.recent_runs?.[0] ? `Latest: ${autopilotStatus.recent_runs[0].status}${autopilotStatus.recent_runs[0].reason ? ' · ' + autopilotStatus.recent_runs[0].reason : ''}` : 'No recorded autonomous runs yet'}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {(runtimePolicy || rlStatus) && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
