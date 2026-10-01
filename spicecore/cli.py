@@ -20,14 +20,14 @@ from .offers import OfferRegistry, OFFER_KINDS
 from .operations import Operations
 from .runtime_policy import RuntimePolicy
 from .policy import recommend
-from .providers import AzureChatProvider, AzureEmbeddingProvider, LocalDreamProvider, ProviderError
+from .providers import OpenAICompatibleChatProvider, OpenAICompatibleEmbeddingProvider, LocalDreamProvider, ProviderError
 from .web import make_handler
 from .workflow import build_briefs
 
 
 def _optional_embedder():
     try:
-        return AzureEmbeddingProvider()
+        return OpenAICompatibleEmbeddingProvider()
     except ProviderError:
         return None
 
@@ -349,12 +349,12 @@ def main(argv=None):
                 persona = next((p for p in personas if p["id"] == args.persona), None)
                 if persona is None:
                     parser.error("Unknown persona")
-            output = MixtureOfAgents(AzureChatProvider(), store, embedder=_optional_embedder()).deliberate(args.objective, persona)
+            output = MixtureOfAgents(OpenAICompatibleChatProvider(), store, embedder=_optional_embedder()).deliberate(args.objective, persona)
         elif args.command == "autonomy-cycle":
             engine = AutonomyEngine(
                 store,
                 personas,
-                MixtureOfAgents(AzureChatProvider(), store, embedder=_optional_embedder()),
+                MixtureOfAgents(OpenAICompatibleChatProvider(), store, embedder=_optional_embedder()),
                 _asset_generator(store),
             )
             output = engine.run_cycle(
@@ -370,7 +370,7 @@ def main(argv=None):
             engine = AutonomyEngine(
                 store,
                 personas,
-                MixtureOfAgents(AzureChatProvider(), store, embedder=_optional_embedder()),
+                MixtureOfAgents(OpenAICompatibleChatProvider(), store, embedder=_optional_embedder()),
                 _asset_generator(store),
             )
             output = engine.settle_cycle(args.cycle_id, done=args.done)
@@ -405,7 +405,7 @@ def main(argv=None):
             persona = next((p for p in personas if p["id"] == args.persona), None)
             if persona is None:
                 parser.error("Unknown persona")
-            provider = AzureChatProvider()
+            provider = OpenAICompatibleChatProvider()
             deliberation = MixtureOfAgents(provider, store, embedder=_optional_embedder()).deliberate(
                 args.objective, persona
             )
@@ -418,7 +418,7 @@ def main(argv=None):
                 variant_count=args.variants,
             )
         elif args.command == "experiment-run":
-            planner = ExperimentPlanner(AzureChatProvider(), store)
+            planner = ExperimentPlanner(OpenAICompatibleChatProvider(), store)
             plan = planner.get(args.plan_id)
             persona = next(
                 (p for p in personas if p["id"] == plan["persona_id"]),
@@ -434,12 +434,12 @@ def main(argv=None):
                 cost_cents_per_asset=args.cost_cents_per_asset,
             )
         elif args.command == "experiment-show":
-            output = ExperimentPlanner(AzureChatProvider(), store).get(args.plan_id)
+            output = ExperimentPlanner(OpenAICompatibleChatProvider(), store).get(args.plan_id)
         elif args.command == "experiment-results":
-            output = ExperimentPlanner(AzureChatProvider(), store).results(args.plan_id)
+            output = ExperimentPlanner(OpenAICompatibleChatProvider(), store).results(args.plan_id)
         elif args.command == "autopilot-run":
             values = _runtime_values(store)
-            provider = AzureChatProvider()
+            provider = OpenAICompatibleChatProvider()
             planner = ExperimentPlanner(provider, store)
             engine = CoreAutopilot(
                 store,
@@ -469,7 +469,7 @@ def main(argv=None):
             )
         elif args.command == "autopilot-settle":
             values = _runtime_values(store)
-            provider = AzureChatProvider()
+            provider = OpenAICompatibleChatProvider()
             planner = ExperimentPlanner(provider, store)
             knowledge = KnowledgeBase(store, embedder=_optional_embedder())
             output = LearningController(
@@ -488,7 +488,7 @@ def main(argv=None):
             )
         elif args.command == "autopilot-status":
             values = _runtime_values(store)
-            provider = AzureChatProvider()
+            provider = OpenAICompatibleChatProvider()
             engine = CoreAutopilot(
                 store,
                 personas,
@@ -509,7 +509,7 @@ def main(argv=None):
             if persona is None:
                 parser.error("Unknown persona")
             agent = EngagementAgent(
-                AzureChatProvider(),
+                OpenAICompatibleChatProvider(),
                 store,
                 KnowledgeBase(store, embedder=_optional_embedder()),
             )
@@ -525,14 +525,14 @@ def main(argv=None):
             if persona is None:
                 parser.error("Unknown persona")
             agent = EngagementAgent(
-                AzureChatProvider(),
+                OpenAICompatibleChatProvider(),
                 store,
                 KnowledgeBase(store, embedder=_optional_embedder()),
             )
             output = agent.draft_reply(persona, args.message_id)
         elif args.command == "engagement-review":
             agent = EngagementAgent(
-                AzureChatProvider(),
+                OpenAICompatibleChatProvider(),
                 store,
                 KnowledgeBase(store, embedder=_optional_embedder()),
             )
@@ -544,7 +544,7 @@ def main(argv=None):
             )
         elif args.command == "engagement-outbox":
             agent = EngagementAgent(
-                AzureChatProvider(),
+                OpenAICompatibleChatProvider(),
                 store,
                 KnowledgeBase(store, embedder=_optional_embedder()),
             )
