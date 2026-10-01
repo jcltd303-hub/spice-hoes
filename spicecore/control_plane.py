@@ -23,7 +23,7 @@ from .memory import KnowledgeBase
 from .moa import MixtureOfAgents
 from .operations import Operations
 from .policy import recommend
-from .providers import AzureChatProvider, AzureEmbeddingProvider, LocalDreamProvider, ProviderError
+from .providers import OpenAICompatibleChatProvider, OpenAICompatibleEmbeddingProvider, LocalDreamProvider, ProviderError
 from .runtime_policy import RuntimePolicy
 from .thompson_sampling import recommend_thompson_sampling
 from .workflow import build_briefs
@@ -35,7 +35,7 @@ PERSONAS_PATH = os.environ.get("SPICE_PERSONAS", "personas")
 
 def _optional_embedder():
     try:
-        return AzureEmbeddingProvider()
+        return OpenAICompatibleEmbeddingProvider()
     except ProviderError:
         return None
 
@@ -418,7 +418,7 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
                 daily_budget_cents=runtime["daily_budget_cents"],
             )
 
-        provider = AzureChatProvider()
+        provider = OpenAICompatibleChatProvider()
         planner = ExperimentPlanner(provider, store)
         engine = CoreAutopilot(
             store,
