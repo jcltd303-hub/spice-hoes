@@ -42,9 +42,11 @@ def copy_to_shared(asset,persona_id,category="scenes"):
  shutil.copy2(asset,dest)
  return str(dest)
 
-def generate_scene(store,persona_id,scene,output,seed=100,denoise=0.45,server_url=None,reference_dir="identity/references",persona=None):
- ref,asset=load_reference(persona_id,reference_dir); prompt=scene_prompt(scene)
- meta=generate(prompt,output,NEGATIVE,seed=seed,server_url=server_url,denoise_strength=denoise,image=asset,profile="cyberrealistic-v10")
+def generate_scene(store,persona_id,scene,output,seed=100,denoise=0.45,server_url=None,reference_dir="identity/references",persona=None,composition_only=False):
+ ref,asset=load_reference(persona_id,reference_dir)
+ prompt=scene_prompt(scene,not composition_only)
+ kwargs={} if composition_only else {"denoise_strength":denoise,"image":asset}
+ meta=generate(prompt,output,NEGATIVE,seed=seed,server_url=server_url,profile="cyberrealistic-v10",**kwargs)
  shared=copy_to_shared(meta["asset_uri"],persona_id,"scenes")
  meta.update({"persona_id":persona_id,"scene":scene,"identity_reference":ref["reference_asset"],"identity_sha256":ref["sha256"],"denoise_strength":None if composition_only else denoise,"composition_only":composition_only,"shared_asset_uri":shared})
  store.record_event("identity_scene_generated",meta)
