@@ -94,6 +94,50 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(row["clicks"], 1)
         self.assertEqual(row["revenue_cents"], 700)
 
+    def test_runtime_policy_update_and_rl_status(self):
+        current = dispatch("policy", {}, self.store, self.personas)
+        updated = dispatch(
+            "policy_update",
+            {
+                "changes": {"daily_budget_cents": current["values"]["daily_budget_cents"] + 100},
+                "actor": "tester",
+                "note": "web-control-test",
+            },
+            self.store,
+            self.personas,
+        )
+        self.assertEqual(
+            updated["values"]["daily_budget_cents"],
+            current["values"]["daily_budget_cents"] + 100,
+        )
+        self.assertGreater(updated["version"], current["version"])
+
+        rl = dispatch("rl_status", {}, self.store, self.personas)
+        self.assertEqual(rl["experiences"], 0)
+        self.assertFalse(rl["ready"])
+        self.assertEqual(rl["minimum_experiences"], updated["values"]["rl_min_experiences"])
+
+    def test_knowledge_add_round_trip(self):
+        item = dispatch(
+            "knowledge_add",
+            {
+                "source": "operator",
+                "title": "Control plane note",
+                "body": "Approved knowledge from the operator desk.",
+                "tags": ["ops", "control"],
+            },
+            self.store,
+            self.personas,
+        )
+        self.assertEqual(item["title"], "Control plane note")
+        hits = dispatch(
+            "knowledge",
+            {"query": "control plane note"},
+            self.store,
+            self.personas,
+        )
+        self.assertEqual(hits[0]["id"], item["id"])
+
 
 if __name__ == "__main__":
     unittest.main()
