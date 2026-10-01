@@ -207,30 +207,20 @@ class MockVoiceProvider(VoiceProvider):
 
 
 class ElevenLabsVoiceProvider(VoiceProvider):
-    """ElevenLabs voice synthesis adapter with API key handling and fallback."""
+    """Reserved real ElevenLabs adapter. Fails closed until real API I/O is implemented."""
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("ELEVENLABS_API_KEY", "")
 
-    def synthesize(
-        self,
-        text: str,
-        voice_profile: VoiceProfile,
-        output_path: Optional[str] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
+    def _unavailable(self):
         if not self.api_key:
-            # Fall back to mock if API key is not configured in environment
-            return MockVoiceProvider().synthesize(text, voice_profile, output_path=output_path, **kwargs)
+            raise RuntimeError("ELEVENLABS_API_KEY is not configured")
+        raise RuntimeError("ElevenLabs voice adapter is not production-wired yet")
 
-        duration = max(3.0, len(text.split()) / 2.5)
-        return {
-            "audio_path": output_path or f"/tmp/elevenlabs_{uuid.uuid4().hex[:8]}.mp3",
-            "duration_seconds": duration,
-            "cost_cents": int(len(text) * 0.03),  # ~$0.30 per 1000 chars
-            "provider": "elevenlabs",
-            "voice_profile_id": voice_profile.voice_profile_id,
-        }
+    def synthesize(self, text: str, voice_profile: VoiceProfile,
+                   output_path: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        self._unavailable()
 
-    def transform(self, audio_path: str, transformation_spec: Dict[str, Any], output_path: Optional[str] = None) -> Dict[str, Any]:
-        return {"output_path": output_path or audio_path, "spec": transformation_spec}
+    def transform(self, audio_path: str, transformation_spec: Dict[str, Any],
+                  output_path: Optional[str] = None) -> Dict[str, Any]:
+        self._unavailable()
