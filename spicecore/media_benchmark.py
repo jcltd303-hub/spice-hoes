@@ -73,6 +73,12 @@ def benchmark_media(prompt: str, negative_prompt: str = "", seed: int = 42,
                         references=references,
                     )
                     row["identity_score"] = float(identity.get("score")) if identity.get("score") is not None else None
+                    for key in (
+                        "metric", "model", "alignment", "npu", "embedding_dimensions",
+                        "latency_ms", "detector_latency_ms", "reference_count",
+                    ):
+                        if identity.get(key) is not None:
+                            row[f"identity_{key}"] = identity[key]
                 except Exception as exc:
                     row["identity_error"] = f"{type(exc).__name__}: {exc}"
             try:
