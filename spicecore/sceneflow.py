@@ -24,7 +24,7 @@ def scene_prompt(scene):
          "Preserve her recognizable face geometry, eyes, brows, nose, lips, skin tone and texture, beauty mark, and hair identity. "
          +SCENES[scene]+". Natural anatomy, realistic skin, believable camera optics. Change only pose, clothing and setting; one woman only.")
 
-def generate_scene(store,persona_id,scene,output,seed=100,denoise=0.35,server_url=None,reference_dir="identity/references"):
+def generate_scene(store,persona_id,scene,output,seed=100,denoise=0.35,server_url=None,reference_dir="identity/references",persona=None):
  ref,asset=load_reference(persona_id,reference_dir); prompt=scene_prompt(scene)
  meta=generate(prompt,output,NEGATIVE,seed=seed,server_url=server_url,denoise_strength=denoise,
                image=asset,profile="cyberrealistic-v10")
