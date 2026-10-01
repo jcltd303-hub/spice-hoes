@@ -2,12 +2,10 @@ name: Build Face Embedding QNN
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/face-embedding-qnn.yml"
-      - "internal/identity/**"
-      - "internal/nativecore/**"
-      - "cmd/spicemedia/**"
+
+concurrency:
+  group: face-embedding-qnn
+  cancel-in-progress: true
 
 permissions:
   contents: read
