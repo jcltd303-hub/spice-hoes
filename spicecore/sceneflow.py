@@ -20,7 +20,7 @@ def load_reference(persona_id="celeste_vale",reference_dir="identity/references"
  if not asset.is_file(): raise ValueError(f"Canonical identity asset missing: {asset}")
  return data,asset
 
-def scene_prompt(scene):
+def scene_prompt(scene,identity_reference=True):
  if scene not in SCENES: raise ValueError("Unknown scene")
  return ("Photorealistic editorial photograph of the exact same original fictional adult woman shown in the supplied reference image. "
          "Preserve her recognizable face geometry, eyes, brows, nose, lips, skin tone and texture, beauty mark, and hair identity. "
@@ -44,7 +44,7 @@ def generate_scene(store,persona_id,scene,output,seed=100,denoise=0.45,server_ur
  ref,asset=load_reference(persona_id,reference_dir); prompt=scene_prompt(scene)
  meta=generate(prompt,output,NEGATIVE,seed=seed,server_url=server_url,denoise_strength=denoise,image=asset,profile="cyberrealistic-v10")
  shared=copy_to_shared(meta["asset_uri"],persona_id,"scenes")
- meta.update({"persona_id":persona_id,"scene":scene,"identity_reference":ref["reference_asset"],"identity_sha256":ref["sha256"],"denoise_strength":denoise,"shared_asset_uri":shared})
+ meta.update({"persona_id":persona_id,"scene":scene,"identity_reference":ref["reference_asset"],"identity_sha256":ref["sha256"],"denoise_strength":None if composition_only else denoise,"composition_only":composition_only,"shared_asset_uri":shared})
  store.record_event("identity_scene_generated",meta)
  if persona is not None:
   meta["candidate_id"]=store.propose(persona,f"identity-scene:{scene}","still","identity-test","identity-retention",meta["asset_uri"],prompt,"local-dream:cyberrealistic-v10",str(meta["request"].get("seed",seed)),0)
