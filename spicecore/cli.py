@@ -148,7 +148,9 @@ def main(argv=None):
             output = store.events()
         elif args.command == 'identity-scene':
             out=args.output or f'assets/generated/{args.persona}/scenes/{args.scene}-{args.seed}.png'
-            output = generate_scene(store,args.persona,args.scene,out,args.seed,args.denoise,args.server_url,args.reference_dir)
+            persona = next((p for p in personas if p['id'] == args.persona), None)
+            if persona is None: parser.error('Unknown persona')
+            output = generate_scene(store,args.persona,args.scene,out,args.seed,args.denoise,args.server_url,args.reference_dir,persona)
         elif args.command == 'select-identity':
             output = select_identity(store,args.persona,args.candidate_id,args.reference_dir)
         elif args.command == 'identity-batch':
