@@ -97,9 +97,9 @@ class CoreAutopilot:
             **payload,
         }
 
-    def run_once(self, objective, channel, offer, variant_count=3, seed=None,
-                 cost_cents_per_asset=0, max_pending_review=12,
-                 daily_budget_cents=5000):
+    def preflight(self, objective, channel, offer, variant_count=3,
+                  cost_cents_per_asset=0, max_pending_review=12,
+                  daily_budget_cents=5000):
         if not all(str(x).strip() for x in (objective, channel, offer)):
             raise ValueError("objective, channel and offer are required")
         if variant_count < 2 or variant_count > 6:
@@ -112,20 +112,47 @@ class CoreAutopilot:
         pending = self.pending_review_count()
         spent = self.spend_today_cents()
         requested_cost = cost_cents_per_asset * variant_count
-
+        reason = None
         if pending + variant_count > max_pending_review:
-            return self._record(
-                objective, "blocked", "review_queue_limit", None, None, 0, 0,
-                {"pending_review": pending, "max_pending_review": max_pending_review,
-                 "spent_today_cents": spent, "daily_budget_cents": daily_budget_cents},
-            )
+            reason = "review_queue_limit"
+        elif spent + requested_cost > daily_budget_cents:
+            reason = "daily_budget_limit"
 
-        if spent + requested_cost > daily_budget_cents:
+        return {
+            "allowed": reason is None,
+            "reason": reason,
+            "pending_review": pending,
+            "max_pending_review": max_pending_review,
+            "spent_today_cents": spent,
+            "requested_cost_cents": requested_cost,
+            "daily_budget_cents": daily_budget_cents,
+        }
+
+    def run_once(self, objective, channel, offer, variant_count=3, seed=None,
+                 cost_cents_per_asset=0, max_pending_review=12,
+                 daily_budget_cents=5000):
+        gate = self.preflight(
+            objective, channel, offer,
+            variant_count=variant_count,
+            cost_cents_per_asset=cost_cents_per_asset,
+            max_pending_review=max_pending_review,
+            daily_budget_cents=daily_budget_cents,
+        )
+        pending = gate["pending_review"]
+        spent = gate["spent_today_cents"]
+        requested_cost = gate["requested_cost_cents"]
+
+        if not gate["allowed"]:
+            payload = {
+                "pending_review": pending,
+                "max_pending_review": gate["max_pending_review"],
+                "spent_today_cents": spent,
+                "daily_budget_cents": gate["daily_budget_cents"],
+            }
+            if gate["reason"] == "daily_budget_limit":
+                payload["requested_cost_cents"] = requested_cost
             return self._record(
-                objective, "blocked", "daily_budget_limit", None, None, 0, 0,
-                {"pending_review": pending, "spent_today_cents": spent,
-                 "requested_cost_cents": requested_cost,
-                 "daily_budget_cents": daily_budget_cents},
+                objective, "blocked", gate["reason"], None, None, 0, 0, payload,
             )
 
         decision = self._select_persona(seed)
