@@ -25,10 +25,10 @@ DEFAULT_EXPERTS = (
 
 
 class MixtureOfAgents:
-    def __init__(self, provider, store, experts=DEFAULT_EXPERTS):
+    def __init__(self, provider, store, experts=DEFAULT_EXPERTS, embedder=None):
         self.provider = provider
         self.store = store
-        self.knowledge = KnowledgeBase(store)
+        self.knowledge = KnowledgeBase(store, embedder=embedder)
         self.experts = tuple(experts)
         if len(self.experts) < 2:
             raise ValueError("MoA requires at least two experts")

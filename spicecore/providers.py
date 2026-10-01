@@ -62,6 +62,45 @@ class AzureChatProvider:
             raise ProviderError("Unexpected Azure response") from exc
 
 
+class AzureEmbeddingProvider:
+    """Azure OpenAI v1 embeddings adapter using stdlib HTTP."""
+
+    def __init__(self, endpoint: str | None = None, api_key: str | None = None,
+                 deployment: str | None = None):
+        self.endpoint = (endpoint or os.getenv("AZURE_OPENAI_ENDPOINT", "")).rstrip("/")
+        self.api_key = api_key or os.getenv("AZURE_OPENAI_API_KEY", "")
+        self.deployment = deployment or os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "")
+        if not all((self.endpoint, self.api_key, self.deployment)):
+            raise ProviderError(
+                "Azure embedding provider requires endpoint, API key and embedding deployment"
+            )
+
+    @property
+    def model_name(self) -> str:
+        return f"azure-embedding:{self.deployment}"
+
+    def embed(self, text: str) -> list[float]:
+        if not text.strip():
+            raise ValueError("embedding input cannot be empty")
+        data = _post_json(
+            f"{self.endpoint}/openai/v1/embeddings",
+            {
+                "model": self.deployment,
+                "input": text,
+                "encoding_format": "float",
+            },
+            {"api-key": self.api_key},
+            timeout=90,
+        )
+        try:
+            vector = data["data"][0]["embedding"]
+            if not isinstance(vector, list) or not vector:
+                raise TypeError
+            return [float(x) for x in vector]
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise ProviderError("Unexpected Azure embedding response") from exc
+
+
 class LocalDreamProvider:
     """Adapter for local-dream generation and local identity scoring."""
 
