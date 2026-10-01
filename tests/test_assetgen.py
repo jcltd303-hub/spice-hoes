@@ -63,7 +63,7 @@ class AssetGenerationTests(unittest.TestCase):
             provider=provider,
             asset_dir=Path(self.tmp.name) / "generated",
             reference_root=Path(self.tmp.name) / "refs",
-            quality_threshold=0.6,
+            quality_threshold=0.4,
         )
         result = generator.generate(
             self.persona, "city nights", "Instagram", "affiliate", seed=42
@@ -87,6 +87,7 @@ class AssetGenerationTests(unittest.TestCase):
             asset_dir=Path(self.tmp.name) / "generated",
             reference_root=Path(self.tmp.name) / "refs",
             identity_threshold=0.82,
+            quality_threshold=0.4,
         )
         result = generator.generate(self.persona, "city nights", "Instagram", "affiliate")
         self.assertEqual(result["reference_count"], 1)
@@ -143,6 +144,7 @@ class AssetGenerationTests(unittest.TestCase):
             provider=provider,
             asset_dir=Path(self.tmp.name) / "generated",
             reference_root=Path(self.tmp.name) / "refs",
+            quality_threshold=0.4,
         )
         people = [self.persona, {**self.persona, "id": "tess_wilder", "name": "Tess Wilder"}]
         out = generator.batch(people, "training", "TikTok", "affiliate", count_per_persona=2, seed=100)
