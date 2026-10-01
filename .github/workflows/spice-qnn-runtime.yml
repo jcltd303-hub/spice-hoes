@@ -2,18 +2,16 @@ name: Build Spice QNN Runtime
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/spice-qnn-runtime.yml"
-      - "cmd/spicemedia/**"
-      - "internal/nativecore/**"
-      - "go.mod"
+
+concurrency:
+  group: spice-qnn-runtime
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 env:
-  LOCAL_DREAM_COMMIT: "5fda588dbcf054ac1d20f443f17ead15d4e0cede"
+  LOCAL_DREAM_COMMIT: "59b99bb9040645a7fa970e6c628a27500fed8a2a"
   QAIRT_VERSION: "2.50.40.260831"
   QAIRT_URL: "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.50.40.260831/v2.50.40.260831.zip"
 
@@ -26,8 +24,10 @@ jobs:
 
       - name: Fetch pinned native QNN core source
         run: |
-          git clone https://github.com/jcltd303-hub/local-dream.git native-src
-          git -C native-src checkout "$LOCAL_DREAM_COMMIT"
+          git init native-src
+          git -C native-src remote add origin https://github.com/jcltd303-hub/local-dream.git
+          git -C native-src fetch --depth 1 origin "$LOCAL_DREAM_COMMIT"
+          git -C native-src checkout --detach FETCH_HEAD
           git -C native-src submodule update --init --depth 1 \
             app/src/main/cpp/3rdparty/cpp-httplib \
             app/src/main/cpp/3rdparty/json \
@@ -68,6 +68,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
       - name: Install Android native toolchain
         run: |
