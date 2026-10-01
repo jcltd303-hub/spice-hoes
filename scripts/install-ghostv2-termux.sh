@@ -4,16 +4,20 @@ ROOT="${SPICE_GHOSTV2_DIR:-$HOME/ghostv2}"
 command -v git >/dev/null || { echo "git is required" >&2; exit 2; }
 command -v python >/dev/null || { echo "python is required" >&2; exit 2; }
 if [ ! -d "$ROOT/.git" ]; then git clone --depth 1 https://github.com/dimitribarbot/ghostv2.git "$ROOT"; else git -C "$ROOT" pull --ff-only; fi
-pkg install -y python-pillow libjpeg-turbo libpng openblas libandroid-execinfo 2>/dev/null || true
+pkg install -y python-numpy python-pillow libjpeg-turbo libpng openblas 2>/dev/null || pkg install -y python-numpy python-pillow libjpeg-turbo libpng openblas
 cd "$ROOT"
-python -m pip install simple-parsing safetensors tqdm numpy opencv-python-headless scikit-image
+python -m pip install simple-parsing safetensors tqdm
+python -m pip install --no-deps opencv-python-headless || true
 python -m pip install transformers accelerate diffusers lightning || true
-if [ -f requirements.txt ]; then python -m pip install -r requirements.txt || echo "Full upstream requirements include desktop/CUDA packages that may not build on Termux; preflight below will identify what remains." >&2; fi
 python - <<'PY'
-import importlib
-mods=["simple_parsing","cv2","PIL","numpy","torch","safetensors","lightning","diffusers","transformers","skimage"]
+import ast,importlib
+from pathlib import Path
+tree=ast.parse(Path("inference.py").read_text())
+imports=sorted({n.names[0].name.split(".")[0] for n in ast.walk(tree) if isinstance(n,ast.Import)} | {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n,ast.ImportFrom) and n.module})
+print("GhostV2 inference imports:",", ".join(imports))
+checks=["simple_parsing","PIL","numpy","torch","safetensors","diffusers","transformers"]
 missing=[]
-for m in mods:
+for m in checks:
  try: importlib.import_module(m)
  except Exception as e: missing.append(f"{m}: {type(e).__name__}: {e}")
 if missing:
@@ -22,4 +26,4 @@ if missing:
  raise SystemExit(4)
 print("GhostV2 core import preflight OK")
 PY
-echo "GhostV2 dependencies passed core import preflight at $ROOT"
+echo "GhostV2 bootstrap completed at $ROOT"
