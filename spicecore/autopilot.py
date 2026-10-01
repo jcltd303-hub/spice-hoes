@@ -130,7 +130,9 @@ class CoreAutopilot:
 
     def run_once(self, objective, channel, offer, variant_count=3, seed=None,
                  cost_cents_per_asset=0, max_pending_review=12,
-                 daily_budget_cents=5000):
+                 daily_budget_cents=5000, progress=None):
+        if progress:
+            progress(5, "Preflight")
         gate = self.preflight(
             objective, channel, offer,
             variant_count=variant_count,
@@ -155,19 +157,32 @@ class CoreAutopilot:
                 objective, "blocked", gate["reason"], None, None, 0, 0, payload,
             )
 
+        if progress:
+            progress(15, "Selecting persona")
         decision = self._select_persona(seed)
         persona = self.by_id[decision["persona_id"]]
+        if progress:
+            progress(30, "Running MoA")
         deliberation = self.moa.deliberate(objective, persona)
+        if progress:
+            progress(55, "Planning experiment")
         plan = self.planner.plan(
             objective, persona, channel, offer,
             deliberation=deliberation,
             variant_count=variant_count,
         )
+        def variant_progress(done, total, label):
+            if progress and total:
+                progress(65 + int((done / total) * 30), label)
+
         outputs = self.planner.execute(
             plan, persona, self.generator,
             base_seed=seed,
             cost_cents_per_asset=cost_cents_per_asset,
+            progress=variant_progress,
         )
+        if progress:
+            progress(97, "Recording results")
         reviewable = sum(1 for x in outputs if x["asset"]["status"] == "proposed")
         rejected = sum(1 for x in outputs if x["asset"]["status"] == "rejected")
         return self._record(
