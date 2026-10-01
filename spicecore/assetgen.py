@@ -91,6 +91,7 @@ class AssetGenerator:
         self.reference_root = Path(reference_root)
         self.identity_threshold = identity_threshold
         self.reference_strength = reference_strength
+        self.quality_gate = QualityGate(self.provider, threshold=quality_threshold)
 
     def generate(self, persona: dict, theme: str, channel: str, offer: str,
                  scene: str = "", seed: int | None = None,
