@@ -11,7 +11,7 @@ from .autonomy import plan_next_batch
 from .assetflow import produce_job
 from .identityflow import run_identity_batch
 from .identityref import select_identity
-from .sceneflow import generate_scene,SCENES
+from .sceneflow import generate_scene,identity_inpaint,SCENES
 from .policy import recommend
 from .moa import deliberate
 from .localdream import generate as localdream_generate, probe as localdream_probe
@@ -40,6 +40,15 @@ def main(argv=None):
     scene.add_argument('--server-url')
     scene.add_argument('--reference-dir', default='identity/references')
     scene.add_argument('--composition-only', action='store_true')
+    inp = sub.add_parser('identity-inpaint')
+    inp.add_argument('scene_asset')
+    inp.add_argument('--persona', default='celeste_vale')
+    inp.add_argument('--output')
+    inp.add_argument('--seed', type=int, default=200)
+    inp.add_argument('--denoise', type=float, default=0.55)
+    inp.add_argument('--server-url')
+    inp.add_argument('--reference-dir', default='identity/references')
+    inp.add_argument('--invert-mask', action='store_true')
     sel = sub.add_parser('select-identity')
     sel.add_argument('candidate_id')
     sel.add_argument('--persona', default='celeste_vale')
@@ -152,6 +161,12 @@ def main(argv=None):
             persona = next((p for p in personas if p['id'] == args.persona), None)
             if persona is None: parser.error('Unknown persona')
             output = generate_scene(store,args.persona,args.scene,out,args.seed,args.denoise,args.server_url,args.reference_dir,persona,args.composition_only)
+        elif args.command == 'identity-inpaint':
+            persona = next((p for p in personas if p['id'] == args.persona), None)
+            if persona is None: parser.error('Unknown persona')
+            source=Path(args.scene_asset)
+            out=args.output or str(source.with_name(source.stem+'-celeste.png'))
+            output=identity_inpaint(store,args.persona,args.scene_asset,out,args.seed,args.denoise,args.server_url,args.reference_dir,persona,args.invert_mask)
         elif args.command == 'select-identity':
             output = select_identity(store,args.persona,args.candidate_id,args.reference_dir)
         elif args.command == 'identity-batch':
