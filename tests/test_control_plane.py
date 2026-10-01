@@ -95,7 +95,7 @@ class ControlPlaneTests(unittest.TestCase):
         )
         row = next(item for item in out["stats"] if item["persona_id"] == persona["id"])
         self.assertEqual(row["impressions"], 2)
-        self.assertEqual(row["clicks"], 7)
+        self.assertEqual(row["clicks"], 1)
         self.assertEqual(row["revenue_cents"], 700)
 
     def test_runtime_policy_update_and_rl_status(self):
@@ -227,7 +227,7 @@ class ControlPlaneTests(unittest.TestCase):
         )
         row = next(x for x in result["stats"] if x["persona_id"] == self.personas[0]["id"])
         self.assertEqual(row["impressions"], 100)
-        self.assertEqual(row["clicks"], 1)
+        self.assertEqual(row["clicks"], 7)
         self.assertEqual(row["revenue_cents"], 900)
         self.assertEqual(row["net_cents"], 775)
 
