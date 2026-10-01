@@ -58,10 +58,10 @@ class CoreAutopilot:
         state = DeepRLPolicy.features(stats)
         try:
             decision = self.policy.select(state, seed=seed)
-            return {**decision, "source": "deeprl", "persona_id": decision["action_id"]}
+            return {**decision, "source": "deeprl", "persona_id": decision["action_id"], "state": state}
         except InsufficientExperience:
             decision = recommend(stats, seed=seed)
-            return {**decision, "source": "contextual_bandit"}
+            return {**decision, "source": "contextual_bandit", "state": state}
 
     def _record(self, objective, status, reason, persona_id, plan_id,
                 created_candidates, estimated_cost_cents, payload):

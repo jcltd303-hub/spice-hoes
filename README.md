@@ -108,6 +108,30 @@ Azure is the text-reasoning lane; local-dream on the S24 is the image lane. Prov
 
 That gate is intentional: the project does not call sparse early observations “DeepRL.” Once enough transitions exist, training and decisions are themselves recorded as `rl_training_completed` and `rl_policy_decision` events.
 
+
+## Controlled autopilot and learning closure
+
+The core autopilot can create a bounded experiment batch while respecting a daily generation budget and a maximum pending-review queue. It never publishes automatically.
+
+```bash
+python3 -m spicecore.cli autopilot-run \
+  "Improve qualified affiliate conversion" \
+  --channel TikTok \
+  --offer affiliate \
+  --variants 3 \
+  --cost-cents-per-asset 25 \
+  --max-pending-review 12 \
+  --daily-budget-cents 5000
+```
+
+After variants have been reviewed, published by the distribution layer, and have sufficient exposure, close the run:
+
+```bash
+python3 -m spicecore.cli autopilot-settle RUN_ID --min-impressions 100
+```
+
+Settlement is idempotent. It records one state/action/reward/next-state transition for DeepRL, computes reward from observed net outcome, writes a source-tagged experiment summary into RAG, and marks the autopilot run settled. Published variants must meet the requested impression threshold; proposed or approved-but-unpublished variants block settlement.
+
 ## Reviewed publish/outcome loop
 
 ```bash
