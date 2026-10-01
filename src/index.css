@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-primary: #120e1a;
+    --bg-card: #1c1527;
+    --bg-card-hover: #261d36;
+    --border-color: #382c4d;
+    --accent-scary: #f43f5e;
+    --accent-sporty: #10b981;
+    --accent-baby: #ec4899;
+    --accent-ginger: #f97316;
+    --accent-posh: #a855f7;
+  }
+
+  body {
+    background-color: var(--bg-primary);
+    color: #f7f1fb;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
