@@ -184,44 +184,30 @@ class MockVideoProvider(VideoProvider):
 
 
 class LumaVideoProvider(VideoProvider):
-    """Real adapter for Luma Dream Machine API with retry and cost tracking."""
+    """Reserved real Luma adapter. Fails closed until real API I/O is implemented."""
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("LUMA_API_KEY", "")
-        self.base_url = "https://api.lumalabs.ai/dream-machine/v1"
 
-    def image_to_video(
-        self,
-        image_uri: str,
-        prompt: str,
-        duration_seconds: float = 5.0,
-        aspect_ratio: str = "9:16",
-        motion: str = "subtle push-in",
-        seed: Optional[int] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
+    def _unavailable(self):
         if not self.api_key:
-            raise ValueError("LUMA_API_KEY environment variable is required")
-        job_id = f"luma-{uuid.uuid4().hex[:12]}"
-        # Generation cost is standard 25 cents per clip
-        return {
-            "job_id": job_id,
-            "status": "pending",
-            "provider": "luma",
-            "duration_seconds": duration_seconds,
-            "aspect_ratio": aspect_ratio,
-            "cost_cents": 25,
-            "created_at": time.time(),
-        }
+            raise RuntimeError("LUMA_API_KEY is not configured")
+        raise RuntimeError("Luma video adapter is not production-wired yet")
 
-    def text_image_to_video(self, prompt: str, image_uri: str, **kwargs) -> Dict[str, Any]:
-        return self.image_to_video(image_uri=image_uri, prompt=prompt, **kwargs)
+    def image_to_video(self, image_uri: str, prompt: str, duration_seconds: float = 5.0,
+                       aspect_ratio: str = "9:16", motion: str = "subtle push-in",
+                       seed: Optional[int] = None, **kwargs) -> Dict[str, Any]:
+        self._unavailable()
+
+    def text_image_to_video(self, prompt: str, image_uri: str, duration_seconds: float = 5.0,
+                            aspect_ratio: str = "9:16", **kwargs) -> Dict[str, Any]:
+        self._unavailable()
 
     def talking_head(self, image_uri: str, audio_uri: str, **kwargs) -> Dict[str, Any]:
-        raise NotImplementedError("Talking head is handled via LipSyncProvider for Luma")
+        self._unavailable()
 
     def status(self, job_id: str) -> Dict[str, Any]:
-        return {"job_id": job_id, "status": "completed"}
+        self._unavailable()
 
     def download(self, job_id: str, destination_path: str) -> str:
-        return destination_path
+        self._unavailable()
