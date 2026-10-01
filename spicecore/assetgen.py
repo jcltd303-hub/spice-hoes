@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .core import Store
 from .identity import IdentityGate, load_reference_pack
-from .providers import LocalDreamProvider
+from .providers import media_provider
 from .quality import QualityGate
 
 
@@ -71,7 +71,7 @@ def _decode_image(result: dict) -> tuple[bytes, str]:
         if isinstance(first, dict) and first.get("base64"):
             return base64.b64decode(first["base64"], validate=True), first.get("mime_type", "image/png")
 
-    raise ValueError("local-dream response did not contain image bytes")
+    raise ValueError("media provider response did not contain image bytes")
 
 
 def _extension(mime: str) -> str:
@@ -80,13 +80,13 @@ def _extension(mime: str) -> str:
 
 
 class AssetGenerator:
-    def __init__(self, store: Store, provider: LocalDreamProvider | None = None,
+    def __init__(self, store: Store, provider=None,
                  asset_dir: str | Path = "data/assets",
                  reference_root: str | Path = "data/references",
                  identity_threshold: float = 0.82,
                  reference_strength: float = 0.85, quality_threshold: float = 0.78):
         self.store = store
-        self.provider = provider or LocalDreamProvider()
+        self.provider = provider or media_provider()
         self.asset_dir = Path(asset_dir)
         self.reference_root = Path(reference_root)
         self.identity_threshold = identity_threshold
