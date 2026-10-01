@@ -48,6 +48,11 @@ jobs:
           echo "LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
           echo "$QNN_SDK_ROOT/bin/x86_64-linux-clang" >> "$GITHUB_PATH"
 
+      - name: Install QAIRT host runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libc++1 libc++abi1
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
