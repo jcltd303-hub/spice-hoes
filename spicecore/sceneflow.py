@@ -53,3 +53,41 @@ def generate_scene(store,persona_id,scene,output,seed=100,denoise=0.45,server_ur
  if persona is not None:
   meta["candidate_id"]=store.propose(persona,f"identity-scene:{scene}","still","identity-test","identity-retention",meta["asset_uri"],prompt,"local-dream:cyberrealistic-v10",str(meta["request"].get("seed",seed)),0)
  return meta
+
+
+def _write_face_mask(path,width,height,invert=False):
+ import struct,zlib
+ p=Path(path); p.parent.mkdir(parents=True,exist_ok=True)
+ cx,cy=width*0.5,height*0.19; rx,ry=width*0.115,height*0.105
+ rows=[]
+ for y in range(height):
+  row=bytearray()
+  for x in range(width):
+   inside=((x-cx)/rx)**2+((y-cy)/ry)**2<=1
+   value=255 if inside else 0
+   if invert: value=255-value
+   row.append(value)
+  rows.append(b"\x00"+bytes(row))
+ def chunk(kind,data): return struct.pack(">I",len(data))+kind+data+struct.pack(">I",zlib.crc32(kind+data)&0xffffffff)
+ p.write_bytes(b"\x89PNG\r\n\x1a\n"+chunk(b"IHDR",struct.pack(">IIBBBBB",width,height,8,0,0,0,0))+chunk(b"IDAT",zlib.compress(b"".join(rows),6))+chunk(b"IEND",b""))
+ return p
+
+def identity_inpaint(store,persona_id,scene_asset,output,seed=200,denoise=0.55,server_url=None,reference_dir="identity/references",persona=None,invert_mask=False):
+ ref,_=load_reference(persona_id,reference_dir)
+ source=Path(scene_asset)
+ if not source.is_file(): raise ValueError(f"Scene asset missing: {source}")
+ raw=source.read_bytes()
+ if not raw.startswith(b"\x89PNG\r\n\x1a\n"): raise ValueError("Identity inpaint currently requires a PNG scene")
+ import struct
+ width,height=struct.unpack(">II",raw[16:24])
+ mask=source.with_name(source.stem+"-face-mask.png")
+ _write_face_mask(mask,width,height,invert_mask)
+ prompt=("Photorealistic face of Celeste Vale, original fictional adult woman age 32: warm olive skin with natural texture and faint freckles, dark brown almond eyes, slightly asymmetric arched brows, straight softly rounded nose, natural full lips, small beauty mark on her left cheek (viewer right), espresso-brown softly wavy hair. Preserve the existing body, pose, clothing, lighting, camera framing and background exactly; change only the masked face/head region.")
+ meta=generate(prompt,output,NEGATIVE,seed=seed,server_url=server_url,denoise_strength=denoise,image=source,mask=mask,profile="cyberrealistic-v10")
+ shared=copy_to_shared(meta["asset_uri"],persona_id,"identity-inpaint")
+ shared_mask=copy_to_shared(mask,persona_id,"identity-inpaint")
+ meta.update({"persona_id":persona_id,"identity_reference":ref["reference_asset"],"identity_sha256":ref["sha256"],"source_scene":str(source),"face_mask":str(mask),"shared_mask_uri":shared_mask,"shared_asset_uri":shared,"denoise_strength":denoise,"invert_mask":invert_mask})
+ store.record_event("identity_inpaint_generated",meta)
+ if persona is not None:
+  meta["candidate_id"]=store.propose(persona,"identity-inpaint","still","identity-test","identity-retention",meta["asset_uri"],prompt,"local-dream:cyberrealistic-v10",str(meta["request"].get("seed",seed)),0)
+ return meta
