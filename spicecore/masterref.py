@@ -44,15 +44,23 @@ class MasterReferenceBuilder:
                  staging_root: str | Path = "data/reference_candidates",
                  reference_root: str | Path = "data/references",
                  identity_threshold: float = 0.84,
-                 reference_strength: float = 0.90):
+                 reference_strength: float = 0.90,
+                 anchor_candidates: int = 3,
+                 attempts_per_view: int = 2):
         self.store = store
         self.provider = provider or LocalDreamProvider()
         self.staging_root = Path(staging_root)
         self.reference_root = Path(reference_root)
         self.identity_threshold = identity_threshold
         self.reference_strength = reference_strength
+        self.anchor_candidates = anchor_candidates
+        self.attempts_per_view = attempts_per_view
         if not 0 <= identity_threshold <= 1:
             raise ValueError("identity_threshold must be between 0 and 1")
+        if anchor_candidates < 2 or anchor_candidates > 8:
+            raise ValueError("anchor_candidates must be 2..8")
+        if attempts_per_view < 1 or attempts_per_view > 8:
+            raise ValueError("attempts_per_view must be 1..8")
 
     def _generate(self, prompt: str, seed: int | None, refs: list[dict] | None = None) -> tuple[bytes, str]:
         response = self.provider.generate_image(
@@ -66,57 +74,109 @@ class MasterReferenceBuilder:
         )
         return _decode_image(response)
 
+    @staticmethod
+    def _ref(image_bytes: bytes, mime: str) -> dict:
+        return {
+            "image_base64": base64.b64encode(image_bytes).decode("ascii"),
+            "mime_type": mime,
+        }
+
+    def _identity_score(self, image_bytes: bytes, mime: str, refs: list[dict]) -> float:
+        scored = self.provider.score_identity(
+            image_base64=base64.b64encode(image_bytes).decode("ascii"),
+            image_mime_type=mime,
+            references=refs,
+        )
+        return max(0.0, min(1.0, float(scored["score"])))
+
+    def _select_anchor(self, persona: dict, out_dir: Path, seed: int | None) -> tuple[dict, list[dict]]:
+        candidates = []
+        prompt = master_prompt(persona, REFERENCE_VIEWS[0][1])
+        for i in range(self.anchor_candidates):
+            derived_seed = None if seed is None else seed + i
+            image_bytes, mime = self._generate(prompt, derived_seed)
+            candidates.append({
+                "bytes": image_bytes,
+                "mime": mime,
+                "seed": derived_seed,
+                "candidate": i,
+            })
+
+        for i, candidate in enumerate(candidates):
+            refs = [self._ref(other["bytes"], other["mime"]) for j, other in enumerate(candidates) if j != i]
+            candidate["consensus_score"] = self._identity_score(candidate["bytes"], candidate["mime"], refs)
+
+        selected = max(candidates, key=lambda x: (x["consensus_score"], -x["candidate"]))
+        diagnostics = []
+        for candidate in candidates:
+            suffix = _extension(candidate["mime"])
+            path = out_dir / f"anchor_candidate_{candidate['candidate']:02d}{suffix}"
+            path.write_bytes(candidate["bytes"])
+            diagnostics.append({
+                "path": str(path),
+                "seed": candidate["seed"],
+                "consensus_score": candidate["consensus_score"],
+                "selected": candidate is selected,
+            })
+        return selected, diagnostics
+
     def build(self, persona: dict, seed: int | None = None) -> dict:
         run_id = str(uuid.uuid4())
         out_dir = self.staging_root / persona["id"] / run_id
         out_dir.mkdir(parents=True, exist_ok=False)
 
+        anchor, anchor_diagnostics = self._select_anchor(persona, out_dir, seed)
+        anchor_ref = self._ref(anchor["bytes"], anchor["mime"])
+
         files = []
-        scores = []
-        anchor_ref = None
+        front_path = out_dir / f"00_front{_extension(anchor['mime'])}"
+        front_path.write_bytes(anchor["bytes"])
+        files.append({
+            "view": "front",
+            "path": str(front_path),
+            "mime_type": anchor["mime"],
+            "sha256": hashlib.sha256(anchor["bytes"]).hexdigest(),
+            "seed": anchor["seed"],
+            "identity_score": anchor["consensus_score"],
+            "passed": anchor["consensus_score"] >= self.identity_threshold,
+            "scorer": "identity-consensus-medoid",
+            "attempts": self.anchor_candidates,
+        })
 
-        for index, (view, instruction) in enumerate(REFERENCE_VIEWS):
-            derived_seed = None if seed is None else seed + index
-            refs = [anchor_ref] if anchor_ref else None
-            image_bytes, mime = self._generate(
-                master_prompt(persona, instruction),
-                seed=derived_seed,
-                refs=refs,
-            )
-            path = out_dir / f"{index:02d}_{view}{_extension(mime)}"
-            path.write_bytes(image_bytes)
-            sha = hashlib.sha256(image_bytes).hexdigest()
+        seed_cursor = self.anchor_candidates
+        for view_index, (view, instruction) in enumerate(REFERENCE_VIEWS[1:], start=1):
+            attempts = []
+            prompt = master_prompt(persona, instruction)
+            for attempt in range(self.attempts_per_view):
+                derived_seed = None if seed is None else seed + seed_cursor
+                seed_cursor += 1
+                image_bytes, mime = self._generate(prompt, derived_seed, refs=[anchor_ref])
+                score = self._identity_score(image_bytes, mime, [anchor_ref])
+                attempts.append({
+                    "bytes": image_bytes,
+                    "mime": mime,
+                    "seed": derived_seed,
+                    "score": score,
+                    "attempt": attempt,
+                })
 
-            if anchor_ref is None:
-                anchor_ref = {
-                    "image_base64": base64.b64encode(image_bytes).decode("ascii"),
-                    "mime_type": mime,
-                }
-                score = 1.0
-                passed = True
-                scorer = "self-anchor"
-            else:
-                scored = self.provider.score_identity(
-                    image_base64=base64.b64encode(image_bytes).decode("ascii"),
-                    image_mime_type=mime,
-                    references=[anchor_ref],
-                )
-                score = max(0.0, min(1.0, float(scored["score"])))
-                passed = score >= self.identity_threshold
-                scorer = scored.get("model", "local-dream:identity")
-
+            selected = max(attempts, key=lambda x: (x["score"], -x["attempt"]))
+            path = out_dir / f"{view_index:02d}_{view}{_extension(selected['mime'])}"
+            path.write_bytes(selected["bytes"])
             files.append({
                 "view": view,
                 "path": str(path),
-                "mime_type": mime,
-                "sha256": sha,
-                "seed": derived_seed,
-                "identity_score": score,
-                "passed": passed,
-                "scorer": scorer,
+                "mime_type": selected["mime"],
+                "sha256": hashlib.sha256(selected["bytes"]).hexdigest(),
+                "seed": selected["seed"],
+                "identity_score": selected["score"],
+                "passed": selected["score"] >= self.identity_threshold,
+                "scorer": "local-dream:identity",
+                "attempts": self.attempts_per_view,
+                "attempt_scores": [round(x["score"], 6) for x in attempts],
             })
-            scores.append(score)
 
+        scores = [item["identity_score"] for item in files]
         ready = all(item["passed"] for item in files)
         manifest = {
             "run_id": run_id,
@@ -126,7 +186,11 @@ class MasterReferenceBuilder:
             "provider": self.provider.model_name,
             "identity_threshold": self.identity_threshold,
             "reference_strength": self.reference_strength,
+            "anchor_candidates": self.anchor_candidates,
+            "attempts_per_view": self.attempts_per_view,
+            "anchor_diagnostics": anchor_diagnostics,
             "mean_identity_score": round(sum(scores) / len(scores), 6),
+            "minimum_identity_score": round(min(scores), 6),
             "ready_for_promotion": ready,
             "files": files,
         }
@@ -140,6 +204,7 @@ class MasterReferenceBuilder:
             "manifest_path": str(manifest_path),
             "ready_for_promotion": ready,
             "mean_identity_score": manifest["mean_identity_score"],
+            "minimum_identity_score": manifest["minimum_identity_score"],
             "identity_threshold": self.identity_threshold,
         })
         return manifest
@@ -153,7 +218,6 @@ class MasterReferenceBuilder:
         destination = self.reference_root / persona_id
         destination.mkdir(parents=True, exist_ok=True)
 
-        # Replace only generated image files in the canonical pack; keep unrelated files untouched.
         for existing in destination.iterdir():
             if existing.is_file() and existing.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
                 existing.unlink()
@@ -179,6 +243,7 @@ class MasterReferenceBuilder:
             "manifest_path": str(canonical_path),
             "file_count": len(promoted),
             "mean_identity_score": manifest["mean_identity_score"],
+            "minimum_identity_score": manifest["minimum_identity_score"],
         })
         return {
             "persona_id": persona_id,
@@ -187,4 +252,5 @@ class MasterReferenceBuilder:
             "manifest_path": str(canonical_path),
             "file_count": len(promoted),
             "mean_identity_score": manifest["mean_identity_score"],
+            "minimum_identity_score": manifest["minimum_identity_score"],
         }
