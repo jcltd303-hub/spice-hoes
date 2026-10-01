@@ -1,0 +1,27 @@
+name: Android Identity APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [refactor/free-guide-tools]
+    paths: ['android/identity-service/**','.github/workflows/android-identity.yml']
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android/identity-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - run: gradle :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spice-identity-debug-apk
+          path: android/identity-service/app/build/outputs/apk/debug/app-debug.apk
