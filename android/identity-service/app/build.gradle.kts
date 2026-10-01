@@ -42,6 +42,7 @@ android {
 }
 
 dependencies {
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     testImplementation("junit:junit:4.13.2")
     // Real org.json for JVM unit tests (android.jar only ships stubs).
     testImplementation("org.json:json:20240303")
