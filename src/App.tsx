@@ -29,6 +29,8 @@ export default function App() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [stats, setStats] = useState<PersonaStats[]>([]);
   const [recommendation, setRecommendation] = useState<PolicyRecommendation | null>(null);
+  const [thompsonRecommendation, setThompsonRecommendation] = useState<PolicyRecommendation | null>(null);
+  const [capabilities, setCapabilities] = useState<any | null>(null);
   const [events, setEvents] = useState<SystemEvent[]>([]);
   const [mediaJobs, setMediaJobs] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -59,11 +61,12 @@ export default function App() {
 
   const fetchData = async () => {
     try {
-      const [pRes, cRes, sRes, rRes, eRes, mRes, schRes, policyRes, rlRes, autopilotRes, doctorRes] = await Promise.all([
+      const [pRes, cRes, sRes, rRes, thompsonRes, eRes, mRes, schRes, policyRes, rlRes, autopilotRes, doctorRes, capabilitiesRes] = await Promise.all([
         fetch('/api/personas').then(r => r.json()),
         fetch('/api/candidates').then(r => r.json()),
         fetch('/api/stats').then(r => r.json()),
         fetch('/api/recommend').then(r => r.json()),
+        fetch('/api/recommend/thompson').then(r => r.json()),
         fetch('/api/events?limit=50').then(r => r.json()),
         fetch('/api/media-jobs').then(r => r.json()),
         fetch('/api/schedules').then(r => r.json()),
@@ -71,11 +74,13 @@ export default function App() {
         fetch('/api/rl/status').then(r => r.json()),
         fetch('/api/autopilot/status').then(r => r.json()),
         fetch('/api/doctor').then(r => r.json()),
+        fetch('/api/capabilities').then(r => r.json()),
       ]);
       setPersonas(pRes || []);
       setCandidates(cRes || []);
       setStats(sRes || []);
       setRecommendation(rRes || null);
+      setThompsonRecommendation(thompsonRes?.error ? null : thompsonRes);
       setEvents(eRes || []);
       setMediaJobs(mRes || []);
       setSchedules(schRes || []);
@@ -83,6 +88,7 @@ export default function App() {
       setRlStatus(rlRes?.error ? null : rlRes);
       setAutopilotStatus(autopilotRes?.error ? null : autopilotRes);
       setDoctorStatus(doctorRes?.error ? null : doctorRes);
+      setCapabilities(capabilitiesRes?.error ? null : capabilitiesRes);
     } catch (err) {
       console.error('Error fetching data:', err);
     } finally {
@@ -975,6 +981,57 @@ export default function App() {
                 Policy: {recommendation.policy_version} ({recommendation.method})
               </div>
             </div>
+
+            {capabilities && (
+              <div className="bg-[#1b1526] p-5 rounded-2xl border border-[#362a4a]">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Adapter Readiness</h3>
+                    <p className="text-xs text-gray-400 mt-1">Reports configuration only; no external provider calls are made by this check.</p>
+                  </div>
+                  <span className="text-[11px] font-mono text-gray-400">fail-closed</span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                  {[
+                    ['Instagram', capabilities.distribution?.instagram],
+                    ['TikTok', capabilities.distribution?.tiktok],
+                    ['YouTube', capabilities.distribution?.youtube],
+                    ['FFmpeg', capabilities.media?.ffmpeg],
+                    ['Luma', capabilities.media?.luma],
+                    ['ElevenLabs', capabilities.media?.elevenlabs],
+                    ['SyncLabs', capabilities.media?.synclabs],
+                    ['Local Dream', capabilities.media?.local_dream],
+                  ].map(([label, ready]) => (
+                    <div key={String(label)} className="bg-[#120e1a] border border-[#2d223f] rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                      <span className="text-gray-300">{String(label)}</span>
+                      <span className={`font-mono ${ready ? 'text-emerald-300' : 'text-gray-500'}`}>{ready ? 'ready' : 'off'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {thompsonRecommendation && (
+              <div className="bg-[#1b1526] p-5 rounded-2xl border border-[#4a365f]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider text-purple-300 font-bold">Bayesian Thompson Allocation</div>
+                    <div className="text-lg font-bold text-white mt-1">{thompsonRecommendation.name} ({thompsonRecommendation.persona_id})</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      {(thompsonRecommendation.selection_probability * 100).toFixed(1)}% selection probability · USD {(thompsonRecommendation.estimated_net_cents_per_published / 100).toFixed(2)} estimated net / published
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-mono px-2 py-1 rounded bg-purple-500/15 border border-purple-500/30 text-purple-300">
+                    {thompsonRecommendation.policy_version}
+                  </span>
+                </div>
+                {(thompsonRecommendation as any).ci_95 && (
+                  <div className="mt-3 text-xs font-mono text-gray-400">
+                    95% credible interval: USD {((thompsonRecommendation as any).ci_95.lower / 100).toFixed(2)} to USD {((thompsonRecommendation as any).ci_95.upper / 100).toFixed(2)}
+                  </div>
+                )}
+              </div>
+            )}
 
             {doctorStatus && (
               <div className={`p-4 rounded-2xl border ${doctorStatus.healthy ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-rose-500/10 border-rose-500/30'}`}>
