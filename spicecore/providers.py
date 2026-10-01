@@ -27,6 +27,11 @@ def _post_json(url: str, payload: dict, headers: dict[str, str], timeout: int = 
         raise ProviderError(str(exc)) from exc
 
 
+def _validate_b64(value: str) -> None:
+    raw = value.split(",", 1)[1] if value.startswith("data:") and "," in value else value
+    base64.b64decode(raw, validate=True)
+
+
 class AzureChatProvider:
     """OpenAI-compatible Azure chat adapter using only stdlib HTTP."""
 
@@ -72,14 +77,23 @@ class LocalDreamProvider:
                        width: int = 768, height: int = 1024) -> dict:
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
         payload = {
-            "prompt": prompt, "negative_prompt": negative_prompt,
-            "width": width, "height": height,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "width": width,
+            "height": height,
         }
         if seed is not None:
             payload["seed"] = seed
         data = _post_json(f"{self.base_url}/generate", payload, headers, timeout=180)
-        image_b64 = data.get("image_base64")
-        if image_b64:
-            # Validate returned base64 now; callers can persist it to private storage.
-            base64.b64decode(image_b64, validate=True)
+
+        if isinstance(data.get("image_base64"), str):
+            _validate_b64(data["image_base64"])
+        elif isinstance(data.get("images"), list) and data["images"]:
+            first = data["images"][0]
+            if isinstance(first, str):
+                _validate_b64(first)
+            elif isinstance(first, dict) and isinstance(first.get("base64"), str):
+                _validate_b64(first["base64"])
+        else:
+            raise ProviderError("local-dream returned no image payload")
         return data
