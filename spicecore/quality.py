@@ -72,8 +72,19 @@ class QualityGate:
                 timeout=30,
             )
             result = json.loads(proc.stdout.decode("utf-8"))
-        except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"go image metrics failed: {exc}") from exc
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+            return {
+                "available": False,
+                "backend": "go-metrics-unavailable",
+                "width": None,
+                "height": None,
+                "brightness": None,
+                "sharpness": None,
+                "contrast": None,
+                "resolution_score": None,
+                "exposure_score": None,
+                "local_score": None,
+            }
         required = (
             "available", "backend", "width", "height", "brightness", "sharpness",
             "contrast", "resolution_score", "exposure_score", "local_score",
