@@ -222,6 +222,14 @@ app.get('/api/rl/status', async (_req, res) => {
   }
 });
 
+app.get('/api/autopilot/status', async (_req, res) => {
+  try {
+    res.json(await runCore('autopilot_status'));
+  } catch (err) {
+    sendCoreError(res, err);
+  }
+});
+
 app.post('/api/rl/train', async (req, res) => {
   try {
     res.json(await runCore('rl_train', {
