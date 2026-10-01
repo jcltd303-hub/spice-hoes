@@ -7,9 +7,9 @@ from pathlib import Path
 from .localdream import generate
 
 SCENES={
- "hotel-lobby":"standing in an elegant boutique hotel lobby, tailored burgundy jacket, reviewing fabric samples, warm practical lamps and soft window light, three-quarter editorial portrait",
- "record-shop":"browsing jazz records at dusk, fitted black sweater, mixed blue window light and warm tungsten lamps, candid three-quarter portrait",
- "city-cafe":"seated at a refined sidewalk cafe, cream blouse and tailored dark trousers, late afternoon natural light, relaxed candid portrait",
+ "hotel-lobby":"standing in an elegant boutique hotel lobby, tailored burgundy jacket, reviewing fabric samples, warm practical lamps and soft window light",
+ "record-shop":"browsing jazz records at dusk, fitted black sweater, mixed blue window light and warm tungsten lamps",
+ "city-cafe":"seated at a refined sidewalk cafe, cream blouse and tailored dark trousers, late afternoon natural light",
 }
 NEGATIVE="different person, changed facial structure, cartoon, anime, illustration, CGI, doll, child, teenager, deformed, distorted face, duplicate person, extra limbs, blurry, plastic skin, text, watermark"
 
@@ -24,7 +24,7 @@ def scene_prompt(scene):
  if scene not in SCENES: raise ValueError("Unknown scene")
  return ("Photorealistic editorial photograph of the exact same original fictional adult woman shown in the supplied reference image. "
          "Preserve her recognizable face geometry, eyes, brows, nose, lips, skin tone and texture, beauty mark, and hair identity. "
-         +SCENES[scene]+". Natural anatomy, realistic skin, believable camera optics. Change only pose, clothing and setting; one woman only.")
+         +SCENES[scene]+". Camera pulled back several meters: vertical three-quarter-body editorial photograph framed from head through below the knees, both hands visible when natural, substantial environment visible around her, subject occupying roughly half the frame. Do not reproduce the close-up/headshot composition of the reference. Natural anatomy, realistic skin, believable 50mm camera optics. Change pose, clothing, camera framing and setting; one woman only.")
 
 def copy_to_shared(asset,persona_id,category="scenes"):
  root=os.environ.get("SPICE_SHARED_DIR")
@@ -40,7 +40,7 @@ def copy_to_shared(asset,persona_id,category="scenes"):
  shutil.copy2(asset,dest)
  return str(dest)
 
-def generate_scene(store,persona_id,scene,output,seed=100,denoise=0.35,server_url=None,reference_dir="identity/references",persona=None):
+def generate_scene(store,persona_id,scene,output,seed=100,denoise=0.45,server_url=None,reference_dir="identity/references",persona=None):
  ref,asset=load_reference(persona_id,reference_dir); prompt=scene_prompt(scene)
  meta=generate(prompt,output,NEGATIVE,seed=seed,server_url=server_url,denoise_strength=denoise,image=asset,profile="cyberrealistic-v10")
  shared=copy_to_shared(meta["asset_uri"],persona_id,"scenes")
