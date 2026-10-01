@@ -16,6 +16,7 @@ from .core import Store, load_personas
 from .memory import KnowledgeBase
 from .learning import LearningController
 from .moa import MixtureOfAgents
+from .offers import OfferRegistry, OFFER_KINDS
 from .policy import recommend
 from .providers import AzureChatProvider, AzureEmbeddingProvider, LocalDreamProvider, ProviderError
 from .web import make_handler
@@ -92,7 +93,7 @@ def main(argv=None):
 
     outcome = sub.add_parser("outcome")
     outcome.add_argument("candidate_id")
-    outcome.add_argument("kind", choices=("impression", "click", "purchase", "refund", "distribution_cost"))
+    outcome.add_argument("kind", choices=("impression", "click", "purchase", "refund", "distribution_cost", "commerce_cost"))
     outcome.add_argument("--amount-cents", type=int, default=0)
     outcome.add_argument("--external-id")
 
@@ -185,6 +186,30 @@ def main(argv=None):
 
     eoutbox = sub.add_parser("engagement-outbox")
     eoutbox.add_argument("--limit", type=int, default=50)
+
+    ocreate = sub.add_parser("offer-create")
+    ocreate.add_argument("--name", required=True)
+    ocreate.add_argument("--kind", required=True, choices=sorted(OFFER_KINDS))
+    ocreate.add_argument("--expected-payout-cents", type=int, default=0)
+    ocreate.add_argument("--variable-cost-cents", type=int, default=0)
+
+    oregister = sub.add_parser("offer-register")
+    oregister.add_argument("candidate_id")
+    oregister.add_argument("offer_id")
+    oregister.add_argument("--url", required=True)
+
+    oevent = sub.add_parser("offer-event")
+    oevent.add_argument("tracking_token")
+    oevent.add_argument("kind", choices=("click", "purchase", "refund"))
+    oevent.add_argument("--external-id", required=True)
+    oevent.add_argument("--amount-cents", type=int)
+
+    operf = sub.add_parser("offer-performance")
+    operf.add_argument("offer_id")
+
+    ostatus = sub.add_parser("offer-status")
+    ostatus.add_argument("offer_id")
+    ostatus.add_argument("state", choices=("active", "inactive"))
 
     args = parser.parse_args(argv)
     personas = load_personas(args.personas)
@@ -449,6 +474,33 @@ def main(argv=None):
                 KnowledgeBase(store, embedder=_optional_embedder()),
             )
             output = agent.approved_outbox(limit=args.limit)
+        elif args.command == "offer-create":
+            output = OfferRegistry(store).create(
+                args.name,
+                args.kind,
+                expected_payout_cents=args.expected_payout_cents,
+                variable_cost_cents=args.variable_cost_cents,
+            )
+        elif args.command == "offer-register":
+            output = OfferRegistry(store).register_candidate(
+                args.candidate_id,
+                args.offer_id,
+                args.url,
+            )
+        elif args.command == "offer-event":
+            output = OfferRegistry(store).ingest(
+                args.tracking_token,
+                args.kind,
+                args.external_id,
+                amount_cents=args.amount_cents,
+            )
+        elif args.command == "offer-performance":
+            output = OfferRegistry(store).performance(args.offer_id)
+        elif args.command == "offer-status":
+            output = OfferRegistry(store).set_active(
+                args.offer_id,
+                args.state == "active",
+            )
         print(json.dumps(output, indent=2, ensure_ascii=False))
     finally:
         store.close()
