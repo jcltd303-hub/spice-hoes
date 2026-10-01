@@ -2,6 +2,7 @@ package identity
 
 import (
     "bytes"
+    "math"
     "image"
     "image/color"
     "image/png"
@@ -28,4 +29,13 @@ func TestCosine(t *testing.T) {
     if same < 0.999999 { t.Fatalf("same cosine %f",same) }
     opposite,err:=Cosine([]float64{1,0},[]float64{-1,0}); if err!=nil { t.Fatal(err) }
     if opposite > -0.999999 { t.Fatalf("opposite cosine %f",opposite) }
+}
+
+
+func TestEstimateSimilarityIdentity(t *testing.T) {
+    tr,err:=EstimateSimilarity(ArcFaceTemplate,ArcFaceTemplate)
+    if err!=nil { t.Fatal(err) }
+    if math.Abs(tr.A-1)>1e-6 || math.Abs(tr.B)>1e-6 || math.Abs(tr.TX)>1e-6 || math.Abs(tr.TY)>1e-6 {
+        t.Fatalf("unexpected transform: %+v",tr)
+    }
 }
