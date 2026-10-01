@@ -6,7 +6,7 @@ import base64
 import json
 from pathlib import Path
 
-from .providers import LocalDreamProvider, ProviderError
+from .providers import ProviderError
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -34,7 +34,7 @@ def load_reference_pack(persona_id: str, reference_root: str | Path = "data/refe
 
 
 class IdentityGate:
-    def __init__(self, provider: LocalDreamProvider, threshold: float = 0.82):
+    def __init__(self, provider, threshold: float = 0.82):
         if not 0.0 <= threshold <= 1.0:
             raise ValueError("identity threshold must be between 0 and 1")
         self.provider = provider
@@ -70,5 +70,5 @@ class IdentityGate:
             "threshold": self.threshold,
             "passed": score >= self.threshold,
             "reference_count": len(references),
-            "scorer": result.get("model", "local-dream:identity"),
+            "scorer": result.get("model", "media:identity"),
         }
