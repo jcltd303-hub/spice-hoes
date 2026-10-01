@@ -150,6 +150,34 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertIn("rl", result)
         self.assertEqual(result["warnings"], [])
 
+    def test_blocked_autopilot_needs_no_provider_credentials(self):
+        dispatch(
+            "policy_update",
+            {
+                "changes": {"daily_budget_cents": 0},
+                "actor": "tester",
+                "note": "force zero-cost preflight block",
+            },
+            self.store,
+            self.personas,
+        )
+        result = dispatch(
+            "autopilot_run",
+            {
+                "objective": "test a bounded experiment",
+                "channel": "test",
+                "offer": "test-offer",
+                "variants": 2,
+                "cost_cents_per_asset": 1,
+            },
+            self.store,
+            self.personas,
+        )
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["reason"], "daily_budget_limit")
+        self.assertEqual(result["created_candidates"], 0)
+        self.assertEqual(self.store.events()[-1]["kind"], "autopilot_run_recorded")
+
 
 if __name__ == "__main__":
     unittest.main()
