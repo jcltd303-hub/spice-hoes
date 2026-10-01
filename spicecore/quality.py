@@ -109,6 +109,31 @@ class QualityGate:
             mime_type,
             channel,
         )
+        if provider_result.get("semantic_scored") is False:
+            try:
+                provider_score = max(0.0, min(1.0, float(provider_result["overall"])))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("local quality scorer missing numeric overall") from exc
+            overall = (
+                0.5 * local["local_score"] + 0.5 * provider_score
+                if local.get("local_score") is not None
+                else provider_score
+            )
+            passed = overall >= self.threshold
+            return {
+                "scored": True,
+                "semantic_scored": False,
+                "score": round(overall, 6),
+                "threshold": self.threshold,
+                "passed": passed,
+                "local": local,
+                "provider": {
+                    "score": round(provider_score, 6),
+                    "model": provider_result.get("model", "go-local-quality"),
+                },
+                "reasons": [] if passed else ["local_quality"],
+            }
+
         required = ("anatomy", "hands", "face_visibility", "realism", "composition")
         metrics = {}
         for key in required:
@@ -129,6 +154,7 @@ class QualityGate:
 
         return {
             "scored": True,
+            "semantic_scored": True,
             "score": round(overall, 6),
             "threshold": self.threshold,
             "passed": passed,
