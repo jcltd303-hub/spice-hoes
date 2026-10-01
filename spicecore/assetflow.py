@@ -5,19 +5,19 @@ from pathlib import Path
 from .localdream import generate
 
 def produce_job(store,personas,job_path,assets_dir="assets/generated",server_url=None,size=None,steps=None,cfg=None,
-                negative_prompt="",candidate_count=6,profile="sdxl-fast"):
+                negative_prompt="",candidate_count=6,profile="cyberrealistic-v10"):
  path=Path(job_path); job=json.loads(path.read_text())
- if job.get("candidate_ids"):
-  return {"job":str(path),"candidate_ids":job["candidate_ids"],"assets":job.get("assets",[]),"status":job.get("status","awaiting_review"),"resumed":True}
  persona=next((p for p in personas if p["id"]==job["persona_id"]),None)
  if persona is None: raise ValueError("Job references unknown persona")
  brief=job["brief"]; base_seed=job.get("generation_seed")
  output_dir=Path(assets_dir)/persona["id"]/path.stem
  job["status"]="exploring"; job["profile"]=profile; job["candidate_count"]=candidate_count
  path.write_text(json.dumps(job,indent=2,ensure_ascii=False)+"\n")
- assets=[]; ids=[]
+ assets=list(job.get("assets",[])); ids=list(job.get("candidate_ids",[]))
+ if len(ids)>=candidate_count and job.get("status")=="awaiting_review":
+  return {"job":str(path),"candidate_ids":ids,"assets":assets,"status":"awaiting_review","resumed":True}
  try:
-  for index in range(candidate_count):
+  for index in range(len(ids),candidate_count):
    seed=(base_seed+index) if base_seed is not None else None
    output=output_dir/f"{index+1:02d}.png"
    meta=generate(brief["prompt"],output,negative_prompt,size,steps,cfg,seed,server_url,profile=profile)
@@ -31,7 +31,7 @@ def produce_job(store,personas,job_path,assets_dir="assets/generated",server_url
    path.write_text(json.dumps(job,indent=2,ensure_ascii=False)+"\n")
   job["status"]="awaiting_review"
   path.write_text(json.dumps(job,indent=2,ensure_ascii=False)+"\n")
-  return {"job":str(path),"candidate_ids":ids,"assets":assets,"status":"awaiting_review","resumed":False}
+  return {"job":str(path),"candidate_ids":ids,"assets":assets,"status":"awaiting_review","resumed":bool(ids and len(ids)<candidate_count)}
  except Exception as exc:
   job["status"]="generation_failed"; job["last_error"]={"type":type(exc).__name__,"message":str(exc)}
   path.write_text(json.dumps(job,indent=2,ensure_ascii=False)+"\n")
