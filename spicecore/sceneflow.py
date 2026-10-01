@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 from .localdream import generate
 from .identitytransfer import transfer
+from .localidentity import transfer as local_transfer
 
 SCENES={
  "hotel-lobby":"standing in an elegant boutique hotel lobby, tailored burgundy jacket, reviewing fabric samples, warm practical lamps and soft window light",
@@ -102,4 +103,15 @@ def transfer_identity(store,persona_id,scene_asset,output,endpoint=None,strength
  store.record_event("identity_transfer_generated",meta)
  if persona is not None:
   meta["candidate_id"]=store.propose(persona,"identity-transfer","still","identity-test","identity-retention",meta["asset_uri"],"Canonical identity transfer preserving target composition","identity-http","",0)
+ return meta
+
+
+def transfer_identity_local(store,persona_id,scene_asset,output,command=None,reference_dir="identity/references",persona=None):
+ ref,reference=load_reference(persona_id,reference_dir)
+ meta=local_transfer(reference,scene_asset,output,command=command)
+ shared=copy_to_shared(meta["asset_uri"],persona_id,"identity-transfer")
+ meta.update({"persona_id":persona_id,"identity_reference":ref["reference_asset"],"identity_sha256":ref["sha256"],"source_scene":str(scene_asset),"shared_asset_uri":shared})
+ store.record_event("identity_transfer_generated",meta)
+ if persona is not None:
+  meta["candidate_id"]=store.propose(persona,"identity-transfer","still","identity-test","identity-retention",meta["asset_uri"],"Local canonical identity transfer preserving target composition","identity-local","",0)
  return meta
