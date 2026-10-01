@@ -7,6 +7,8 @@ import json
 import os
 import urllib.error
 import urllib.request
+import subprocess
+import shutil
 
 
 class ProviderError(RuntimeError):
@@ -120,6 +122,100 @@ class OpenAICompatibleEmbeddingProvider:
             return [float(x) for x in vector]
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise ProviderError("Unexpected embedding response") from exc
+
+
+class GoMediaProvider:
+    """Native Go media engine adapter. Expects a spicemedia-compatible JSON CLI."""
+
+    def __init__(self, binary: str | None = None):
+        self.binary = binary or os.getenv("SPICE_MEDIA_BIN", "bin/spicemedia")
+
+    @property
+    def model_name(self) -> str:
+        return "go-media:native"
+
+    def _run(self, command: str, payload: dict, timeout: int = 240) -> dict:
+        binary = self.binary
+        if not os.path.isabs(binary):
+            local = os.path.join(os.getcwd(), binary)
+            if os.path.isfile(local) and os.access(local, os.X_OK):
+                binary = local
+            else:
+                resolved = shutil.which(binary)
+                if resolved:
+                    binary = resolved
+        try:
+            proc = subprocess.run(
+                [binary, command],
+                input=json.dumps(payload).encode("utf-8"),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+                timeout=timeout,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ProviderError(f"go media provider failed: {exc}") from exc
+        try:
+            data = json.loads(proc.stdout.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ProviderError("go media provider returned invalid JSON") from exc
+        if not isinstance(data, dict):
+            raise ProviderError("go media provider returned non-object response")
+        return data
+
+    def generate_image(self, prompt: str, negative_prompt: str = "", seed: int | None = None,
+                       width: int = 768, height: int = 1024,
+                       references: list[dict] | None = None,
+                       reference_strength: float = 0.85) -> dict:
+        payload = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "width": width,
+            "height": height,
+            "reference_strength": reference_strength,
+            "references": references or [],
+        }
+        if seed is not None:
+            payload["seed"] = seed
+        data = self._run("generate", payload, timeout=300)
+        if isinstance(data.get("image_base64"), str):
+            _validate_b64(data["image_base64"])
+        elif isinstance(data.get("images"), list) and data["images"]:
+            first = data["images"][0]
+            if isinstance(first, str):
+                _validate_b64(first)
+            elif isinstance(first, dict) and isinstance(first.get("base64"), str):
+                _validate_b64(first["base64"])
+            else:
+                raise ProviderError("go media returned unsupported images[] payload")
+        else:
+            raise ProviderError("go media returned no image payload")
+        return data
+
+    def score_identity(self, image_base64: str, image_mime_type: str,
+                       references: list[dict]) -> dict:
+        return self._run("identity", {
+            "image_base64": image_base64,
+            "image_mime_type": image_mime_type,
+            "references": references,
+        }, timeout=120)
+
+    def score_quality(self, image_base64: str, image_mime_type: str,
+                      channel: str = "") -> dict:
+        return self._run("quality", {
+            "image_base64": image_base64,
+            "image_mime_type": image_mime_type,
+            "channel": channel,
+        }, timeout=120)
+
+
+def media_provider(name: str | None = None):
+    selected = (name or os.getenv("SPICE_MEDIA_PROVIDER", "local-dream")).strip().lower()
+    if selected in ("local-dream", "localdream", "ld"):
+        return LocalDreamProvider()
+    if selected in ("go", "go-media", "native"):
+        return GoMediaProvider()
+    raise ProviderError(f"unknown media provider: {selected}")
 
 
 class LocalDreamProvider:
