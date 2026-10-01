@@ -33,7 +33,7 @@ class FakePlanner:
             ],
         }
 
-    def execute(self, plan, persona, generator, base_seed=None, cost_cents_per_asset=0):
+    def execute(self, plan, persona, generator, base_seed=None, cost_cents_per_asset=0, progress=None):
         self.execute_calls += 1
         out = []
         for i, variant in enumerate(plan["variants"]):
