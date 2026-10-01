@@ -113,7 +113,7 @@ class LocalDreamProvider:
     """Adapter for local-dream generation and local identity scoring."""
 
     def __init__(self, base_url: str | None = None, token: str | None = None):
-        self.base_url = (base_url or os.getenv("LOCAL_DREAM_URL", "http://127.0.0.1:7860")).rstrip("/")
+        self.base_url = (base_url or os.getenv("LOCAL_DREAM_URL", "http://127.0.0.1:8081")).rstrip("/")
         self.token = token or os.getenv("LOCAL_DREAM_TOKEN", "")
 
     @property
