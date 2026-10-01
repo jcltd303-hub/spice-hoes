@@ -213,6 +213,83 @@ class ExperimentPlanner:
             })
         return outputs
 
+
+    def results(self, plan_id: str) -> dict:
+        plan = self.get(plan_id)
+        variants = []
+        for variant in plan["variants"]:
+            candidate_id = variant.get("candidate_id")
+            metrics = {
+                "impressions": 0,
+                "clicks": 0,
+                "revenue_cents": 0,
+                "refund_cents": 0,
+                "distribution_cost_cents": 0,
+                "generation_cost_cents": 0,
+                "net_cents": 0,
+            }
+            status = "not_generated"
+            if candidate_id:
+                candidate = self.store.candidate(candidate_id)
+                status = candidate["status"]
+                metrics["generation_cost_cents"] = int(candidate["cost_cents"])
+                rows = self.store.db.execute(
+                    """SELECT kind,payload FROM events
+                       WHERE kind IN ('impression','click','purchase','refund','distribution_cost')"""
+                ).fetchall()
+                for row in rows:
+                    payload = json.loads(row["payload"])
+                    if payload.get("candidate_id") != candidate_id:
+                        continue
+                    kind = row["kind"]
+                    amount = int(payload.get("amount_cents", 0))
+                    if kind == "impression":
+                        metrics["impressions"] += 1
+                    elif kind == "click":
+                        metrics["clicks"] += 1
+                    elif kind == "purchase":
+                        metrics["revenue_cents"] += amount
+                    elif kind == "refund":
+                        metrics["refund_cents"] += amount
+                    elif kind == "distribution_cost":
+                        metrics["distribution_cost_cents"] += amount
+                metrics["net_cents"] = (
+                    metrics["revenue_cents"]
+                    - metrics["refund_cents"]
+                    - metrics["distribution_cost_cents"]
+                    - metrics["generation_cost_cents"]
+                )
+
+            impressions = metrics["impressions"]
+            metrics["click_rate"] = (
+                round(metrics["clicks"] / impressions, 6) if impressions else None
+            )
+            variants.append({
+                "variant_id": variant["id"],
+                "candidate_id": candidate_id,
+                "status": status,
+                **metrics,
+            })
+
+        observed = [v for v in variants if v["candidate_id"] and v["impressions"] > 0]
+        leader = None
+        if observed:
+            leader = max(
+                observed,
+                key=lambda v: (v["net_cents"], v["clicks"], v["variant_id"]),
+            )["variant_id"]
+        return {
+            "plan_id": plan_id,
+            "persona_id": plan["persona_id"],
+            "primary_metric": plan["primary_metric"],
+            "reversal_condition": plan["reversal_condition"],
+            "variants": variants,
+            "observed_leader_by_net_cents": leader,
+            "interpretation": (
+                "Descriptive observed results only; do not treat as causal until exposure is sufficient."
+            ),
+        }
+
     def get(self, plan_id: str) -> dict:
         row = self.store.db.execute(
             "SELECT plan_json FROM experiment_plan WHERE id=?", (plan_id,)
