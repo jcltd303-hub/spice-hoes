@@ -202,6 +202,50 @@ app.get('/api/runtime-policy', async (_req, res) => {
   }
 });
 
+app.post('/api/runtime-policy', async (req, res) => {
+  try {
+    res.json(await runCore('policy_update', {
+      changes: req.body?.changes || {},
+      actor: req.body?.actor,
+      note: req.body?.note || '',
+    }));
+  } catch (err) {
+    sendCoreError(res, err);
+  }
+});
+
+app.get('/api/rl/status', async (_req, res) => {
+  try {
+    res.json(await runCore('rl_status'));
+  } catch (err) {
+    sendCoreError(res, err);
+  }
+});
+
+app.post('/api/rl/train', async (req, res) => {
+  try {
+    res.json(await runCore('rl_train', {
+      epochs: req.body?.epochs ?? 20,
+      learning_rate: req.body?.learning_rate ?? 0.01,
+    }));
+  } catch (err) {
+    sendCoreError(res, err);
+  }
+});
+
+app.post('/api/knowledge', async (req, res) => {
+  try {
+    res.status(201).json(await runCore('knowledge_add', {
+      source: req.body?.source,
+      title: req.body?.title,
+      body: req.body?.body,
+      tags: req.body?.tags || [],
+    }));
+  } catch (err) {
+    sendCoreError(res, err);
+  }
+});
+
 // Media pipeline remains a separate transient adapter until a production renderer is configured.
 app.get('/api/media-jobs', (_req, res) => {
   res.json(Array.from(mediaJobs.values()).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)));
