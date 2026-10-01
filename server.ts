@@ -230,6 +230,29 @@ app.get('/api/autopilot/status', async (_req, res) => {
   }
 });
 
+app.post('/api/autopilot/run', async (req, res) => {
+  try {
+    res.status(201).json(await runCore('autopilot_run', {
+      objective: req.body?.objective,
+      channel: req.body?.channel,
+      offer: req.body?.offer,
+      variants: req.body?.variants ?? 3,
+      seed: req.body?.seed ?? null,
+      cost_cents_per_asset: req.body?.cost_cents_per_asset ?? 0,
+    }));
+  } catch (err) {
+    sendCoreError(res, err);
+  }
+});
+
+app.get('/api/doctor', async (_req, res) => {
+  try {
+    res.json(await runCore('doctor'));
+  } catch (err) {
+    sendCoreError(res, err);
+  }
+});
+
 app.post('/api/rl/train', async (req, res) => {
   try {
     res.json(await runCore('rl_train', {
