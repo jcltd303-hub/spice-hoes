@@ -49,93 +49,110 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
-      - name: Install converter Python dependencies
-        run: python -m pip install numpy onnx onnxruntime
+      - name: Install converter dependencies
+        run: python -m pip install numpy onnx
 
-      - name: Download official InsightFace buffalo_l ArcFace model
+      - name: Download official InsightFace buffalo_l models
         run: |
           mkdir -p work
           curl --fail --location --retry 4 "$BUFFALO_URL" -o work/buffalo_l.zip
           unzip -q work/buffalo_l.zip -d work/buffalo
           test -s work/buffalo/w600k_r50.onnx
+          test -s work/buffalo/det_10g.onnx
           echo "$ARCFACE_SHA256  work/buffalo/w600k_r50.onnx" | sha256sum -c -
+          sha256sum work/buffalo/det_10g.onnx > work/scrfd_source_sha256.txt
 
-      - name: Inspect ArcFace ONNX contract
+      - name: Inspect model contracts
         run: |
-          python - <<'PY' > work/contract.env
-          import onnx
-          m=onnx.load("work/buffalo/w600k_r50.onnx")
-          inp=m.graph.input[0]
-          out=m.graph.output[0]
-          print("INPUT_NAME="+inp.name)
-          print("OUTPUT_NAME="+out.name)
-          dims=[d.dim_value for d in inp.type.tensor_type.shape.dim]
-          print("INPUT_DIMS="+",".join(str(x) for x in dims))
-          odims=[d.dim_value for d in out.type.tensor_type.shape.dim]
-          print("OUTPUT_DIMS="+",".join(str(x) for x in odims))
+          python - <<'PY'
+          import json, onnx, pathlib
+          root=pathlib.Path("work/buffalo")
+          contracts={}
+          for key,name in [("arcface","w600k_r50.onnx"),("scrfd","det_10g.onnx")]:
+              m=onnx.load(root/name)
+              inp=m.graph.input[0]
+              dims=[d.dim_value for d in inp.type.tensor_type.shape.dim]
+              outputs=[]
+              for out in m.graph.output:
+                  outputs.append({
+                      "name":out.name,
+                      "dims":[d.dim_value for d in out.type.tensor_type.shape.dim],
+                  })
+              contracts[key]={"input_name":inp.name,"input_dims":dims,"outputs":outputs}
+          pathlib.Path("work/contracts.json").write_text(json.dumps(contracts,indent=2))
+          print(json.dumps(contracts,indent=2))
+          arc=contracts["arcface"]["input_dims"]
+          if arc not in ([0,3,112,112],[1,3,112,112]):
+              raise SystemExit(f"unexpected ArcFace input: {arc}")
+          det=contracts["scrfd"]["input_dims"]
+          if len(det)!=4 or det[1]!=3:
+              raise SystemExit(f"unexpected SCRFD input: {det}")
           PY
-          cat work/contract.env
-          . work/contract.env
-          test "$INPUT_DIMS" = "1,3,112,112"
-          case "$OUTPUT_DIMS" in
-            1,512|512) ;;
-            *) echo "::error::Unexpected ArcFace output dims: $OUTPUT_DIMS"; exit 1 ;;
-          esac
 
-      - name: Build representative calibration tensors
+      - name: Build calibration tensors
         run: |
-          . work/contract.env
-          mkdir -p work/calibration
+          mkdir -p work/calibration/arcface work/calibration/scrfd
           python - <<'PY'
           import numpy as np, pathlib
-          root=pathlib.Path("work/calibration")
           rng=np.random.default_rng(20261001)
-          lines=[]
-          for i in range(64):
-              # ArcFace input normalization is (pixel-127.5)/127.5.
-              # Smooth-ish synthetic fields cover the full normalized range
-              # reproducibly without bundling face photographs into CI.
-              x=rng.normal(0.0,0.45,(1,3,112,112)).clip(-1,1).astype(np.float32)
-              p=root/f"cal_{i:03d}.raw"
-              x.tofile(p)
-              lines.append(str(p))
-          (root/"input_list.txt").write_text("\n".join(lines)+"\n")
+          specs=[
+              ("arcface",(1,3,112,112),0.45),
+              ("scrfd",(1,3,640,640),0.45),
+          ]
+          for name,shape,std in specs:
+              root=pathlib.Path("work/calibration")/name
+              lines=[]
+              for i in range(24):
+                  x=rng.normal(0.0,std,shape).clip(-1,1).astype(np.float32)
+                  p=root/f"cal_{i:03d}.raw"
+                  x.tofile(p)
+                  lines.append(str(p))
+              (root/"input_list.txt").write_text("\n".join(lines)+"\n")
           PY
 
-      - name: Convert ArcFace ONNX to quantized QNN
+      - name: Resolve QNN converter tools
+        run: |
+          CONVERTER="$QNN_SDK_ROOT/bin/x86_64-linux-clang/qnn-onnx-converter"
+          GEN="$QNN_SDK_ROOT/bin/x86_64-linux-clang/qnn-model-lib-generator"
+          CBG="$QNN_SDK_ROOT/bin/x86_64-linux-clang/qnn-context-binary-generator"
+          [ -f "$CONVERTER" ] || CONVERTER="$(find "$QNN_SDK_ROOT/bin" -name qnn-onnx-converter -type f -print -quit)"
+          [ -f "$GEN" ] || GEN="$(find "$QNN_SDK_ROOT/bin" -name qnn-model-lib-generator -type f -print -quit)"
+          test -n "$CONVERTER"
+          test -n "$GEN"
+          test -x "$CBG"
+          echo "CONVERTER=$CONVERTER" >> "$GITHUB_ENV"
+          echo "GEN=$GEN" >> "$GITHUB_ENV"
+          echo "CBG=$CBG" >> "$GITHUB_ENV"
+
+      - name: Convert ArcFace and SCRFD to QNN
         run: |
           set -eu
-          . work/contract.env
-          CONVERTER="$QNN_SDK_ROOT/bin/x86_64-linux-clang/qnn-onnx-converter"
-          if [ ! -f "$CONVERTER" ]; then
-            CONVERTER="$(find "$QNN_SDK_ROOT/bin" -name qnn-onnx-converter -type f -print -quit)"
-          fi
-          test -n "$CONVERTER"
-          python "$CONVERTER"             --input_network work/buffalo/w600k_r50.onnx             --input_dim "$INPUT_NAME" 1,3,112,112             --output_path work/arcface_w600k_r50.cpp             --input_list work/calibration/input_list.txt
+          ARC_INPUT="$(python -c 'import json; print(json.load(open("work/contracts.json"))["arcface"]["input_name"])')"
+          DET_INPUT="$(python -c 'import json; print(json.load(open("work/contracts.json"))["scrfd"]["input_name"])')"
 
-      - name: Build host model library
+          python "$CONVERTER"             --input_network work/buffalo/w600k_r50.onnx             --input_dim "$ARC_INPUT" 1,3,112,112             --output_path work/arcface_w600k_r50.cpp             --input_list work/calibration/arcface/input_list.txt
+
+          python "$CONVERTER"             --input_network work/buffalo/det_10g.onnx             --input_dim "$DET_INPUT" 1,3,640,640             --output_path work/scrfd_10g.cpp             --input_list work/calibration/scrfd/input_list.txt
+
+      - name: Build host model libraries
         run: |
-          GEN="$QNN_SDK_ROOT/bin/x86_64-linux-clang/qnn-model-lib-generator"
-          if [ ! -f "$GEN" ]; then
-            GEN="$(find "$QNN_SDK_ROOT/bin" -name qnn-model-lib-generator -type f -print -quit)"
-          fi
-          test -n "$GEN"
-          python "$GEN"             -c work/arcface_w600k_r50.cpp             -b work/arcface_w600k_r50.bin             -o work/model_libs             -t x86_64-linux-clang
-          test -s work/model_libs/x86_64-linux-clang/libarcface_w600k_r50.so
+          python "$GEN"             -c work/arcface_w600k_r50.cpp             -b work/arcface_w600k_r50.bin             -o work/arcface_libs             -t x86_64-linux-clang
+          python "$GEN"             -c work/scrfd_10g.cpp             -b work/scrfd_10g.bin             -o work/scrfd_libs             -t x86_64-linux-clang
+          test -s work/arcface_libs/x86_64-linux-clang/libarcface_w600k_r50.so
+          test -s work/scrfd_libs/x86_64-linux-clang/libscrfd_10g.so
 
-      - name: Generate Snapdragon v75 HTP context
+      - name: Generate Snapdragon v75 HTP contexts
         run: |
           set -eu
           EXT="$(find "$QNN_SDK_ROOT/lib/x86_64-linux-clang" -name 'libQnnHtpNetRunExtensions.so' -print -quit)"
           BACKEND="$QNN_SDK_ROOT/lib/x86_64-linux-clang/libQnnHtp.so"
-          CBG="$QNN_SDK_ROOT/bin/x86_64-linux-clang/qnn-context-binary-generator"
           test -s "$BACKEND"
-          test -x "$CBG"
           test -s "$EXT"
+
           cat > work/htp_v75.json <<EOF
           {
-            "graphs": [{"graph_names": ["arcface_w600k_r50"], "vtcm_mb": 8}],
             "devices": [{"htp_arch": "v75"}]
           }
           EOF
@@ -147,18 +164,26 @@ jobs:
             }
           }
           EOF
-          mkdir -p work/context
-          "$CBG"             --backend "$BACKEND"             --model work/model_libs/x86_64-linux-clang/libarcface_w600k_r50.so             --binary_file arcface_w600k_r50             --output_dir work/context             --config_file work/backend_ext.json
-          CONTEXT="$(find work/context -type f \( -name 'arcface_w600k_r50*.bin' -o -name 'arcface_w600k_r50*.serialized.bin' \) -print -quit)"
-          test -n "$CONTEXT"
-          mkdir -p artifact/models/face
-          cp "$CONTEXT" artifact/models/face/arcface_w600k_r50.bin
-          cp work/contract.env artifact/models/face/arcface_contract.env
-          echo "$ARCFACE_SHA256" > artifact/models/face/source_onnx_sha256.txt
 
-      - name: Upload face embedding context
+          mkdir -p work/arcface_context work/scrfd_context
+          "$CBG"             --backend "$BACKEND"             --model work/arcface_libs/x86_64-linux-clang/libarcface_w600k_r50.so             --binary_file arcface_w600k_r50             --output_dir work/arcface_context             --config_file work/backend_ext.json
+          "$CBG"             --backend "$BACKEND"             --model work/scrfd_libs/x86_64-linux-clang/libscrfd_10g.so             --binary_file scrfd_10g             --output_dir work/scrfd_context             --config_file work/backend_ext.json
+
+          ARC="$(find work/arcface_context -type f -name '*.bin' -print -quit)"
+          DET="$(find work/scrfd_context -type f -name '*.bin' -print -quit)"
+          test -n "$ARC"
+          test -n "$DET"
+
+          mkdir -p artifact/models/face
+          cp "$ARC" artifact/models/face/arcface_w600k_r50.bin
+          cp "$DET" artifact/models/face/scrfd_10g.bin
+          cp work/contracts.json artifact/models/face/contracts.json
+          echo "$ARCFACE_SHA256" > artifact/models/face/arcface_source_sha256.txt
+          cp work/scrfd_source_sha256.txt artifact/models/face/scrfd_source_sha256.txt
+
+      - name: Upload face runtime models
         uses: actions/upload-artifact@v4
         with:
-          name: spice-arcface-qnn-v75
+          name: spice-face-qnn-v75
           path: artifact/
           if-no-files-found: error
