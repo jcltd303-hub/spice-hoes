@@ -132,6 +132,30 @@ python3 -m spicecore.cli autopilot-settle RUN_ID --min-impressions 100
 
 Settlement is idempotent. It records one state/action/reward/next-state transition for DeepRL, computes reward from observed net outcome, writes a source-tagged experiment summary into RAG, and marks the autopilot run settled. Published variants must meet the requested impression threshold; proposed or approved-but-unpublished variants block settlement.
 
+## Reviewed engagement drafts
+
+Inbound social messages can be ingested idempotently, redacted for obvious payment-card/email data, grounded against project knowledge, and drafted in the persona voice. Drafts are never sent automatically.
+
+```bash
+python3 -m spicecore.cli engagement-ingest \
+  --persona zara_voss \
+  --channel Instagram \
+  --conversation-id conv-123 \
+  --message-id msg-456 \
+  --body "Are you AI? What product is that?"
+
+python3 -m spicecore.cli engagement-draft \
+  --persona zara_voss \
+  --message-id INTERNAL_MESSAGE_ID
+
+python3 -m spicecore.cli engagement-review DRAFT_ID approved \
+  --reviewer operator
+
+python3 -m spicecore.cli engagement-outbox
+```
+
+The draft policy keeps the fictional persona transparent: it must not claim to be a real human, pressure users to spend, imply spending proves affection, or request card/banking details. The approved outbox is intentionally separate from any platform send adapter.
+
 ## Reviewed publish/outcome loop
 
 ```bash
