@@ -63,7 +63,7 @@ class AzureChatProvider:
 
 
 class LocalDreamProvider:
-    """Thin adapter for a local-dream HTTP endpoint reachable from the operator device."""
+    """Adapter for local-dream generation and local identity scoring."""
 
     def __init__(self, base_url: str | None = None, token: str | None = None):
         self.base_url = (base_url or os.getenv("LOCAL_DREAM_URL", "http://127.0.0.1:7860")).rstrip("/")
@@ -73,9 +73,13 @@ class LocalDreamProvider:
     def model_name(self) -> str:
         return "local-dream:s24"
 
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.token}"} if self.token else {}
+
     def generate_image(self, prompt: str, negative_prompt: str = "", seed: int | None = None,
-                       width: int = 768, height: int = 1024) -> dict:
-        headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+                       width: int = 768, height: int = 1024,
+                       references: list[dict] | None = None,
+                       reference_strength: float = 0.85) -> dict:
         payload = {
             "prompt": prompt,
             "negative_prompt": negative_prompt,
@@ -84,8 +88,16 @@ class LocalDreamProvider:
         }
         if seed is not None:
             payload["seed"] = seed
-        data = _post_json(f"{self.base_url}/generate", payload, headers, timeout=180)
+        if references:
+            payload["references"] = references
+            payload["reference_strength"] = reference_strength
 
+        data = _post_json(
+            f"{self.base_url}/generate",
+            payload,
+            self._headers(),
+            timeout=180,
+        )
         if isinstance(data.get("image_base64"), str):
             _validate_b64(data["image_base64"])
         elif isinstance(data.get("images"), list) and data["images"]:
@@ -94,6 +106,23 @@ class LocalDreamProvider:
                 _validate_b64(first)
             elif isinstance(first, dict) and isinstance(first.get("base64"), str):
                 _validate_b64(first["base64"])
+            else:
+                raise ProviderError("local-dream returned unsupported images[] payload")
         else:
             raise ProviderError("local-dream returned no image payload")
         return data
+
+    def score_identity(self, image_base64: str, image_mime_type: str,
+                       references: list[dict]) -> dict:
+        if not references:
+            raise ProviderError("identity scoring requires at least one reference")
+        return _post_json(
+            f"{self.base_url}/identity/score",
+            {
+                "image_base64": image_base64,
+                "image_mime_type": image_mime_type,
+                "references": references,
+            },
+            self._headers(),
+            timeout=120,
+        )

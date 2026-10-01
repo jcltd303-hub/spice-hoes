@@ -18,12 +18,18 @@ PNG_1X1 = base64.b64encode(
 class FakeProvider:
     model_name = "local-dream:test"
 
-    def __init__(self):
+    def __init__(self, identity_score=0.95):
         self.calls = []
+        self.score_calls = []
+        self.identity_score = identity_score
 
     def generate_image(self, **kwargs):
         self.calls.append(kwargs)
         return {"image_base64": PNG_1X1, "mime_type": "image/png"}
+
+    def score_identity(self, **kwargs):
+        self.score_calls.append(kwargs)
+        return {"score": self.identity_score, "model": "fake-identity"}
 
 
 class AssetGenerationTests(unittest.TestCase):
@@ -46,10 +52,13 @@ class AssetGenerationTests(unittest.TestCase):
         self.assertIn("same facial proportions", prompt)
         self.assertIn("Do not resemble any real person", prompt)
 
-    def test_generate_persists_asset_and_creates_review_candidate(self):
+    def test_generate_without_reference_is_unscored_and_reviewable(self):
         provider = FakeProvider()
         generator = AssetGenerator(
-            self.store, provider=provider, asset_dir=Path(self.tmp.name) / "generated"
+            self.store,
+            provider=provider,
+            asset_dir=Path(self.tmp.name) / "generated",
+            reference_root=Path(self.tmp.name) / "refs",
         )
         result = generator.generate(
             self.persona, "city nights", "Instagram", "affiliate", seed=42
@@ -58,12 +67,55 @@ class AssetGenerationTests(unittest.TestCase):
         self.assertTrue(Path(result["metadata_path"]).exists())
         self.assertEqual(self.store.candidate(result["candidate_id"])["status"], "proposed")
         self.assertEqual(provider.calls[0]["seed"], 42)
+        self.assertIsNone(provider.calls[0]["references"])
+        self.assertFalse(result["identity"]["scored"])
         self.assertEqual(self.store.events()[-1]["kind"], "asset_generated")
+
+    def test_reference_conditioning_and_identity_pass(self):
+        root = Path(self.tmp.name) / "refs" / "zara_voss"
+        root.mkdir(parents=True)
+        (root / "master.png").write_bytes(b"reference-image")
+        provider = FakeProvider(identity_score=0.93)
+        generator = AssetGenerator(
+            self.store,
+            provider=provider,
+            asset_dir=Path(self.tmp.name) / "generated",
+            reference_root=Path(self.tmp.name) / "refs",
+            identity_threshold=0.82,
+        )
+        result = generator.generate(self.persona, "city nights", "Instagram", "affiliate")
+        self.assertEqual(result["reference_count"], 1)
+        self.assertEqual(len(provider.calls[0]["references"]), 1)
+        self.assertTrue(result["identity"]["passed"])
+        self.assertEqual(result["status"], "proposed")
+
+    def test_off_model_asset_is_rejected_before_review_queue(self):
+        root = Path(self.tmp.name) / "refs" / "zara_voss"
+        root.mkdir(parents=True)
+        (root / "master.png").write_bytes(b"reference-image")
+        provider = FakeProvider(identity_score=0.51)
+        generator = AssetGenerator(
+            self.store,
+            provider=provider,
+            asset_dir=Path(self.tmp.name) / "generated",
+            reference_root=Path(self.tmp.name) / "refs",
+            identity_threshold=0.82,
+        )
+        result = generator.generate(self.persona, "city nights", "Instagram", "affiliate")
+        self.assertEqual(result["status"], "rejected")
+        self.assertEqual(self.store.candidate(result["candidate_id"])["status"], "rejected")
+        proposed = self.store.db.execute(
+            "SELECT COUNT(*) FROM candidates WHERE status='proposed'"
+        ).fetchone()[0]
+        self.assertEqual(proposed, 0)
 
     def test_batch_derives_deterministic_seeds(self):
         provider = FakeProvider()
         generator = AssetGenerator(
-            self.store, provider=provider, asset_dir=Path(self.tmp.name) / "generated"
+            self.store,
+            provider=provider,
+            asset_dir=Path(self.tmp.name) / "generated",
+            reference_root=Path(self.tmp.name) / "refs",
         )
         people = [self.persona, {**self.persona, "id": "tess_wilder", "name": "Tess Wilder"}]
         out = generator.batch(people, "training", "TikTok", "affiliate", count_per_persona=2, seed=100)

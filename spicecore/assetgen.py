@@ -1,4 +1,4 @@
-"""Asset generation pipeline: persona brief -> local-dream -> private asset file -> candidate."""
+"""Asset generation pipeline: persona -> reference conditioning -> identity gate -> review candidate."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ import base64
 import hashlib
 import json
 import mimetypes
-import os
 import uuid
 from pathlib import Path
 
 from .core import Store
+from .identity import IdentityGate, load_reference_pack
 from .providers import LocalDreamProvider
 
 
@@ -48,7 +48,6 @@ def build_asset_prompt(persona: dict, theme: str, scene: str = "", style: str = 
 
 
 def _decode_image(result: dict) -> tuple[bytes, str]:
-    """Normalize common local-dream response shapes."""
     if result.get("image_base64"):
         raw = result["image_base64"]
         if raw.startswith("data:"):
@@ -81,10 +80,16 @@ def _extension(mime: str) -> str:
 
 class AssetGenerator:
     def __init__(self, store: Store, provider: LocalDreamProvider | None = None,
-                 asset_dir: str | Path = "data/assets"):
+                 asset_dir: str | Path = "data/assets",
+                 reference_root: str | Path = "data/references",
+                 identity_threshold: float = 0.82,
+                 reference_strength: float = 0.85):
         self.store = store
         self.provider = provider or LocalDreamProvider()
         self.asset_dir = Path(asset_dir)
+        self.reference_root = Path(reference_root)
+        self.identity_threshold = identity_threshold
+        self.reference_strength = reference_strength
 
     def generate(self, persona: dict, theme: str, channel: str, offer: str,
                  scene: str = "", seed: int | None = None,
@@ -97,12 +102,19 @@ class AssetGenerator:
             raise ValueError("cost_cents cannot be negative")
 
         prompt = build_asset_prompt(persona, theme, scene)
+        references = load_reference_pack(persona["id"], self.reference_root)
+        provider_refs = [
+            {"image_base64": ref["base64"], "mime_type": ref["mime_type"]}
+            for ref in references
+        ]
         response = self.provider.generate_image(
             prompt=prompt,
             negative_prompt=negative_prompt,
             seed=seed,
             width=width,
             height=height,
+            references=provider_refs or None,
+            reference_strength=self.reference_strength,
         )
         image_bytes, mime = _decode_image(response)
         sha256 = hashlib.sha256(image_bytes).hexdigest()
@@ -113,8 +125,45 @@ class AssetGenerator:
         path = persona_dir / f"{asset_id}{_extension(mime)}"
         path.write_bytes(image_bytes)
 
+        identity = IdentityGate(
+            self.provider, threshold=self.identity_threshold
+        ).score(image_bytes, mime, references)
+
+        candidate_id = self.store.propose(
+            persona=persona,
+            theme=theme,
+            format="still",
+            channel=channel,
+            offer=offer,
+            asset_uri=str(path),
+            prompt=prompt,
+            model=self.provider.model_name,
+            seed=str(seed) if seed is not None else None,
+            cost_cents=cost_cents,
+        )
+
+        # Scored off-model assets never enter the operator review queue.
+        if identity["scored"] and not identity["passed"]:
+            self.store.review(
+                candidate_id,
+                "rejected",
+                reviewer="identity-gate",
+                note=f"identity score {identity['score']:.4f} below {identity['threshold']:.4f}",
+            )
+            status = "rejected"
+        else:
+            status = "proposed"
+
+        self.store.record_event("identity_checked", {
+            "candidate_id": candidate_id,
+            "asset_id": asset_id,
+            "persona_id": persona["id"],
+            **identity,
+        })
+
         metadata = {
             "asset_id": asset_id,
+            "candidate_id": candidate_id,
             "persona_id": persona["id"],
             "persona_version": persona["version"],
             "provider": self.provider.model_name,
@@ -131,29 +180,34 @@ class AssetGenerator:
             "asset_path": str(path),
             "prompt": prompt,
             "negative_prompt": negative_prompt,
+            "reference_count": len(references),
+            "reference_strength": self.reference_strength,
+            "identity": identity,
+            "status": status,
         }
         meta_path = path.with_suffix(path.suffix + ".json")
         meta_path.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
 
-        candidate_id = self.store.propose(
-            persona=persona,
-            theme=theme,
-            format="still",
-            channel=channel,
-            offer=offer,
-            asset_uri=str(path),
-            prompt=prompt,
-            model=self.provider.model_name,
-            seed=str(seed) if seed is not None else None,
-            cost_cents=cost_cents,
-        )
         self.store.record_event("asset_generated", {
-            **{k: metadata[k] for k in (
-                "asset_id", "persona_id", "persona_version", "provider", "theme",
-                "channel", "offer", "seed", "width", "height", "mime_type",
-                "sha256", "bytes", "asset_path"
-            )},
+            "asset_id": asset_id,
             "candidate_id": candidate_id,
+            "persona_id": persona["id"],
+            "persona_version": persona["version"],
+            "provider": self.provider.model_name,
+            "theme": theme,
+            "channel": channel,
+            "offer": offer,
+            "seed": seed,
+            "width": width,
+            "height": height,
+            "mime_type": mime,
+            "sha256": sha256,
+            "bytes": len(image_bytes),
+            "asset_path": str(path),
+            "reference_count": len(references),
+            "identity_score": identity.get("score"),
+            "identity_threshold": identity["threshold"],
+            "status": status,
         })
         return {
             "candidate_id": candidate_id,
@@ -163,7 +217,9 @@ class AssetGenerator:
             "sha256": sha256,
             "bytes": len(image_bytes),
             "provider": self.provider.model_name,
-            "status": "proposed",
+            "reference_count": len(references),
+            "identity": identity,
+            "status": status,
         }
 
     def batch(self, personas: list[dict], theme: str, channel: str, offer: str,
@@ -176,8 +232,13 @@ class AssetGenerator:
             for variant in range(count_per_persona):
                 derived_seed = None if seed is None else seed + p_index * 1000 + variant
                 out.append(self.generate(
-                    persona=persona, theme=theme, channel=channel, offer=offer,
-                    seed=derived_seed, width=width, height=height,
+                    persona=persona,
+                    theme=theme,
+                    channel=channel,
+                    offer=offer,
+                    seed=derived_seed,
+                    width=width,
+                    height=height,
                     cost_cents=cost_cents,
                 ))
         return out
