@@ -40,8 +40,8 @@ func SCRFDInput(data []byte) (DetectorInput,error) {
     scale:=math.Min(float64(SCRFDSize)/float64(w),float64(SCRFDSize)/float64(h))
     newW:=int(math.Round(float64(w)*scale))
     newH:=int(math.Round(float64(h)*scale))
-    padX:=(float64(SCRFDSize-newW))/2
-    padY:=(float64(SCRFDSize-newH))/2
+    padX:=0.0
+    padY:=0.0
 
     plane:=SCRFDSize*SCRFDSize
     out:=make([]float64,3*plane)
@@ -53,8 +53,8 @@ func SCRFDInput(data []byte) (DetectorInput,error) {
         for x:=0;x<newW;x++ {
             sx:=float64(b.Min.X)+(float64(x)+0.5)/scale-0.5
             px:=bilinear(img,sx,sy)
-            dx:=int(math.Floor(padX))+x
-            dy:=int(math.Floor(padY))+y
+            dx:=x
+            dy:=y
             if dx<0 || dy<0 || dx>=SCRFDSize || dy>=SCRFDSize { continue }
             idx:=dy*SCRFDSize+dx
             // InsightFace detector preprocessing uses RGB with mean 127.5/std 128.
