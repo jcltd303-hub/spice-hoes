@@ -15,9 +15,16 @@ from .core import Store, load_personas
 from .memory import KnowledgeBase
 from .moa import MixtureOfAgents
 from .policy import recommend
-from .providers import AzureChatProvider, LocalDreamProvider
+from .providers import AzureChatProvider, AzureEmbeddingProvider, LocalDreamProvider, ProviderError
 from .web import make_handler
 from .workflow import build_briefs
+
+
+def _optional_embedder():
+    try:
+        return AzureEmbeddingProvider()
+    except ProviderError:
+        return None
 
 
 def main(argv=None):
@@ -225,23 +232,23 @@ def main(argv=None):
         elif args.command == "outcome":
             output = store.record_outcome(args.candidate_id, args.kind, args.amount_cents, args.external_id)
         elif args.command == "knowledge-add":
-            kb = KnowledgeBase(store)
+            kb = KnowledgeBase(store, embedder=_optional_embedder())
             tags = [x.strip() for x in args.tags.split(",") if x.strip()]
             output = kb.add(args.source, args.title, args.body, tags)
         elif args.command == "knowledge-search":
-            output = KnowledgeBase(store).search(args.query, limit=args.limit)
+            output = KnowledgeBase(store, embedder=_optional_embedder()).search(args.query, limit=args.limit)
         elif args.command == "moa":
             persona = None
             if args.persona:
                 persona = next((p for p in personas if p["id"] == args.persona), None)
                 if persona is None:
                     parser.error("Unknown persona")
-            output = MixtureOfAgents(AzureChatProvider(), store).deliberate(args.objective, persona)
+            output = MixtureOfAgents(AzureChatProvider(), store, embedder=_optional_embedder()).deliberate(args.objective, persona)
         elif args.command == "autonomy-cycle":
             engine = AutonomyEngine(
                 store,
                 personas,
-                MixtureOfAgents(AzureChatProvider(), store),
+                MixtureOfAgents(AzureChatProvider(), store, embedder=_optional_embedder()),
                 AssetGenerator(store, provider=LocalDreamProvider()),
             )
             output = engine.run_cycle(
@@ -257,7 +264,7 @@ def main(argv=None):
             engine = AutonomyEngine(
                 store,
                 personas,
-                MixtureOfAgents(AzureChatProvider(), store),
+                MixtureOfAgents(AzureChatProvider(), store, embedder=_optional_embedder()),
                 AssetGenerator(store, provider=LocalDreamProvider()),
             )
             output = engine.settle_cycle(args.cycle_id, done=args.done)
@@ -283,7 +290,7 @@ def main(argv=None):
             if persona is None:
                 parser.error("Unknown persona")
             provider = AzureChatProvider()
-            deliberation = MixtureOfAgents(provider, store).deliberate(
+            deliberation = MixtureOfAgents(provider, store, embedder=_optional_embedder()).deliberate(
                 args.objective, persona
             )
             output = ExperimentPlanner(provider, store).plan(
@@ -320,7 +327,7 @@ def main(argv=None):
             engine = CoreAutopilot(
                 store,
                 personas,
-                MixtureOfAgents(provider, store),
+                MixtureOfAgents(provider, store, embedder=_optional_embedder()),
                 planner,
                 AssetGenerator(store, provider=LocalDreamProvider()),
             )
@@ -339,7 +346,7 @@ def main(argv=None):
             engine = CoreAutopilot(
                 store,
                 personas,
-                MixtureOfAgents(provider, store),
+                MixtureOfAgents(provider, store, embedder=_optional_embedder()),
                 ExperimentPlanner(provider, store),
                 AssetGenerator(store, provider=LocalDreamProvider()),
             )
