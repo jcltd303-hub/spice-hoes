@@ -13,7 +13,7 @@ def produce_job(store,personas,job_path,assets_dir="assets/generated",server_url
  output_dir=Path(assets_dir)/persona["id"]/path.stem
  job["status"]="exploring"; job["profile"]=profile; job["candidate_count"]=candidate_count
  path.write_text(json.dumps(job,indent=2,ensure_ascii=False)+"\n")
- assets=list(job.get("assets",[])); ids=list(job.get("candidate_ids",[]))
+ assets=list(job.get("assets",[])); ids=list(job.get("candidate_ids",[])); resumed_from=len(ids)
  if len(ids)>=candidate_count and job.get("status")=="awaiting_review":
   return {"job":str(path),"candidate_ids":ids,"assets":assets,"status":"awaiting_review","resumed":True}
  try:
@@ -31,7 +31,7 @@ def produce_job(store,personas,job_path,assets_dir="assets/generated",server_url
    path.write_text(json.dumps(job,indent=2,ensure_ascii=False)+"\n")
   job["status"]="awaiting_review"
   path.write_text(json.dumps(job,indent=2,ensure_ascii=False)+"\n")
-  return {"job":str(path),"candidate_ids":ids,"assets":assets,"status":"awaiting_review","resumed":bool(ids and len(ids)<candidate_count)}
+  return {"job":str(path),"candidate_ids":ids,"assets":assets,"status":"awaiting_review","resumed":resumed_from>0}
  except Exception as exc:
   job["status"]="generation_failed"; job["last_error"]={"type":type(exc).__name__,"message":str(exc)}
   path.write_text(json.dumps(job,indent=2,ensure_ascii=False)+"\n")
