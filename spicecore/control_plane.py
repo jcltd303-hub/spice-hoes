@@ -11,16 +11,41 @@ import os
 import sys
 from pathlib import Path
 
+from .assetgen import AssetGenerator
+from .autopilot import CoreAutopilot
 from .core import Store, load_personas
 from .deeprl import DeepRLPolicy
+from .experiments import ExperimentPlanner
 from .memory import KnowledgeBase
+from .moa import MixtureOfAgents
+from .operations import Operations
 from .policy import recommend
+from .providers import AzureChatProvider, AzureEmbeddingProvider, LocalDreamProvider, ProviderError
 from .runtime_policy import RuntimePolicy
 from .workflow import build_briefs
 
 
 DB_PATH = os.environ.get("SPICE_DB", "data/experiments.sqlite")
 PERSONAS_PATH = os.environ.get("SPICE_PERSONAS", "personas")
+
+
+def _optional_embedder():
+    try:
+        return AzureEmbeddingProvider()
+    except ProviderError:
+        return None
+
+
+def _asset_generator(store: Store):
+    values = RuntimePolicy(store).current()["values"]
+    return AssetGenerator(
+        store,
+        provider=LocalDreamProvider(),
+        asset_dir="data/assets",
+        identity_threshold=values["identity_threshold"],
+        reference_strength=values["reference_strength"],
+        quality_threshold=values["quality_threshold"],
+    )
 
 
 def _payload() -> dict:
@@ -248,6 +273,32 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
         return policy.train(
             epochs=int(payload.get("epochs", 20)),
             learning_rate=float(payload.get("learning_rate", 0.01)),
+        )
+
+    if action == "doctor":
+        return Operations(store, personas).doctor()
+
+    if action == "autopilot_run":
+        runtime = RuntimePolicy(store).current()["values"]
+        provider = AzureChatProvider()
+        planner = ExperimentPlanner(provider, store)
+        engine = CoreAutopilot(
+            store,
+            personas,
+            MixtureOfAgents(provider, store, embedder=_optional_embedder()),
+            planner,
+            _asset_generator(store),
+            min_experiences=runtime["rl_min_experiences"],
+        )
+        return engine.run_once(
+            str(payload.get("objective", "")),
+            str(payload.get("channel", "")),
+            str(payload.get("offer", "")),
+            variant_count=int(payload.get("variants", 3)),
+            seed=(int(payload["seed"]) if payload.get("seed") is not None else None),
+            cost_cents_per_asset=int(payload.get("cost_cents_per_asset", 0)),
+            max_pending_review=runtime["max_pending_review"],
+            daily_budget_cents=runtime["daily_budget_cents"],
         )
 
     if action == "autopilot_status":
