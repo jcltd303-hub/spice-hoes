@@ -11,6 +11,7 @@ from .autonomy import AutonomyEngine
 from .autopilot import CoreAutopilot
 from .deeprl import DeepRLPolicy
 from .experiments import ExperimentPlanner
+from .engagement import EngagementAgent
 from .core import Store, load_personas
 from .memory import KnowledgeBase
 from .learning import LearningController
@@ -164,6 +165,26 @@ def main(argv=None):
     apsettle.add_argument("--min-impressions", type=int, default=100)
 
     sub.add_parser("autopilot-status")
+
+    eingest = sub.add_parser("engagement-ingest")
+    eingest.add_argument("--persona", required=True)
+    eingest.add_argument("--channel", required=True)
+    eingest.add_argument("--conversation-id", required=True)
+    eingest.add_argument("--message-id", required=True)
+    eingest.add_argument("--body", required=True)
+
+    edraft = sub.add_parser("engagement-draft")
+    edraft.add_argument("--persona", required=True)
+    edraft.add_argument("--message-id", required=True)
+
+    ereview = sub.add_parser("engagement-review")
+    ereview.add_argument("draft_id")
+    ereview.add_argument("decision", choices=("approved", "rejected", "revise"))
+    ereview.add_argument("--reviewer", required=True)
+    ereview.add_argument("--note", default="")
+
+    eoutbox = sub.add_parser("engagement-outbox")
+    eoutbox.add_argument("--limit", type=int, default=50)
 
     args = parser.parse_args(argv)
     personas = load_personas(args.personas)
@@ -383,6 +404,51 @@ def main(argv=None):
                 "rl_minimum_experiences": engine.policy.min_experiences,
                 "rl_ready": engine.policy.count() >= engine.policy.min_experiences,
             }
+        elif args.command == "engagement-ingest":
+            persona = next((p for p in personas if p["id"] == args.persona), None)
+            if persona is None:
+                parser.error("Unknown persona")
+            agent = EngagementAgent(
+                AzureChatProvider(),
+                store,
+                KnowledgeBase(store, embedder=_optional_embedder()),
+            )
+            output = agent.ingest_inbound(
+                persona,
+                args.channel,
+                args.conversation_id,
+                args.message_id,
+                args.body,
+            )
+        elif args.command == "engagement-draft":
+            persona = next((p for p in personas if p["id"] == args.persona), None)
+            if persona is None:
+                parser.error("Unknown persona")
+            agent = EngagementAgent(
+                AzureChatProvider(),
+                store,
+                KnowledgeBase(store, embedder=_optional_embedder()),
+            )
+            output = agent.draft_reply(persona, args.message_id)
+        elif args.command == "engagement-review":
+            agent = EngagementAgent(
+                AzureChatProvider(),
+                store,
+                KnowledgeBase(store, embedder=_optional_embedder()),
+            )
+            output = agent.review_draft(
+                args.draft_id,
+                args.decision,
+                args.reviewer,
+                args.note,
+            )
+        elif args.command == "engagement-outbox":
+            agent = EngagementAgent(
+                AzureChatProvider(),
+                store,
+                KnowledgeBase(store, embedder=_optional_embedder()),
+            )
+            output = agent.approved_outbox(limit=args.limit)
         print(json.dumps(output, indent=2, ensure_ascii=False))
     finally:
         store.close()
