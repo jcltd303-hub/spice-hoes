@@ -12,6 +12,7 @@ from pathlib import Path
 from .core import Store
 from .identity import IdentityGate, load_reference_pack
 from .providers import LocalDreamProvider
+from .quality import QualityGate
 
 
 DEFAULT_NEGATIVE = (
@@ -83,13 +84,14 @@ class AssetGenerator:
                  asset_dir: str | Path = "data/assets",
                  reference_root: str | Path = "data/references",
                  identity_threshold: float = 0.82,
-                 reference_strength: float = 0.85):
+                 reference_strength: float = 0.85, quality_threshold: float = 0.78):
         self.store = store
         self.provider = provider or LocalDreamProvider()
         self.asset_dir = Path(asset_dir)
         self.reference_root = Path(reference_root)
         self.identity_threshold = identity_threshold
         self.reference_strength = reference_strength
+        self.quality_gate = QualityGate(self.provider, threshold=quality_threshold)
 
     def generate(self, persona: dict, theme: str, channel: str, offer: str,
                  scene: str = "", seed: int | None = None,
