@@ -65,15 +65,11 @@ class InstagramGraphPublisher(Publisher):
             full_caption += "\n" + " ".join(f"#{t.lstrip('#')}" for t in hashtags)
 
         if not self.access_token:
-            # When running without credentials, simulate successful dry-run
-            post_id = f"ig_sim_{idempotency_key or 'post'}"
             return PublishResult(
-                success=True,
+                success=False,
                 platform="instagram",
-                external_post_id=post_id,
-                canonical_url=f"https://www.instagram.com/reel/{post_id}/",
-                published_at="2026-10-01T00:00:00Z",
-                response_metadata={"dry_run": True, "notice": "INSTAGRAM_ACCESS_TOKEN not set"},
+                error_message="INSTAGRAM_ACCESS_TOKEN is not configured",
+                retryable=False,
             )
 
         try:
@@ -117,7 +113,7 @@ class InstagramGraphPublisher(Publisher):
 
     def delete(self, external_post_id: str, account_id: str) -> bool:
         if not self.access_token:
-            return True
+            return False
         try:
             self._http_request(external_post_id, method="DELETE")
             return True
@@ -126,20 +122,7 @@ class InstagramGraphPublisher(Publisher):
 
     def fetch_metrics(self, external_post_id: str, account_id: str) -> PlatformMetrics:
         if not self.access_token:
-            return PlatformMetrics(
-                platform="instagram",
-                post_id=external_post_id,
-                impressions=850,
-                views=720,
-                watch_time_ms=6480000,
-                completion_rate=0.62,
-                likes=95,
-                comments=12,
-                shares=8,
-                saves=21,
-                profile_visits=16,
-                link_clicks=9,
-            )
+            raise RuntimeError("INSTAGRAM_ACCESS_TOKEN is not configured")
 
         try:
             res = self._http_request(f"{external_post_id}/insights?metric=plays,impressions,reach,saved,likes,comments,shares")
