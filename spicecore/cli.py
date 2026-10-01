@@ -9,6 +9,7 @@ from pathlib import Path
 from .core import Store, load_personas
 from .autonomy import plan_next_batch
 from .assetflow import produce_job
+from .identityflow import run_identity_batch
 from .policy import recommend
 from .moa import deliberate
 from .localdream import generate as localdream_generate, probe as localdream_probe
@@ -28,6 +29,13 @@ def main(argv=None):
     sub.add_parser('personas')
     sub.add_parser('stats')
     sub.add_parser('events')
+    ident = sub.add_parser('identity-batch')
+    ident.add_argument('--persona', default='celeste_vale')
+    ident.add_argument('--seed', type=int, default=42)
+    ident.add_argument('--candidates', type=int, default=6)
+    ident.add_argument('--output-dir', default='jobs/identity')
+    ident.add_argument('--assets-dir', default='assets/generated')
+    ident.add_argument('--server-url')
     auto = sub.add_parser('auto-assets')
     auto.add_argument('--theme', required=True)
     auto.add_argument('--channel', required=True)
@@ -124,6 +132,8 @@ def main(argv=None):
             output = store.stats(personas)
         elif args.command == 'events':
             output = store.events()
+        elif args.command == 'identity-batch':
+            output = run_identity_batch(store,personas,args.persona,args.output_dir,args.assets_dir,args.server_url,args.seed,args.candidates)
         elif args.command == 'auto-assets':
             planned = plan_next_batch(store, personas, args.theme, args.channel, args.output_dir, args.seed, False)
             output = produce_job(store, personas, planned['job'], args.assets_dir, args.server_url, args.size, args.steps, args.cfg, args.negative_prompt, args.candidates, args.profile)
