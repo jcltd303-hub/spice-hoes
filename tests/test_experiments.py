@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FakeProvider:
-    def chat(self, system, user, temperature=0.2):
+    def chat(self, system, user, temperature=0.2, response_format=None, max_tokens=None):
         request = json.loads(user)
         n = request["variant_count"]
         return json.dumps({
