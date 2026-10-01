@@ -1,0 +1,99 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from spicecore.control_plane import dispatch
+from spicecore.core import Store, load_personas
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class ControlPlaneTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(Path(self.tmp.name) / "control.sqlite")
+        self.personas = load_personas(ROOT / "personas")
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_candidate_lifecycle_uses_canonical_store(self):
+        persona = self.personas[0]
+        created = dispatch(
+            "propose",
+            {
+                "persona_id": persona["id"],
+                "theme": "bridge-test",
+                "format": "still",
+                "channel": "test",
+                "offer": "test-offer",
+                "cost_cents": 11,
+            },
+            self.store,
+            self.personas,
+        )
+        cid = created["id"]
+        listed = dispatch("candidates", {}, self.store, self.personas)
+        self.assertEqual(listed[0]["id"], cid)
+        self.assertEqual(listed[0]["persona_name"], persona["name"])
+
+        dispatch(
+            "review",
+            {"candidate_id": cid, "decision": "approved", "reviewer": "tester", "note": "ok"},
+            self.store,
+            self.personas,
+        )
+        dispatch(
+            "publish",
+            {"candidate_id": cid, "url": "https://example.test/post"},
+            self.store,
+            self.personas,
+        )
+        dispatch(
+            "outcome",
+            {"candidate_id": cid, "kind": "purchase", "amount_cents": 500},
+            self.store,
+            self.personas,
+        )
+
+        candidate = dispatch("candidates", {}, self.store, self.personas)[0]
+        self.assertEqual(candidate["status"], "published")
+        self.assertEqual(candidate["reviewer"], "tester")
+        self.assertEqual(candidate["published_url"], "https://example.test/post")
+        stats = dispatch("stats", {}, self.store, self.personas)
+        row = next(item for item in stats if item["persona_id"] == persona["id"])
+        self.assertEqual(row["revenue_cents"], 500)
+        self.assertEqual(row["net_cents"], 489)
+
+    def test_policy_decision_is_audited(self):
+        result = dispatch("recommend", {"seed": 4}, self.store, self.personas)
+        self.assertIn(result["persona_id"], {p["id"] for p in self.personas})
+        self.assertEqual(self.store.events()[-1]["kind"], "policy_decision")
+
+    def test_simulation_records_real_outcomes(self):
+        persona = self.personas[0]
+        cid = self.store.propose(persona, "sim", "still", "test", "offer")
+        self.store.review(cid, "approved", "tester")
+        self.store.publish(cid, "https://example.test/sim")
+        out = dispatch(
+            "simulate",
+            {
+                "candidate_id": cid,
+                "impressions": 2,
+                "clicks": 1,
+                "purchases": 1,
+                "purchaseCents": 700,
+            },
+            self.store,
+            self.personas,
+        )
+        row = next(item for item in out["stats"] if item["persona_id"] == persona["id"])
+        self.assertEqual(row["impressions"], 2)
+        self.assertEqual(row["clicks"], 1)
+        self.assertEqual(row["revenue_cents"], 700)
+
+
+if __name__ == "__main__":
+    unittest.main()
