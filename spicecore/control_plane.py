@@ -265,10 +265,15 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
             },
             "media": {
                 "ffmpeg": bool(__import__("shutil").which("ffmpeg")),
-                "luma": bool(env.get("LUMA_API_KEY")),
-                "elevenlabs": bool(env.get("ELEVENLABS_API_KEY")),
-                "synclabs": bool(env.get("SYNCLABS_API_KEY")),
+                "luma": False,
+                "elevenlabs": False,
+                "synclabs": False,
                 "local_dream": bool(env.get("LOCAL_DREAM_URL")),
+                "configured": {
+                    "luma": bool(env.get("LUMA_API_KEY")),
+                    "elevenlabs": bool(env.get("ELEVENLABS_API_KEY")),
+                    "synclabs": bool(env.get("SYNCLABS_API_KEY")),
+                },
             },
             "policy": {
                 "epsilon_greedy": True,
