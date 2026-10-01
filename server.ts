@@ -277,103 +277,61 @@ app.post('/api/knowledge', async (req, res) => {
   }
 });
 
-// Media pipeline remains a separate transient adapter until a production renderer is configured.
-app.get('/api/media-jobs', (_req, res) => {
-  res.json(Array.from(mediaJobs.values()).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)));
-});
-
-app.post('/api/media-jobs/create', async (req, res) => {
+// Media jobs are canonical in spicecore SQLite. Rendering and scheduling remain fail-closed
+// until production adapters are configured and persistent scheduling is wired.
+app.get('/api/media-jobs', async (_req, res) => {
   try {
-    const { persona_id, candidate_id, source_asset_uri, script, aspect_ratio = '9:16' } = req.body || {};
-    const candidates: any[] = await runCore('candidates');
-    const candidate = candidates.find(c => c.id === candidate_id);
-    if (!candidate) return res.status(404).json({ error: 'Candidate not found in canonical spicecore ledger' });
-    if (candidate.persona_id !== persona_id) return res.status(400).json({ error: 'Candidate/persona mismatch' });
-
-    const id = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const job: WebMediaJob = {
-      id,
-      persona_id,
-      candidate_id,
-      source_asset_uri: source_asset_uri || candidate.asset_uri || '',
-      script: script || '',
-      aspect_ratio,
-      status: 'planned',
-      duration_seconds: 15,
-      output_uri: null,
-      video_provider: 'spice-video-engine',
-      voice_provider: `voice-${persona_id}`,
-      generation_cost_cents: 30,
-      render_cost_cents: 10,
-      created_at: new Date().toISOString(),
-    };
-    mediaJobs.set(id, job);
-    res.status(201).json(job);
+    res.json(await runCore('media_jobs'));
   } catch (err) {
     sendCoreError(res, err);
   }
 });
 
-app.post('/api/media-jobs/:id/render', (req, res) => {
-  const job = mediaJobs.get(String(req.params.id));
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-  job.status = 'rendering';
-  job.output_uri = null;
-  job.status = 'review_ready';
-  job.qa_report = {
-    passed: false,
-    score: 0,
-    checks: {
-      renderer_configured: false,
-    },
-  };
-  mediaJobs.set(job.id, job);
-  res.json(job);
+app.post('/api/media-jobs/create', async (req, res) => {
+  try {
+    res.status(201).json(await runCore('media_create', {
+      persona_id: req.body?.persona_id,
+      candidate_id: req.body?.candidate_id,
+      source_asset_uri: req.body?.source_asset_uri,
+      script: req.body?.script,
+      aspect_ratio: req.body?.aspect_ratio || '9:16',
+      soundtrack: req.body?.soundtrack,
+      cta: req.body?.cta,
+      offer: req.body?.offer,
+      product_id: req.body?.product_id,
+    }));
+  } catch (err) {
+    sendCoreError(res, err);
+  }
 });
 
-app.post('/api/media-jobs/:id/review', (req, res) => {
-  const job = mediaJobs.get(String(req.params.id));
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-  const { decision, reviewer, note } = req.body || {};
-  if (!['approved', 'rejected', 'revise'].includes(decision)) {
-    return res.status(400).json({ error: 'Invalid decision' });
+app.post('/api/media-jobs/:id/render', async (_req, res) => {
+  res.status(501).json({
+    error: 'No production media renderer is configured. The persisted job remains planned.',
+  });
+});
+
+app.post('/api/media-jobs/:id/review', async (req, res) => {
+  try {
+    res.json(await runCore('media_review', {
+      media_job_id: String(req.params.id),
+      decision: req.body?.decision,
+      reviewer: req.body?.reviewer,
+      note: req.body?.note || '',
+    }));
+  } catch (err) {
+    sendCoreError(res, err);
   }
-  if (decision === 'approved' && !job.qa_report?.passed) {
-    return res.status(409).json({ error: 'Cannot approve media until a configured renderer produces a passing QA report' });
-  }
-  job.status = decision;
-  job.reviewer = reviewer;
-  job.review_note = note;
-  mediaJobs.set(job.id, job);
-  res.json(job);
 });
 
 app.get('/api/schedules', (_req, res) => {
-  res.json(Array.from(scheduledPosts.values()).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)));
+  res.json([]);
 });
 
-app.post('/api/schedules/schedule', (req, res) => {
-  const { media_job_id, platform, account_id, scheduled_at } = req.body || {};
-  const job = mediaJobs.get(media_job_id);
-  if (!job) return res.status(404).json({ error: 'Media job not found' });
-  if (job.status !== 'approved') {
-    return res.status(403).json({ error: `Cannot schedule media in state '${job.status}'. Only approved media can be scheduled.` });
-  }
-
-  const scheduleId = `sched_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const post: WebScheduledPost = {
-    schedule_id: scheduleId,
-    candidate_id: job.candidate_id,
-    media_job_id: job.id,
-    platform: platform || 'instagram',
-    account_id: account_id || 'official',
-    scheduled_at: scheduled_at || new Date().toISOString(),
-    status: 'scheduled',
-    created_at: new Date().toISOString(),
-  };
-  scheduledPosts.set(scheduleId, post);
-  job.status = 'scheduled';
-  res.status(201).json(post);
+app.post('/api/schedules/schedule', (_req, res) => {
+  res.status(501).json({
+    error: 'Persistent scheduling is not wired yet; no schedule was created.',
+  });
 });
 
 app.post('/api/schedules/process-outbox', (_req, res) => {
