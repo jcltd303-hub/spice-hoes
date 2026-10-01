@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .assetgen import AssetGenerator
 from .autonomy import AutonomyEngine
+from .autopilot import CoreAutopilot
 from .deeprl import DeepRLPolicy
 from .experiments import ExperimentPlanner
 from .core import Store, load_personas
@@ -136,6 +137,18 @@ def main(argv=None):
 
     eres = sub.add_parser("experiment-results")
     eres.add_argument("plan_id")
+
+    ap = sub.add_parser("autopilot-run")
+    ap.add_argument("objective")
+    ap.add_argument("--channel", required=True)
+    ap.add_argument("--offer", required=True)
+    ap.add_argument("--variants", type=int, default=3)
+    ap.add_argument("--seed", type=int)
+    ap.add_argument("--cost-cents-per-asset", type=int, default=0)
+    ap.add_argument("--max-pending-review", type=int, default=12)
+    ap.add_argument("--daily-budget-cents", type=int, default=5000)
+
+    sub.add_parser("autopilot-status")
 
     args = parser.parse_args(argv)
     personas = load_personas(args.personas)
@@ -301,6 +314,42 @@ def main(argv=None):
             output = ExperimentPlanner(AzureChatProvider(), store).get(args.plan_id)
         elif args.command == "experiment-results":
             output = ExperimentPlanner(AzureChatProvider(), store).results(args.plan_id)
+        elif args.command == "autopilot-run":
+            provider = AzureChatProvider()
+            planner = ExperimentPlanner(provider, store)
+            engine = CoreAutopilot(
+                store,
+                personas,
+                MixtureOfAgents(provider, store),
+                planner,
+                AssetGenerator(store, provider=LocalDreamProvider()),
+            )
+            output = engine.run_once(
+                args.objective,
+                args.channel,
+                args.offer,
+                variant_count=args.variants,
+                seed=args.seed,
+                cost_cents_per_asset=args.cost_cents_per_asset,
+                max_pending_review=args.max_pending_review,
+                daily_budget_cents=args.daily_budget_cents,
+            )
+        elif args.command == "autopilot-status":
+            provider = AzureChatProvider()
+            engine = CoreAutopilot(
+                store,
+                personas,
+                MixtureOfAgents(provider, store),
+                ExperimentPlanner(provider, store),
+                AssetGenerator(store, provider=LocalDreamProvider()),
+            )
+            output = {
+                "pending_review": engine.pending_review_count(),
+                "spent_today_cents": engine.spend_today_cents(),
+                "rl_experiences": engine.policy.count(),
+                "rl_minimum_experiences": engine.policy.min_experiences,
+                "rl_ready": engine.policy.count() >= engine.policy.min_experiences,
+            }
         print(json.dumps(output, indent=2, ensure_ascii=False))
     finally:
         store.close()
