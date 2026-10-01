@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from .core import Store, load_personas
+from .deeprl import DeepRLPolicy
 from .memory import KnowledgeBase
 from .policy import recommend
 from .runtime_policy import RuntimePolicy
@@ -207,6 +208,61 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
 
     if action == "policy":
         return RuntimePolicy(store).current()
+
+    if action == "policy_update":
+        changes = payload.get("changes") or {}
+        if not isinstance(changes, dict):
+            raise ValueError("changes must be an object")
+        return RuntimePolicy(store).update(
+            changes,
+            actor=str(payload.get("actor", "")).strip(),
+            note=str(payload.get("note", "")),
+        )
+
+    if action == "rl_status":
+        runtime = RuntimePolicy(store).current()["values"]
+        policy = DeepRLPolicy(
+            store,
+            [p["id"] for p in personas],
+            min_experiences=runtime["rl_min_experiences"],
+        )
+        row = store.db.execute(
+            "SELECT * FROM rl_policy_snapshot ORDER BY ts DESC LIMIT 1"
+        ).fetchone()
+        return {
+            "policy_version": policy.POLICY_VERSION,
+            "experiences": policy.count(),
+            "minimum_experiences": policy.min_experiences,
+            "ready": policy.count() >= policy.min_experiences,
+            "latest_snapshot": dict(row) if row else None,
+        }
+
+    if action == "rl_train":
+        runtime = RuntimePolicy(store).current()["values"]
+        policy = DeepRLPolicy(
+            store,
+            [p["id"] for p in personas],
+            min_experiences=runtime["rl_min_experiences"],
+        )
+        return policy.train(
+            epochs=int(payload.get("epochs", 20)),
+            learning_rate=float(payload.get("learning_rate", 0.01)),
+        )
+
+    if action == "knowledge_add":
+        kb = KnowledgeBase(store)
+        tags = payload.get("tags") or []
+        if isinstance(tags, str):
+            tags = [x.strip() for x in tags.split(",") if x.strip()]
+        if not isinstance(tags, list):
+            raise ValueError("tags must be an array or comma-delimited string")
+        return kb.add(
+            str(payload.get("source", "")),
+            str(payload.get("title", "")),
+            str(payload.get("body", "")),
+            [str(x) for x in tags],
+            approved=True,
+        )
 
     raise ValueError(f"Unknown action: {action}")
 
