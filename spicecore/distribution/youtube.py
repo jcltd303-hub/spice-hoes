@@ -44,16 +44,11 @@ class YouTubeShortsPublisher(Publisher):
         now_iso = datetime.now(timezone.utc).isoformat()
 
         if not self.access_token:
-            # Synthetic / test mode
-            video_id = f"yt_{idempotency_key.replace(':', '_') if idempotency_key else uuid.uuid4().hex[:11]}"
-            canonical_url = f"https://www.youtube.com/shorts/{video_id}"
             return PublishResult(
-                success=True,
+                success=False,
                 platform="youtube_shorts",
-                external_post_id=video_id,
-                canonical_url=canonical_url,
-                published_at=now_iso,
-                response_metadata={"mode": "simulated", "title": title},
+                error_message="YOUTUBE_ACCESS_TOKEN is not configured",
+                retryable=False,
             )
 
         try:
@@ -114,7 +109,7 @@ class YouTubeShortsPublisher(Publisher):
 
     def delete(self, external_post_id: str, account_id: str) -> bool:
         if not self.access_token:
-            return True
+            return False
         try:
             url = f"{self.api_url}/videos?id={external_post_id}"
             headers = {"Authorization": f"Bearer {self.access_token}"}
@@ -126,20 +121,7 @@ class YouTubeShortsPublisher(Publisher):
 
     def fetch_metrics(self, external_post_id: str, account_id: str) -> PlatformMetrics:
         if not self.access_token:
-            return PlatformMetrics(
-                platform="youtube_shorts",
-                post_id=external_post_id,
-                impressions=3100,
-                views=2800,
-                watch_time_ms=25200000,
-                completion_rate=0.76,
-                likes=420,
-                comments=58,
-                shares=64,
-                saves=110,
-                profile_visits=95,
-                link_clicks=45,
-            )
+            raise RuntimeError("YOUTUBE_ACCESS_TOKEN is not configured")
 
         try:
             url = f"{self.api_url}/videos?id={external_post_id}&part=statistics"
