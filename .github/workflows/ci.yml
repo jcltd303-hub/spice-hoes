@@ -2,33 +2,83 @@ name: ci
 
 on:
   push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/workflows/spice-qnn-runtime.yml"
+      - ".github/workflows/face-embedding-qnn.yml"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  core:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23"
-      - run: go test ./...
-      - run: mkdir -p bin && go build -o bin/spiceimg ./cmd/spiceimg && go build -o bin/spicemedia ./cmd/spicemedia
+          cache: true
+
+      - name: Go tests and binaries
+        run: |
+          go test ./...
+          mkdir -p bin
+          go build -trimpath -o bin/spiceimg ./cmd/spiceimg
+          go build -trimpath -o bin/spicemedia ./cmd/spicemedia
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install -r requirements.txt
-      - run: python -m unittest discover -s tests -v
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Python tests
+        run: python -m unittest discover -s tests -v
+
       - name: Smoke test canonical control plane
         run: printf '{}' | python -m spicecore.control_plane health
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm install
-      - run: npm run build
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
+      - name: Install and build
+        run: |
+          npm install --prefer-offline --no-audit --no-fund
+          npm run build
