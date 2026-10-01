@@ -76,6 +76,43 @@ class WorkflowTests(unittest.TestCase):
             server.server_close()
             worker.join()
 
+    def test_cli_runtime_policy_is_versioned_and_queryable(self):
+        db = str(Path(self.tmp.name) / "policy-cli.sqlite")
+        base = [
+            sys.executable, "-m", "spicecore.cli",
+            "--personas", str(ROOT / "personas"),
+            "--db", db,
+        ]
+        first = subprocess.run(
+            base + ["policy-show"],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(json.loads(first.stdout)["version"], 1)
+
+        update = subprocess.run(
+            base + [
+                "policy-set",
+                "--set", "daily_budget_cents=2100",
+                "--set", "quality_threshold=0.84",
+                "--actor", "test-operator",
+                "--note", "cli regression",
+            ],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        self.assertEqual(update.returncode, 0, update.stderr)
+        policy = json.loads(update.stdout)
+        self.assertEqual(policy["version"], 2)
+        self.assertEqual(policy["values"]["daily_budget_cents"], 2100)
+        self.assertEqual(policy["values"]["quality_threshold"], 0.84)
+
+        history = subprocess.run(
+            base + ["policy-history", "--limit", "5"],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        self.assertEqual(history.returncode, 0, history.stderr)
+        self.assertEqual(len(json.loads(history.stdout)), 2)
+
     def test_cli_outputs_five_creative_briefs(self):
         run = subprocess.run([sys.executable, '-m', 'spicecore.cli', '--personas',
                               str(ROOT / 'personas'), '--db', str(Path(self.tmp.name) / 'cli.sqlite'),
