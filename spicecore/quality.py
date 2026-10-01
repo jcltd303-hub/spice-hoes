@@ -9,7 +9,10 @@ import urllib.error
 import urllib.request
 from statistics import mean
 
-from PIL import Image, ImageFilter, ImageStat
+try:
+    from PIL import Image, ImageFilter, ImageStat
+except ImportError:  # Pillow is optional; provider quality remains fully usable.
+    Image = ImageFilter = ImageStat = None
 
 
 def _post_quality(base_url: str, token: str, payload: dict) -> dict:
@@ -37,7 +40,32 @@ class QualityGate:
         self.threshold = threshold
 
     @staticmethod
+    def _header_dimensions(image_bytes: bytes) -> tuple[int | None, int | None]:
+        if image_bytes.startswith(b"\x89PNG\r\n\x1a\n") and len(image_bytes) >= 24:
+            return (
+                int.from_bytes(image_bytes[16:20], "big"),
+                int.from_bytes(image_bytes[20:24], "big"),
+            )
+        return None, None
+
+    @staticmethod
     def local_metrics(image_bytes: bytes) -> dict:
+        if Image is None:
+            width, height = QualityGate._header_dimensions(image_bytes)
+            megapixels = ((width or 0) * (height or 0)) / 1_000_000
+            return {
+                "available": False,
+                "backend": "provider-only",
+                "width": width,
+                "height": height,
+                "brightness": None,
+                "sharpness": None,
+                "contrast": None,
+                "resolution_score": round(min(1.0, megapixels / 0.7), 6) if width and height else None,
+                "exposure_score": None,
+                "local_score": None,
+            }
+
         with Image.open(io.BytesIO(image_bytes)) as image:
             rgb = image.convert("RGB")
             gray = rgb.convert("L")
@@ -57,6 +85,8 @@ class QualityGate:
             contrast_score = min(1.0, contrast)
             local_score = mean((sharpness, exposure_score, contrast_score, resolution_score))
             return {
+                "available": True,
+                "backend": "pillow",
                 "width": width,
                 "height": height,
                 "brightness": round(brightness, 6),
@@ -103,7 +133,11 @@ class QualityGate:
                 raise ValueError(f"quality scorer missing numeric {key}") from exc
 
         provider_score = mean(metrics.values())
-        overall = 0.35 * local["local_score"] + 0.65 * provider_score
+        overall = (
+            0.35 * local["local_score"] + 0.65 * provider_score
+            if local.get("local_score") is not None
+            else provider_score
+        )
         passed = overall >= self.threshold and min(
             metrics["anatomy"], metrics["face_visibility"], metrics["realism"]
         ) >= 0.65
