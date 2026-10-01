@@ -175,6 +175,14 @@ class AssetGenerator:
             **identity,
         })
 
+        self.store.record_event("quality_checked", {
+            "candidate_id": candidate_id,
+            "asset_id": asset_id,
+            "persona_id": persona["id"],
+            **quality,
+            "final_status": status,
+        })
+
         metadata = {
             "asset_id": asset_id,
             "candidate_id": candidate_id,
