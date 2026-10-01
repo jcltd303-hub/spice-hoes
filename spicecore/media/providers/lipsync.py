@@ -78,29 +78,19 @@ class MockLipSyncProvider(LipSyncProvider):
 
 
 class SyncLabsLipSyncProvider(LipSyncProvider):
-    """Real provider adapter for SyncLabs API."""
+    """Reserved real SyncLabs adapter. Fails closed until real API I/O is implemented."""
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("SYNCLABS_API_KEY", "")
 
-    def sync(
-        self,
-        video_uri: str,
-        audio_uri: str,
-        output_path: Optional[str] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
+    def _unavailable(self):
         if not self.api_key:
-            return MockLipSyncProvider().sync(video_uri, audio_uri, output_path=output_path, **kwargs)
+            raise RuntimeError("SYNCLABS_API_KEY is not configured")
+        raise RuntimeError("SyncLabs lip-sync adapter is not production-wired yet")
 
-        job_id = f"sync-{uuid.uuid4().hex[:10]}"
-        return {
-            "job_id": job_id,
-            "status": "pending",
-            "provider": "synclabs",
-            "cost_cents": 25,
-            "synced_video_path": output_path or f"/tmp/{job_id}.mp4",
-        }
+    def sync(self, video_uri: str, audio_uri: str,
+             output_path: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        self._unavailable()
 
     def status(self, job_id: str) -> Dict[str, Any]:
-        return {"job_id": job_id, "status": "completed"}
+        self._unavailable()
