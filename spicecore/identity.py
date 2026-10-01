@@ -63,12 +63,22 @@ class IdentityGate:
             score = float(result["score"])
         except (KeyError, TypeError, ValueError) as exc:
             raise ProviderError("identity scorer returned no numeric score") from exc
-        score = max(0.0, min(1.0, score))
+        metric = result.get("metric", "score")
+        if metric == "cosine":
+            score = max(-1.0, min(1.0, score))
+        else:
+            score = max(0.0, min(1.0, score))
         return {
             "scored": True,
             "score": score,
+            "metric": metric,
             "threshold": self.threshold,
             "passed": score >= self.threshold,
             "reference_count": len(references),
             "scorer": result.get("model", "media:identity"),
+            "alignment": result.get("alignment"),
+            "npu": result.get("npu"),
+            "embedding_dimensions": result.get("embedding_dimensions"),
+            "latency_ms": result.get("latency_ms"),
+            "detector_latency_ms": result.get("detector_latency_ms"),
         }
