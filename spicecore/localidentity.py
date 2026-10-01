@@ -7,8 +7,12 @@ from __future__ import annotations
 import os,shlex,shutil,subprocess
 from pathlib import Path
 
+def default_command():
+ runner=Path(__file__).resolve().parent.parent/"scripts"/"ghostv2-run"
+ return f"{runner} {{reference}} {{target}} {{output}}"
+
 def status(command=None):
- template=(command or os.environ.get("SPICE_LOCAL_IDENTITY_CMD","")).strip()
+ template=(command or os.environ.get("SPICE_LOCAL_IDENTITY_CMD","") or default_command()).strip()
  if not template:
   return {"ready":False,"reason":"SPICE_LOCAL_IDENTITY_CMD is not configured"}
  try: argv=shlex.split(template)
