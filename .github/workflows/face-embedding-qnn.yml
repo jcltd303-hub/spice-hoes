@@ -44,7 +44,7 @@ jobs:
           test -n "$QNN_INCLUDE"
           QNN_SDK_ROOT="$(dirname "$(dirname "$QNN_INCLUDE")")"
           echo "QNN_SDK_ROOT=$QNN_SDK_ROOT" >> "$GITHUB_ENV"
-          echo "PYTHONPATH=$QNN_SDK_ROOT/lib/python:$QNN_SDK_ROOT/lib/python/qti/aisw/converters:$PYTHONPATH" >> "$GITHUB_ENV"
+          echo "PYTHONPATH=$QNN_SDK_ROOT/lib/python:$PYTHONPATH" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
           echo "$QNN_SDK_ROOT/bin/x86_64-linux-clang" >> "$GITHUB_PATH"
 
