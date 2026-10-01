@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import base64
-import io
 import json
 import urllib.error
 import urllib.request
+import os
+import shutil
+import subprocess
 from statistics import mean
-
-try:
-    from PIL import Image, ImageFilter, ImageStat
-except ImportError:  # Pillow is optional; provider quality remains fully usable.
-    Image = ImageFilter = ImageStat = None
 
 
 def _post_quality(base_url: str, token: str, payload: dict) -> dict:
@@ -40,62 +37,50 @@ class QualityGate:
         self.threshold = threshold
 
     @staticmethod
-    def _header_dimensions(image_bytes: bytes) -> tuple[int | None, int | None]:
-        if image_bytes.startswith(b"\x89PNG\r\n\x1a\n") and len(image_bytes) >= 24:
-            return (
-                int.from_bytes(image_bytes[16:20], "big"),
-                int.from_bytes(image_bytes[20:24], "big"),
-            )
-        return None, None
+    def _tool_path() -> str | None:
+        configured = os.getenv("SPICE_IMAGE_TOOL", "").strip()
+        if configured:
+            return configured
+        local = os.path.join(os.getcwd(), "bin", "spiceimg")
+        if os.path.isfile(local) and os.access(local, os.X_OK):
+            return local
+        return shutil.which("spiceimg")
 
     @staticmethod
     def local_metrics(image_bytes: bytes) -> dict:
-        if Image is None:
-            width, height = QualityGate._header_dimensions(image_bytes)
-            megapixels = ((width or 0) * (height or 0)) / 1_000_000
+        tool = QualityGate._tool_path()
+        if not tool:
             return {
                 "available": False,
-                "backend": "provider-only",
-                "width": width,
-                "height": height,
+                "backend": "go-tool-missing",
+                "width": None,
+                "height": None,
                 "brightness": None,
                 "sharpness": None,
                 "contrast": None,
-                "resolution_score": round(min(1.0, megapixels / 0.7), 6) if width and height else None,
+                "resolution_score": None,
                 "exposure_score": None,
                 "local_score": None,
             }
-
-        with Image.open(io.BytesIO(image_bytes)) as image:
-            rgb = image.convert("RGB")
-            gray = rgb.convert("L")
-            stat = ImageStat.Stat(gray)
-            brightness = stat.mean[0] / 255.0
-            contrast = stat.stddev[0] / 128.0
-
-            edges = gray.filter(ImageFilter.FIND_EDGES)
-            edge_stat = ImageStat.Stat(edges)
-            sharpness = min(1.0, edge_stat.stddev[0] / 64.0)
-
-            width, height = rgb.size
-            megapixels = (width * height) / 1_000_000
-            resolution_score = min(1.0, megapixels / 0.7)
-
-            exposure_score = max(0.0, 1.0 - abs(brightness - 0.5) / 0.5)
-            contrast_score = min(1.0, contrast)
-            local_score = mean((sharpness, exposure_score, contrast_score, resolution_score))
-            return {
-                "available": True,
-                "backend": "pillow",
-                "width": width,
-                "height": height,
-                "brightness": round(brightness, 6),
-                "sharpness": round(sharpness, 6),
-                "contrast": round(contrast_score, 6),
-                "resolution_score": round(resolution_score, 6),
-                "exposure_score": round(exposure_score, 6),
-                "local_score": round(local_score, 6),
-            }
+        try:
+            proc = subprocess.run(
+                [tool, "metrics"],
+                input=image_bytes,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+                timeout=30,
+            )
+            result = json.loads(proc.stdout.decode("utf-8"))
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"go image metrics failed: {exc}") from exc
+        required = (
+            "available", "backend", "width", "height", "brightness", "sharpness",
+            "contrast", "resolution_score", "exposure_score", "local_score",
+        )
+        if not all(key in result for key in required):
+            raise RuntimeError("go image metrics returned incomplete payload")
+        return result
 
     def _provider_score(self, image_b64: str, mime_type: str, channel: str) -> dict:
         if hasattr(self.provider, "score_quality"):
