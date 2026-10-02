@@ -29,7 +29,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Restore pinned native source cache
+        id: cache-native-src
+        uses: actions/cache/restore@v4
+        with:
+          path: native-src
+          key: native-src-${{ runner.os }}-${{ env.LOCAL_DREAM_COMMIT }}
+
       - name: Fetch pinned native QNN core source
+        if: steps.cache-native-src.outputs.cache-hit != 'true'
         run: |
           git init native-src
           git -C native-src remote add origin https://github.com/jcltd303-hub/local-dream.git
@@ -48,6 +56,13 @@ jobs:
             app/src/main/cpp/3rdparty/tokenizers-cpp \
             app/src/main/cpp/3rdparty/stable-diffusion.cpp
           git -C native-src/app/src/main/cpp/3rdparty/tokenizers-cpp submodule update --init --recursive --depth 1
+
+      - name: Save pinned native source cache
+        if: steps.cache-native-src.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: native-src
+          key: native-src-${{ runner.os }}-${{ env.LOCAL_DREAM_COMMIT }}
 
       - name: Patch tokenizers for current Rust
         run: |
@@ -77,15 +92,21 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      - name: Install Android native toolchain
+      - name: Ensure Android native toolchain
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "cmake;3.31.1"
-          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          NDK="$ANDROID_HOME/ndk/28.2.13676358"
+          CMAKE="$ANDROID_HOME/cmake/3.31.1"
+          if [ ! -d "$NDK" ] || [ ! -d "$CMAKE" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "cmake;3.31.1"
+          fi
+          test -d "$NDK"
+          test -d "$CMAKE"
+          echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
 
-      - name: Cache Qualcomm AI Runtime SDK
+      - name: Restore Qualcomm AI Runtime SDK
         id: cache-qairt
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/qairt
           key: qairt-${{ runner.os }}-${{ env.QAIRT_VERSION }}
@@ -97,6 +118,14 @@ jobs:
           mkdir -p "$RUNNER_TEMP/qairt"
           curl --fail --location --retry 4 --retry-delay 5 "$QAIRT_URL" --output "$RUNNER_TEMP/qairt.zip"
           unzip -q "$RUNNER_TEMP/qairt.zip" -d "$RUNNER_TEMP/qairt"
+          rm -f "$RUNNER_TEMP/qairt.zip"
+
+      - name: Save Qualcomm AI Runtime SDK cache
+        if: steps.cache-qairt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/qairt
+          key: qairt-${{ runner.os }}-${{ env.QAIRT_VERSION }}
 
       - name: Locate Qualcomm QNN SDK and stage HTP assets
         run: |
@@ -121,15 +150,35 @@ jobs:
           done
           ls -lh native-src/app/src/main/assets/qnnlibs
 
-      - name: Install Rust Android target
+      - name: Cache Rust tokenizers build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native-src/app/src/main/cpp/3rdparty/tokenizers-cpp/target
+          key: tokenizers-rust-${{ runner.os }}-${{ env.LOCAL_DREAM_COMMIT }}-${{ hashFiles('native-src/app/src/main/cpp/3rdparty/tokenizers-cpp/rust/Cargo.lock', 'native-src/app/src/main/cpp/3rdparty/tokenizers-cpp/rust/Cargo.toml') }}
+
+      - name: Ensure Rust Android target and BFD linker
         run: |
           rustup target add aarch64-linux-android
-          sudo apt-get update
-          sudo apt-get install -y binutils
+          if ! command -v ld.bfd >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y binutils
+          fi
+          command -v ld.bfd
+
+      - name: Cache native build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            native-src/.gradle
+            native-src/app/.cxx
+          key: native-build-${{ runner.os }}-${{ env.LOCAL_DREAM_COMMIT }}-${{ env.QAIRT_VERSION }}-ndk282
 
       - name: Build pinned native core
         working-directory: native-src
-        run: ./gradlew assembleBasicDebug --no-daemon
+        run: ./gradlew assembleBasicDebug --no-daemon --build-cache
 
       - name: Extract standalone Spice QNN runtime
         run: |
