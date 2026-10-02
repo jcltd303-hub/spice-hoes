@@ -46,21 +46,42 @@ else
 fi
 
 SELECTED=""
+SELECTED_TYPE=""
+
+# Prefer a complete SDXL/QNN package when available.
 for dir in "$DEST_ROOT"/*; do
   [[ -d "$dir" ]] || continue
   ok=1
-  for required in tokenizer.json clip_v2.mnn pos_emb.bin token_emb.bin unet.bin vae_decoder.bin; do
+  for required in tokenizer.json clip.mnn clip_2.mnn pos_emb.bin pos_emb_2.bin token_emb.bin token_emb_2.bin unet.bin vae_decoder.bin; do
     [[ -s "$dir/$required" ]] || { ok=0; break; }
   done
   if (( ok )); then
     SELECTED="$dir"
+    SELECTED_TYPE="sdxl"
     break
   fi
 done
 
+# Fall back to SD15 NPU if no complete SDXL package exists.
 if [[ -z "$SELECTED" ]]; then
-  echo "Models were copied, but no complete sd15npu package was found." >&2
-  echo "Expected: tokenizer.json clip_v2.mnn pos_emb.bin token_emb.bin unet.bin vae_decoder.bin" >&2
+  for dir in "$DEST_ROOT"/*; do
+    [[ -d "$dir" ]] || continue
+    ok=1
+    for required in tokenizer.json clip_v2.mnn pos_emb.bin token_emb.bin unet.bin vae_decoder.bin; do
+      [[ -s "$dir/$required" ]] || { ok=0; break; }
+    done
+    if (( ok )); then
+      SELECTED="$dir"
+      SELECTED_TYPE="sd15npu"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$SELECTED" ]]; then
+  echo "Models were copied, but no complete SDXL or SD15-NPU package was found." >&2
+  echo "SDXL expects: tokenizer.json clip.mnn clip_2.mnn pos_emb.bin pos_emb_2.bin token_emb.bin token_emb_2.bin unet.bin vae_decoder.bin" >&2
+  echo "SD15-NPU expects: tokenizer.json clip_v2.mnn pos_emb.bin token_emb.bin unet.bin vae_decoder.bin" >&2
   exit 3
 fi
 
@@ -71,13 +92,19 @@ if [[ -f "$ENV_FILE" ]]; then
   else
     printf '\nSPICE_QNN_MODEL_DIR=%s\n' "$SELECTED" >> "$ENV_FILE"
   fi
+  if grep -q '^SPICE_QNN_TYPE=' "$ENV_FILE"; then
+    sed -i "s#^SPICE_QNN_TYPE=.*#SPICE_QNN_TYPE=$SELECTED_TYPE#" "$ENV_FILE"
+  else
+    printf 'SPICE_QNN_TYPE=%s\n' "$SELECTED_TYPE" >> "$ENV_FILE"
+  fi
 else
-  printf 'SPICE_QNN_MODEL_DIR=%s\n' "$SELECTED" > "$ENV_FILE"
+  printf 'SPICE_QNN_MODEL_DIR=%s\nSPICE_QNN_TYPE=%s\n' "$SELECTED" "$SELECTED_TYPE" > "$ENV_FILE"
 fi
 
 echo
 echo "Selected generation model:"
-echo "  $SELECTED"
+echo "  type: $SELECTED_TYPE"
+echo "  path: $SELECTED"
 echo
 echo "Updated:"
 echo "  $ENV_FILE"
