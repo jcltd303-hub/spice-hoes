@@ -17,6 +17,8 @@ class ProviderTests(unittest.TestCase):
         )
         with patch("spicecore.providers._post_json") as post:
             post.return_value = {
+                "model": "qwen/qwen3.8-27b:free",
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
                 "choices": [{"message": {"content": "OK"}}],
             }
             result = provider.chat(
@@ -35,6 +37,33 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(payload["max_tokens"], 700)
         self.assertEqual(headers["Authorization"], "Bearer key")
         self.assertEqual(headers["X-Title"], "spice-hoes")
+
+    def test_chat_detailed_records_actual_model_and_fallbacks(self):
+        provider = OpenAICompatibleChatProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="key",
+            model="primary/model",
+        )
+        with patch("spicecore.providers._post_json") as post:
+            post.return_value = {
+                "id": "gen-1",
+                "model": "fallback/model",
+                "usage": {"prompt_tokens": 12, "completion_tokens": 4},
+                "choices": [{"message": {"content": "{\"ok\":true}"}}],
+            }
+            detail = provider.chat_detailed(
+                "system",
+                "hello",
+                models=["fallback/model"],
+                reasoning_enabled=False,
+            )
+
+        self.assertEqual(detail["requested_model"], "primary/model")
+        self.assertEqual(detail["model"], "fallback/model")
+        self.assertEqual(detail["usage"]["completion_tokens"], 4)
+        payload = post.call_args.args[1]
+        self.assertEqual(payload["models"], ["primary/model", "fallback/model"])
+        self.assertEqual(payload["reasoning"], {"enabled": False})
 
     def test_embedding_provider_uses_openai_compatible_contract(self):
         provider = OpenAICompatibleEmbeddingProvider(
