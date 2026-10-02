@@ -264,6 +264,9 @@ func commandIdentityGenerate() {
         "exposure":out.Quality.ExposureScore,"resolution":out.Quality.ResolutionScore,
         "selected_attempt":out.Generation["selected_attempt"],"selected_seed":out.Generation["selected_seed"],
         "best_of_n":out.Generation["best_of_n"],"completed":out.Generation["best_of_n_completed"],
+        "selection_score":out.Generation["selection_score"],
+        "cached_refs":out.Generation["reference_embeddings_cached"],
+        "swap_source":out.Generation["faceswap_source_mode"],
         "medoid":out.Generation["faceswap_reference_medoid_path"],
     })
     write(out)
