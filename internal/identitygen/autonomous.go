@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jcltd303-hub/spice-hoes/internal/faceswap"
 	"github.com/jcltd303-hub/spice-hoes/internal/imagemetrics"
@@ -15,6 +16,7 @@ import (
 
 type AutonomousRequest struct {
 	PersonaID         string  `json:"persona_id"`
+	RunID             string  `json:"run_id,omitempty"`
 	PersonaDir        string  `json:"persona_dir,omitempty"`
 	ReferenceRoot     string  `json:"reference_root,omitempty"`
 	OutputRoot        string  `json:"output_root,omitempty"`
@@ -43,6 +45,9 @@ type PortfolioPose struct {
 type AutonomousResult struct {
 	OK                bool               `json:"ok"`
 	PersonaID         string             `json:"persona_id"`
+	RunID             string             `json:"run_id"`
+	RunRoot           string             `json:"run_root"`
+	DocumentsPath     string             `json:"documents_path,omitempty"`
 	ReferenceComplete bool               `json:"reference_complete"`
 	PortfolioComplete bool               `json:"portfolio_complete"`
 	Reference          BootstrapAllResult `json:"reference"`
@@ -58,14 +63,55 @@ func emitAuto(req AutonomousRequest, pct float64, stage string, metrics map[stri
 	if req.Progress != nil { req.Progress(ProgressEvent{Percent:pct,Stage:stage,Metrics:metrics}) }
 }
 
+func autonomousRunID(req AutonomousRequest) string {
+	if v:=strings.TrimSpace(req.RunID); v!="" {
+		return strings.Map(func(r rune) rune {
+			switch {
+			case r>='a'&&r<='z', r>='A'&&r<='Z', r>='0'&&r<='9', r=='-', r=='_':
+				return r
+			default:
+				return '-'
+			}
+		}, v)
+	}
+	return fmt.Sprintf("%s-s%d", time.Now().UTC().Format("20060102T150405Z"), req.Seed)
+}
+
+func copyAutonomousFile(src, dst string) error {
+	raw,err:=os.ReadFile(src)
+	if err!=nil { return err }
+	if err:=os.MkdirAll(filepath.Dir(dst),0o755);err!=nil{return err}
+	return os.WriteFile(dst,raw,0o644)
+}
+
+func mirrorAutonomousTree(srcRoot, dstRoot string) error {
+	return filepath.WalkDir(srcRoot,func(path string,d os.DirEntry,walkErr error) error{
+		if walkErr!=nil{return walkErr}
+		if d.IsDir(){return nil}
+		rel,err:=filepath.Rel(srcRoot,path);if err!=nil{return err}
+		return copyAutonomousFile(path,filepath.Join(dstRoot,rel))
+	})
+}
+
+func mirrorAutonomousRun(result *AutonomousResult) error {
+	docRoot:=documentsMirrorRoot()
+	if docRoot=="" { return nil }
+	dst:=filepath.Join(docRoot,result.PersonaID,"autonomous",result.RunID)
+	if err:=mirrorAutonomousTree(result.RunRoot,dst);err!=nil{return err}
+	result.DocumentsPath=dst
+	return nil
+}
+
 func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousResult, error) {
 	if strings.TrimSpace(req.PersonaID)=="" {
 		return AutonomousResult{},fmt.Errorf("persona_id is required")
 	}
 	if req.PersonaDir=="" { req.PersonaDir="personas" }
-	if req.ReferenceRoot=="" { req.ReferenceRoot=filepath.Join("data","references") }
-	if req.OutputRoot=="" { req.OutputRoot=filepath.Join("data","identity-candidates") }
-	if req.PoseOutputRoot=="" { req.PoseOutputRoot=filepath.Join("data","pose-templates") }
+	runID:=autonomousRunID(req)
+	runRoot:=filepath.Join("data","autonomous",req.PersonaID,runID)
+	if req.ReferenceRoot=="" { req.ReferenceRoot=filepath.Join(runRoot,"references") }
+	if req.OutputRoot=="" { req.OutputRoot=filepath.Join(runRoot,"candidates") }
+	if req.PoseOutputRoot=="" { req.PoseOutputRoot=filepath.Join(runRoot,"poses") }
 	if req.MaxAttempts<=0 { req.MaxAttempts=48 }
 	if req.PoseAttempts<=0 { req.PoseAttempts=4 }
 	if req.IdentityThreshold<=0 { req.IdentityThreshold=0.82 }
@@ -88,7 +134,7 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 		},
 	})
 	if err!=nil { return AutonomousResult{},err }
-	result:=AutonomousResult{PersonaID:req.PersonaID,Reference:refs,ReferenceComplete:refs.OK,SwapMode:req.SwapMode}
+	result:=AutonomousResult{PersonaID:req.PersonaID,RunID:runID,RunRoot:runRoot,Reference:refs,ReferenceComplete:refs.OK,SwapMode:req.SwapMode}
 	if !refs.OK {
 		result.OK=false
 		return result,nil
@@ -184,12 +230,18 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 	result.PortfolioSheet=filepath.Join(poseResult.OutputDir,"identity_master_9pose.png")
 	if err:=writePoseContactSheet(finalAssets,result.PortfolioSheet);err!=nil{return result,err}
 	result.OK=result.ReferenceComplete && result.PortfolioComplete
-	result.ManifestPath=filepath.Join(poseResult.OutputDir,"identity_portfolio_manifest.json")
+	result.ManifestPath=filepath.Join(runRoot,"identity_portfolio_manifest.json")
+	if err:=mirrorAutonomousRun(&result);err!=nil{return result,fmt.Errorf("mirror autonomous run: %w",err)}
 	manifest,_:=json.MarshalIndent(result,"","  ")
+	if err:=os.MkdirAll(filepath.Dir(result.ManifestPath),0o755);err!=nil{return result,err}
 	if err:=os.WriteFile(result.ManifestPath,manifest,0o644);err!=nil{return result,err}
+	if result.DocumentsPath!="" {
+		if err:=copyAutonomousFile(result.ManifestPath,filepath.Join(result.DocumentsPath,"identity_portfolio_manifest.json"));err!=nil{return result,err}
+	}
 	emitAuto(req,100,"autonomous identity complete",map[string]any{
 		"ok":result.OK,"reference_complete":result.ReferenceComplete,
 		"portfolio_complete":result.PortfolioComplete,"swap_available":result.SwapAvailable,
+		"run_id":result.RunID,"run_root":result.RunRoot,"documents":result.DocumentsPath,
 		"manifest":result.ManifestPath,
 	})
 	return result,nil
