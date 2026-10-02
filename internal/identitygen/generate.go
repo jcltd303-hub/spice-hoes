@@ -639,6 +639,22 @@ func resolveIdentityEmbedding(ctx context.Context, req *Request, p Persona) (map
 
 	client := localdream.FromEnv()
 	ok, inv, err := client.HasEmbedding(ctx, token)
+	if err == nil && !ok {
+		// The user may have just imported the safetensors file while the model
+		// was already running. Ask Local Dream to rescan its embeddings dir once.
+		if reloaded, reloadErr := client.ReloadEmbeddings(ctx); reloadErr == nil {
+			inv = reloaded
+			meta["identity_embedding_reloaded"] = true
+			for _, name := range inv.Names {
+				if strings.EqualFold(strings.TrimSpace(name), token) {
+					ok = true
+					break
+				}
+			}
+		} else {
+			meta["identity_embedding_reload_error"] = reloadErr.Error()
+		}
+	}
 	if err != nil {
 		meta["identity_embedding_probe_error"] = err.Error()
 		if req.RequireIdentityEmbedding {
