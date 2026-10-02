@@ -231,7 +231,7 @@ func arcEmbeddingImage(ctx context.Context, m *nativecore.Manager, img image.Ima
 	if err != nil { return nil, alignment, fmt.Errorf("prepare SCRFD input: %w", err) }
 	outputs, _, err := m.Detect(ctx, prep.Tensor)
 	if err != nil { return nil, alignment, fmt.Errorf("SCRFD detection failed: %w", err) }
-	faces, err := ident.DecodeSCRFD(outputs, prep, 0.5, 0.4)
+	faces, err := ident.DecodeSCRFD(outputs, prep, ident.SCRFDThreshold(0.5), 0.4)
 	if err != nil || len(faces) == 0 {
 		if err == nil { err = fmt.Errorf("no face detected") }
 		return nil, alignment, fmt.Errorf("SCRFD landmarks unavailable: %w", err)
