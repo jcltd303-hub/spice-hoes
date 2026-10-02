@@ -1,0 +1,59 @@
+name: train-celeste-textual-inversion
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_model:
+        description: Hugging Face model id or local path visible to the GPU runner
+        required: true
+        default: stable-diffusion-v1-5/stable-diffusion-v1-5
+      steps:
+        description: Training steps
+        required: true
+        default: "2000"
+      vectors:
+        description: Vectors per trigger token
+        required: true
+        default: "4"
+
+permissions:
+  contents: read
+
+jobs:
+  train:
+    runs-on: [self-hosted, linux, x64, gpu]
+    timeout-minutes: 180
+    env:
+      BASE_MODEL: ${{ inputs.base_model }}
+      STEPS: ${{ inputs.steps }}
+      VECTORS: ${{ inputs.vectors }}
+      PERSONA: celeste_vale
+      TOKEN: cvceleste
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python environment
+        run: |
+          python3 -m venv .venv-ti
+          . .venv-ti/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r requirements-textual-inversion.txt
+          accelerate config default
+
+      - name: Verify reference pack
+        run: |
+          . .venv-ti/bin/activate
+          python scripts/prepare-textual-inversion.py             --persona celeste_vale             --token cvceleste
+
+      - name: Train textual inversion
+        run: |
+          . .venv-ti/bin/activate
+          bash scripts/train-textual-inversion.sh
+
+      - name: Upload Local Dream embedding
+        uses: actions/upload-artifact@v4
+        with:
+          name: cvceleste-textual-inversion
+          path: artifacts/embeddings/cvceleste.safetensors
+          if-no-files-found: error
+          retention-days: 30
