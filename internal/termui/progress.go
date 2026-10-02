@@ -76,6 +76,15 @@ func (s *Spinner) SetMetrics(values map[string]any) {
 	s.mu.Unlock()
 }
 
+func (s *Spinner) ReplaceMetrics(values map[string]any) {
+	s.mu.Lock()
+	s.metrics = map[string]string{}
+	for k, v := range values {
+		if strings.TrimSpace(k) != "" { s.metrics[k] = fmt.Sprint(v) }
+	}
+	s.mu.Unlock()
+}
+
 func (s *Spinner) snapshot() (string, string, float64, map[string]string, time.Duration) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
