@@ -266,7 +266,10 @@ func commandIdentityGenerate() {
         "best_of_n":out.Generation["best_of_n"],"completed":out.Generation["best_of_n_completed"],
         "selection_score":out.Generation["selection_score"],
         "cached_refs":out.Generation["reference_embeddings_cached"],
+        "embedding_token":out.Generation["identity_embedding_token"],
+        "embedding_loaded":out.Generation["identity_embedding_loaded"],
         "swap_source":out.Generation["faceswap_source_mode"],
+        "swap_trials":out.Generation["faceswap_trials"],
         "medoid":out.Generation["faceswap_reference_medoid_path"],
     })
     write(out)
