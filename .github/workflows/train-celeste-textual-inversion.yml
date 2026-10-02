@@ -15,6 +15,10 @@ on:
         description: Vectors per trigger token
         required: true
         default: "4"
+      reference_dir:
+        description: Absolute path to Celeste's verified refs on the self-hosted GPU runner
+        required: true
+        default: /opt/spice-references/celeste_vale
 
 permissions:
   contents: read
@@ -29,6 +33,7 @@ jobs:
       VECTORS: ${{ inputs.vectors }}
       PERSONA: celeste_vale
       TOKEN: cvceleste
+      REFERENCE_DIR: ${{ inputs.reference_dir }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +48,8 @@ jobs:
       - name: Verify reference pack
         run: |
           . .venv-ti/bin/activate
-          python scripts/prepare-textual-inversion.py             --persona celeste_vale             --token cvceleste
+          test -d "$REFERENCE_DIR"
+          python scripts/prepare-textual-inversion.py             --persona celeste_vale             --token cvceleste             --reference-dir "$REFERENCE_DIR"
 
       - name: Train textual inversion
         run: |
