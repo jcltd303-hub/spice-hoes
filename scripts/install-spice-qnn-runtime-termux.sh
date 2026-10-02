@@ -54,3 +54,11 @@ echo "Installed Spice QNN runtime:"
 echo "  $ROOT/runtime/bin/spice-qnn-core"
 echo "  $ROOT/runtime/lib/"
 echo "Source run: $RUN_ID"
+
+
+# Keep the standalone Spice runtime self-contained for identity-aware generation.
+if [[ -x "$ROOT/scripts/install-face-embedding-termux.sh" ]]; then
+  echo
+  echo "Installing latest face detector/embedding artifacts..."
+  "$ROOT/scripts/install-face-embedding-termux.sh"
+fi
