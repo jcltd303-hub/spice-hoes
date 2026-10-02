@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST_ROOT="${1:-$HOME/spice-models}"
-MODEL_NAME="${SPICE_QNN_MODEL_NAME:-intorealism_ultra_v11}"
-ZIP_NAME="${SPICE_QNN_MODEL_ZIP:-intorealism_ultra_v11_qnn2.28_8gen3.zip}"
+MODEL_NAME="${SPICE_QNN_MODEL_NAME:-cyber_realistic_v10}"
+ZIP_NAME="${SPICE_QNN_MODEL_ZIP:-cyber_realistic_v10_qnn2.28_8gen3.zip}"
 HF_REPO="${SPICE_QNN_HF_REPO:-xororz/sdxl-qnn}"
 HF_REV="${SPICE_QNN_HF_REV:-7b72d4b5c7dcbbb674798c2640aac6697b5f0c33}"
 URL="https://huggingface.co/${HF_REPO}/resolve/${HF_REV}/${ZIP_NAME}"
