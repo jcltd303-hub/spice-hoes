@@ -476,16 +476,16 @@ func rankedReferenceEmbeddings(refs []referenceEmbedding) []referenceEmbedding {
 }
 
 func betterIdentityQuality(a IdentityResult, aq imagemetrics.Metrics, b IdentityResult, bq imagemetrics.Metrics, qualityThreshold float64) bool {
-	aPass := a.Passed && aq.LocalScore >= qualityThreshold
-	bPass := b.Passed && bq.LocalScore >= qualityThreshold
-	if aPass != bPass { return aPass }
+	// Identity is a hard constraint. Quality cannot compensate for a weaker face.
+	aQualityPass := aq.LocalScore >= qualityThreshold
+	bQualityPass := bq.LocalScore >= qualityThreshold
+	aAccepted := a.Passed && aQualityPass
+	bAccepted := b.Passed && bQualityPass
+	if aAccepted != bAccepted { return aAccepted }
 	if a.Passed != b.Passed { return a.Passed }
-	// Identity remains primary, but allow a substantial quality advantage to break near-ties.
-	if math.Abs(a.Score-b.Score) <= 0.015 && aq.LocalScore != bq.LocalScore {
-		return aq.LocalScore > bq.LocalScore
-	}
 	if a.Score != b.Score { return a.Score > b.Score }
 	if a.MeanScore != b.MeanScore { return a.MeanScore > b.MeanScore }
+	if aQualityPass != bQualityPass { return aQualityPass }
 	return aq.LocalScore > bq.LocalScore
 }
 
@@ -743,13 +743,9 @@ func betterResult(a, b Result) bool {
 	bAccepted := b.Identity.Passed && b.QualityPassed
 	if aAccepted != bAccepted { return aAccepted }
 	if a.Identity.Passed != b.Identity.Passed { return a.Identity.Passed }
-	if a.QualityPassed != b.QualityPassed && a.Identity.Score >= b.Identity.Score*0.98 {
-		return a.QualityPassed
-	}
-	as := candidateSelectionScore(a)
-	bs := candidateSelectionScore(b)
-	if as != bs { return as > bs }
 	if a.Identity.Score != b.Identity.Score { return a.Identity.Score > b.Identity.Score }
+	if a.Identity.MeanScore != b.Identity.MeanScore { return a.Identity.MeanScore > b.Identity.MeanScore }
+	if a.QualityPassed != b.QualityPassed { return a.QualityPassed }
 	return a.Quality.LocalScore > b.Quality.LocalScore
 }
 
@@ -830,7 +826,7 @@ func runSingleAttempt(
 				mode string
 				sourceIndex int
 			}
-			swapCandidates := make([]swapCandidate, 0, 3)
+			swapCandidates := make([]swapCandidate, 0, len(rankedSources)+1)
 
 			tryEmbedding := func(vec []float64, mode string, sourceIndex int) {
 				if len(vec) != 512 { return }
@@ -839,19 +835,20 @@ func runSingleAttempt(
 				idResult := scoreIdentityImageCached(ctx, m, swappedImg, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
 				if !idResult.Scored { return }
 				q, qErr := imagemetrics.AnalyzeImage(swappedImg)
-				if qErr != nil { return }
+				if qErr != nil || q.LocalScore < req.QualityThreshold { return }
+				// Never accept a transfer that regresses either identity metric.
+				if preSwapIdentity.Scored && (idResult.Score < preSwapIdentity.Score || idResult.MeanScore < preSwapIdentity.MeanScore) { return }
 				swapCandidates = append(swapCandidates, swapCandidate{
 					img:swappedImg, meta:meta, identity:idResult, quality:q, mode:mode, sourceIndex:sourceIndex,
 				})
 			}
 
-			// Test the two most central real references first; these preserve
-			// concrete identity better than an averaged centroid in current runs.
-			for i, ref := range rankedSources {
-				if i >= 2 { break }
-				tryEmbedding(ref.vec, "reference_ranked", ref.index)
+			// Test every usable real reference independently. A single medoid or
+			// centroid can hide a much stronger source for this particular target.
+			for _, ref := range rankedSources {
+				tryEmbedding(ref.vec, "reference_individual", ref.index)
 			}
-			// Also test the centroid as a diversity candidate.
+			// Also test the centroid as a final diversity candidate.
 			if len(centroidEmbedding) == 512 {
 				tryEmbedding(centroidEmbedding, "reference_centroid", -1)
 			}
@@ -1021,7 +1018,7 @@ func refineAttemptWithFaceSwap(
 		sourceIndex int
 	}
 	m := nativecore.FromEnv()
-	candidates := make([]swapCandidate, 0, 3)
+	candidates := make([]swapCandidate, 0, len(rankedSources)+1)
 
 	tryEmbedding := func(vec []float64, mode string, sourceIndex int) {
 		if len(vec) != 512 { return }
@@ -1030,15 +1027,16 @@ func refineAttemptWithFaceSwap(
 		idResult := scoreIdentityImageCached(ctx, m, swapped, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
 		if !idResult.Scored { return }
 		q, qErr := imagemetrics.AnalyzeImage(swapped)
-		if qErr != nil { return }
+		if qErr != nil || q.LocalScore < req.QualityThreshold { return }
+		// The original candidate is the floor: a transfer may not lower max or mean identity.
+		if result.Identity.Scored && (idResult.Score < result.Identity.Score || idResult.MeanScore < result.Identity.MeanScore) { return }
 		candidates = append(candidates, swapCandidate{
 			img:swapped, meta:meta, identity:idResult, quality:q, mode:mode, sourceIndex:sourceIndex,
 		})
 	}
 
-	for i, ref := range rankedSources {
-		if i >= 2 { break }
-		tryEmbedding(ref.vec, "reference_ranked", ref.index)
+	for _, ref := range rankedSources {
+		tryEmbedding(ref.vec, "reference_individual", ref.index)
 	}
 	if len(centroidEmbedding) == 512 {
 		tryEmbedding(centroidEmbedding, "reference_centroid", -1)
@@ -1285,7 +1283,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	best.Generation["stop_on_accept"] = stopOnAccept
 	best.Generation["reference_embeddings_cached"] = len(refEmbeddings)
 	best.Generation["reference_centroid_dimensions"] = len(centroidEmbedding)
-	best.Generation["swap_source_candidates"] = minInt(3, len(rankedSources)+1)
+	best.Generation["swap_source_candidates"] = len(rankedSources)+1
 	best.Generation["swap_top_k"] = req.SwapTopK
 	best.Generation["two_stage_preselection"] = true
 	best.Generation["selection_score"] = candidateSelectionScore(best)
