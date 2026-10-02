@@ -16,8 +16,8 @@ permissions:
 
 env:
   LOCAL_DREAM_COMMIT: "59b99bb9040645a7fa970e6c628a27500fed8a2a"
-  QAIRT_VERSION: "2.28.0.241029"
-  QAIRT_URL: "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.28.0.241029/v2.28.0.241029.zip"
+  QAIRT_VERSION: "2.50.40.260831"
+  QAIRT_URL: "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.50.40.260831/v2.50.40.260831.zip"
   CARGO_BUILD_JOBS: "1"
   CARGO_INCREMENTAL: "0"
   RUSTFLAGS: "-C link-arg=-fuse-ld=bfd"
