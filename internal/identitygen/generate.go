@@ -285,34 +285,49 @@ func loadReferences(root, personaID string) ([][]byte, error) {
 	return out, nil
 }
 
-func selectBestReference(ctx context.Context, m *nativecore.Manager, generated image.Image, refs [][]byte) ([]byte, float64, error) {
+func selectCanonicalReference(ctx context.Context, m *nativecore.Manager, refs [][]byte) ([]byte, float64, error) {
 	if len(refs) == 0 {
 		return nil, 0, fmt.Errorf("no identity references")
 	}
-	genVec, _, err := arcEmbeddingImage(ctx, m, generated)
-	if err != nil {
-		return nil, 0, fmt.Errorf("candidate embedding: %w", err)
+	type embeddedRef struct {
+		index int
+		vec   []float64
 	}
-	bestIndex := -1
-	bestScore := -2.0
+	embedded := make([]embeddedRef, 0, len(refs))
 	for i, ref := range refs {
-		refVec, _, err := arcEmbedding(ctx, m, ref)
+		vec, _, err := arcEmbedding(ctx, m, ref)
 		if err != nil {
 			continue
 		}
-		score, err := ident.Cosine(genVec, refVec)
-		if err != nil {
-			continue
-		}
-		if bestIndex < 0 || score > bestScore {
-			bestIndex = i
-			bestScore = score
-		}
+		embedded = append(embedded, embeddedRef{index:i, vec:vec})
 	}
-	if bestIndex < 0 {
+	if len(embedded) == 0 {
 		return nil, 0, fmt.Errorf("no reference embedding succeeded")
 	}
-	return refs[bestIndex], bestScore, nil
+	if len(embedded) == 1 {
+		return refs[embedded[0].index], 1, nil
+	}
+
+	best := 0
+	bestMean := -2.0
+	for i := range embedded {
+		sum := 0.0
+		count := 0
+		for j := range embedded {
+			if i == j { continue }
+			score, err := ident.Cosine(embedded[i].vec, embedded[j].vec)
+			if err != nil { continue }
+			sum += score
+			count++
+		}
+		if count == 0 { continue }
+		mean := sum / float64(count)
+		if mean > bestMean {
+			best = i
+			bestMean = mean
+		}
+	}
+	return refs[embedded[best].index], bestMean, nil
 }
 
 func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated image.Image, refs [][]byte, threshold float64) IdentityResult {
@@ -561,7 +576,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		cfg := faceswap.ConfigFromEnv()
 		if faceswap.Available(cfg) {
 			emitProgress(req, 72, "identity face transfer", map[string]any{"references":len(refs)})
-			sourceRef, sourceScore, selectErr := selectBestReference(ctx, m, frame.Image, refs)
+			sourceRef, sourceScore, selectErr := selectCanonicalReference(ctx, m, refs)
 			if selectErr != nil {
 				out["faceswap_applied"] = false
 				out["faceswap_reason"] = selectErr.Error()
@@ -591,7 +606,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 							out["faceswap_model"] = swapMeta.Model
 							out["faceswap_alignment"] = swapMeta.Alignment
 							out["faceswap_target_score"] = swapMeta.TargetScore
-							out["faceswap_source_score"] = sourceScore
+							out["faceswap_reference_medoid_score"] = sourceScore
 						}
 					}
 				}
