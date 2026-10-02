@@ -6,13 +6,23 @@ def parse_nums(s, cast=float):
     return [cast(x.strip()) for x in s.split(",") if x.strip()]
 
 def score_row(r):
+    # Diagnostic only. Ranking is lexicographic via rank_key() so quality
+    # can never compensate for a weaker identity.
     ident=float(r.get("identity_score") or 0)
     mean=float(r.get("identity_mean") or 0)
     qual=float(r.get("quality_score") or 0)
-    runtime=float(r.get("runtime_sec") or 0)
-    pass_bonus=1.0 if r.get("accepted") else 0.0
-    # Identity dominates; runtime is only a light tie-breaker.
-    return pass_bonus + 0.55*ident + 0.25*mean + 0.20*qual - min(runtime/3600.0,1.0)*0.01
+    return 0.70*ident + 0.20*mean + 0.10*qual
+
+def rank_key(r):
+    return (
+        1 if r.get("accepted") else 0,
+        1 if r.get("identity_pass") else 0,
+        float(r.get("identity_score") or 0),
+        float(r.get("identity_mean") or 0),
+        1 if r.get("quality_pass") else 0,
+        float(r.get("quality_score") or 0),
+        -float(r.get("runtime_sec") or 0),
+    )
 
 def run_one(bin_path, req, timeout):
     started=time.time()
@@ -58,12 +68,12 @@ def main():
     ap.add_argument("--scene",default="")
     ap.add_argument("--style",default="photorealistic")
     ap.add_argument("--seed",type=int,default=424242)
-    ap.add_argument("--guidance",default="5.5,6.5,7.0,7.5,8.5")
-    ap.add_argument("--steps",default="16,20,24,28")
-    ap.add_argument("--embedding-weight",default="0.95,1.05,1.10,1.20")
-    ap.add_argument("--swap-top-k",default="1,2,3")
-    ap.add_argument("--stage1-best-of-n",type=int,default=1)
-    ap.add_argument("--stage2-best-of-n",type=int,default=4)
+    ap.add_argument("--guidance",default="6.0,6.5,7.0")
+    ap.add_argument("--steps",default="20,22,24")
+    ap.add_argument("--embedding-weight",default="1.05,1.10,1.15")
+    ap.add_argument("--swap-top-k",default="2,4,8")
+    ap.add_argument("--stage1-best-of-n",type=int,default=4)
+    ap.add_argument("--stage2-best-of-n",type=int,default=8)
     ap.add_argument("--stage1-keep",type=int,default=6)
     ap.add_argument("--stage2-keep",type=int,default=3)
     ap.add_argument("--timeout",type=int,default=1800)
@@ -109,7 +119,7 @@ def main():
         (root/f"run-{run_no:03d}.json").write_text(json.dumps({"request":req,"result":result},indent=2)+"\n")
 
     stage1_ok=[r for r in stage1 if r.get("ok")]
-    stage1_ok.sort(key=lambda r:r["sweep_score"],reverse=True)
+    stage1_ok.sort(key=rank_key,reverse=True)
     finalists=stage1_ok[:args.stage1_keep]
 
     # Stage 2: refine the best guidance/embedding pairs across steps and swap budget.
@@ -134,7 +144,7 @@ def main():
             (root/f"run-{run_no:03d}.json").write_text(json.dumps({"request":req,"result":result},indent=2)+"\n")
 
     ranked=[r for r in rows if r.get("ok")]
-    ranked.sort(key=lambda r:r["sweep_score"],reverse=True)
+    ranked.sort(key=rank_key,reverse=True)
 
     fields=["rank","stage","run","guidance","steps","embedding_weight","swap_top_k","best_of_n","identity_score","identity_mean","quality_score","accepted","runtime_sec","sweep_score","status","selected_seed","swap_source","swap_trials","asset_path","metadata_path","error"]
     with (root/"leaderboard.csv").open("w",newline="") as f:
