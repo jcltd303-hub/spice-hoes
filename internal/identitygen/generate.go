@@ -342,6 +342,22 @@ func embedReferences(ctx context.Context, m *nativecore.Manager, refs [][]byte) 
 	return out
 }
 
+func referenceCentroid(refs []referenceEmbedding) ([]float64, error) {
+	if len(refs) == 0 { return nil, fmt.Errorf("no reference embeddings") }
+	dim := len(refs[0].vec)
+	if dim == 0 { return nil, fmt.Errorf("empty reference embedding") }
+	out := make([]float64, dim)
+	count := 0
+	for _, ref := range refs {
+		if len(ref.vec) != dim { continue }
+		for i, v := range ref.vec { out[i] += v }
+		count++
+	}
+	if count == 0 { return nil, fmt.Errorf("no compatible reference embeddings") }
+	for i := range out { out[i] /= float64(count) }
+	return ident.Normalize(out), nil
+}
+
 func scoreIdentityImageCached(ctx context.Context, m *nativecore.Manager, generated image.Image, refs []referenceEmbedding, threshold, meanThreshold float64) IdentityResult {
 	result := IdentityResult{
 		Threshold: threshold,
@@ -631,6 +647,7 @@ func runSingleAttempt(
 	p Persona,
 	refs [][]byte,
 	refEmbeddings []referenceEmbedding,
+	centroidEmbedding []float64,
 	canonicalRef []byte,
 	medoidScore float64,
 	medoidPath string,
@@ -684,18 +701,34 @@ func runSingleAttempt(
 			emitProgress(req, 72, "identity face transfer", map[string]any{
 				"attempt":attemptIndex, "best_of_n":attemptTotal, "references":len(refs),
 			})
-			swapped, swapMeta, swapErr := swapper.Swap(ctx, canonicalRef, imageBytes)
+			var swappedImg image.Image
+			var swapMeta faceswap.Meta
+			var swapErr error
+			if len(centroidEmbedding) == 512 {
+				swappedImg, swapMeta, swapErr = swapper.SwapImageWithEmbedding(ctx, centroidEmbedding, frame.Image)
+				out["faceswap_source_mode"] = "reference_centroid"
+			} else {
+				var swapped []byte
+				swapped, swapMeta, swapErr = swapper.Swap(ctx, canonicalRef, imageBytes)
+				if swapErr == nil {
+					swappedImg, _, swapErr = image.Decode(bytes.NewReader(swapped))
+				}
+				out["faceswap_source_mode"] = "reference_medoid"
+			}
 			if swapErr != nil {
 				out["faceswap_applied"] = false
 				out["faceswap_reason"] = swapErr.Error()
+			} else if swappedImg == nil {
+				out["faceswap_applied"] = false
+				out["faceswap_reason"] = "face swap returned no image"
 			} else {
-				swappedImg, _, decodeErr := image.Decode(bytes.NewReader(swapped))
-				if decodeErr != nil {
+				frame = generatedFrame{Image: swappedImg}
+				imageBytes, swapErr = encodeFramePNG(frame)
+				if swapErr != nil {
 					out["faceswap_applied"] = false
-					out["faceswap_reason"] = "decode swapped image: " + decodeErr.Error()
+					out["faceswap_reason"] = "encode swapped image: " + swapErr.Error()
 				} else {
-					frame = generatedFrame{Image: swappedImg, Encoded: swapped}
-					imageBytes = swapped
+					frame.Encoded = imageBytes
 					if err := os.WriteFile(assetPath, imageBytes, 0o644); err != nil {
 						return Result{}, fmt.Errorf("write swapped artifact: %w", err)
 					}
@@ -833,6 +866,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 
 	m := nativecore.FromEnv()
 	refEmbeddings := embedReferences(ctx, m, refs)
+	centroidEmbedding, _ := referenceCentroid(refEmbeddings)
 	var canonicalRef []byte
 	canonicalRefPath := ""
 	medoidScore := 0.0
@@ -863,7 +897,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		attemptIndex := i + 1
 
 		result, attemptErr := runSingleAttempt(
-			ctx, attemptReq, p, refs, refEmbeddings, canonicalRef, medoidScore, canonicalRefPath, swapper, attemptIndex, req.BestOfN,
+			ctx, attemptReq, p, refs, refEmbeddings, centroidEmbedding, canonicalRef, medoidScore, canonicalRefPath, swapper, attemptIndex, req.BestOfN,
 		)
 		if attemptErr != nil {
 			attempts = append(attempts, AttemptSummary{
@@ -915,6 +949,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	best.Generation["selected_seed"] = attempts[bestIndex].Seed
 	best.Generation["stop_on_accept"] = stopOnAccept
 	best.Generation["reference_embeddings_cached"] = len(refEmbeddings)
+	best.Generation["reference_centroid_dimensions"] = len(centroidEmbedding)
 	best.Generation["selection_score"] = candidateSelectionScore(best)
 
 	best.Batch = &BatchSummary{
