@@ -198,12 +198,12 @@ func (c *Client) Generate(ctx context.Context, in GenerateRequest) (GenerateResu
 		if err != nil {
 			return GenerateResult{}, fmt.Errorf("decode local dream image: %w", err)
 		}
-		frame, encoded, mime, err := decodeImagePayload(img, obj)
+		frame, encodedBytes, mime, err := decodeImagePayload(img, obj)
 		if err != nil {
 			return GenerateResult{}, err
 		}
 		obj["backend"] = "local-dream"
-		return GenerateResult{Frame: frame, Encoded: encoded, MIME: mime, Generation: obj}, nil
+		return GenerateResult{Frame: frame, Encoded: encodedBytes, MIME: mime, Generation: obj}, nil
 	}
 	if err := scanner.Err(); err != nil {
 		return GenerateResult{}, err
