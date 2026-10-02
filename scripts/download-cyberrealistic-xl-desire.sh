@@ -97,6 +97,12 @@ echo
 echo "Updated $ENV_FILE:"
 echo "  SPICE_QNN_TYPE=sdxl"
 echo "  SPICE_QNN_MODEL_DIR=$MODEL_DIR"
+
+# A previously-running face-only core will remain healthy on the same port but
+# does not expose /generate. Stop it so the next spicemedia command restarts
+# the native core with the newly installed SDXL model.
+pkill -f 'spice-qnn-core' >/dev/null 2>&1 || true
+pkill -f 'stable_diffusion_core' >/dev/null 2>&1 || true
 echo
 echo "Reload and verify:"
 echo "  set -a; source .env.spicemedia; set +a"
