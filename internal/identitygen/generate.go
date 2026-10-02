@@ -608,6 +608,16 @@ func runSingleAttempt(
 	if err != nil { return Result{}, fmt.Errorf("encode generated artifact: %w", err) }
 	if err := os.WriteFile(assetPath, imageBytes, 0o644); err != nil { return Result{}, err }
 
+	preSwapFrame := frame
+	preSwapBytes := append([]byte(nil), imageBytes...)
+	preSwapIdentity := IdentityResult{}
+	if len(refs) > 0 {
+		preSwapIdentity = scoreIdentityImage(ctx, m, frame.Image, refs, req.IdentityThreshold, req.IdentityMeanThreshold)
+		out["identity_pre_swap_score"] = preSwapIdentity.Score
+		out["identity_pre_swap_mean"] = preSwapIdentity.MeanScore
+		out["identity_pre_swap_scored"] = preSwapIdentity.Scored
+	}
+
 	if len(refs) > 0 {
 		if swapper != nil && len(canonicalRef) > 0 {
 			emitProgress(req, 72, "identity face transfer", map[string]any{
@@ -649,6 +659,22 @@ func runSingleAttempt(
 		"references":len(refs), "identity_threshold":req.IdentityThreshold,
 	})
 	identity := scoreIdentityImage(ctx, m, frame.Image, refs, req.IdentityThreshold, req.IdentityMeanThreshold)
+	if applied, _ := out["faceswap_applied"].(bool); applied && preSwapIdentity.Scored && identity.Scored && identity.Score < preSwapIdentity.Score {
+		out["faceswap_reverted"] = true
+		out["faceswap_revert_reason"] = fmt.Sprintf("post-swap identity %.6f below pre-swap %.6f", identity.Score, preSwapIdentity.Score)
+		out["identity_post_swap_score"] = identity.Score
+		out["identity_post_swap_mean"] = identity.MeanScore
+		frame = preSwapFrame
+		imageBytes = preSwapBytes
+		identity = preSwapIdentity
+		if err := os.WriteFile(assetPath, imageBytes, 0o644); err != nil {
+			return Result{}, fmt.Errorf("restore pre-swap artifact: %w", err)
+		}
+	} else if applied {
+		out["faceswap_reverted"] = false
+		out["identity_post_swap_score"] = identity.Score
+		out["identity_post_swap_mean"] = identity.MeanScore
+	}
 
 	emitProgress(req, 88, "image quality analysis", map[string]any{
 		"attempt":attemptIndex, "best_of_n":attemptTotal,
