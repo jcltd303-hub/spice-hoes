@@ -12,25 +12,14 @@ mkdir -p bin
 go build -trimpath -ldflags="-s -w" -o bin/spiceimg ./cmd/spiceimg
 go build -trimpath -ldflags="-s -w" -o bin/spicemedia ./cmd/spicemedia
 
-echo "[2/5] Finding latest successful QNN runtime build"
-RUN_ID="$(gh run list -R jcltd303-hub/spice-hoes --workflow "Build Spice QNN Runtime" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
-if [[ -z "$RUN_ID" || "$RUN_ID" == "null" ]]; then
-  echo "No successful Build Spice QNN Runtime run exists yet." >&2
-  exit 1
-fi
+echo "[2/5] Reusing compiled QNN runtime from local-dream"
+bash scripts/install-local-dream-runtime.sh
 
-echo "[3/5] Downloading runtime from run $RUN_ID"
-rm -rf runtime .runtime-download
-mkdir -p .runtime-download
-gh run download "$RUN_ID" -R jcltd303-hub/spice-hoes -n spice-qnn-runtime-arm64 -D .runtime-download
-if [[ -d .runtime-download/runtime ]]; then
-  mv .runtime-download/runtime runtime
-else
-  mkdir -p runtime
-  cp -a .runtime-download/. runtime/
-fi
-rm -rf .runtime-download
+echo "[3/5] Verifying reused native runtime"
 chmod +x runtime/bin/spice-qnn-core bin/spicemedia bin/spiceimg
+test -s runtime/bin/spice-qnn-core
+test -s runtime/lib/libQnnHtp.so
+test -s runtime/lib/libQnnSystem.so
 
 echo "[4/5] Installing face detector/embedding models when available"
 FACE_RUN="$(gh run list -R jcltd303-hub/spice-hoes --workflow "Build Face Embedding QNN" --status success --limit 1 --json databaseId --jq '.[0].databaseId' || true)"
