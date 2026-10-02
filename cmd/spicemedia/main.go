@@ -66,7 +66,12 @@ func commandGenerate() {
     mime:="image/png"; if format=="jpeg" || format=="jpg" { mime="image/jpeg" }
     response:=map[string]any{"image_base64":img,"mime_type":mime,"model":"spicemedia:qnn","backend":"go-managed-qnn"}
     for _,k:=range []string{"seed","width","height","channels","generation_time_ms","first_step_time_ms"} { if v,ok:=out[k]; ok { response[k]=v } }
-    finish("generation metrics",response)
+    finish("generation metrics",map[string]any{
+        "backend":"go-managed-qnn","model":"spicemedia:qnn","format":format,
+        "seed":out["seed"],"size":fmt.Sprintf("%vx%v",out["width"],out["height"]),
+        "channels":out["channels"],"generation_time_ms":out["generation_time_ms"],
+        "first_step_time_ms":out["first_step_time_ms"],
+    })
     write(response)
 }
 
