@@ -29,5 +29,17 @@ echo "Installed:"
 echo "  $ROOT/models/face/arcface_w600k_r50.bin"
 echo "  $ROOT/models/face/scrfd_10g.bin"
 echo
-echo "export SPICE_FACE_EMBED_MODEL='$ROOT/models/face/arcface_w600k_r50.bin'"
-echo "export SPICE_FACE_DETECT_MODEL='$ROOT/models/face/scrfd_10g.bin'"
+ENV_FILE="$ROOT/.env"
+[[ -f "$ENV_FILE" ]] || cp "$ROOT/.env.example" "$ENV_FILE"
+for entry in \
+  "SPICE_FACE_EMBED_MODEL=$ROOT/models/face/arcface_w600k_r50.bin" \
+  "SPICE_FACE_DETECT_MODEL=$ROOT/models/face/scrfd_10g.bin"
+do
+  key="${entry%%=*}"
+  if grep -qE "^${key}=" "$ENV_FILE"; then
+    sed -i "s|^${key}=.*$|${entry}|" "$ENV_FILE"
+  else
+    printf '%s\n' "$entry" >> "$ENV_FILE"
+  fi
+done
+echo "Updated $ENV_FILE with face detector/embedding paths."
