@@ -28,6 +28,8 @@ physical:
     - natural full lips
     - small beauty mark on left cheek
 identity_reference:
+  embedding_token: cvceleste
+  embedding_weight: 1.10
   body_prompt: tall statuesque lithe athletic-curvy adult woman, very long legs, elongated torso, flat toned abdomen, narrow waist, naturally fuller bust, sculpted rounded glutes, elegant posture, realistic proportions
   wardrobe_mode: neutral minimal reference clothing; wardrobe is never part of identity lock
   hair_mode: espresso-brown collarbone-length softly wavy hair with face unobscured
