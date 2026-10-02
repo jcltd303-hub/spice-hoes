@@ -26,6 +26,19 @@ if [[ "$GENERATOR" == "local-dream" ]]; then
   export LOCAL_DREAM_URL
 fi
 
+if [[ "$SWAP_MODE" != "disabled" ]]; then
+  INSWAPPER_PATH="${SPICE_INSWAPPER_MODEL:-$ROOT/models/face/inswapper_128.onnx}"
+  ORT_PATH="${SPICE_ONNXRUNTIME_LIB:-$ROOT/runtime/lib/libonnxruntime.so}"
+  if [[ ! -s "$INSWAPPER_PATH" || ! -s "$ORT_PATH" ]]; then
+    echo "InSwapper runtime assets missing; installing..."
+    bash "$ROOT/scripts/install-inswapper-termux.sh"
+    set -a
+    # shellcheck disable=SC1091
+    source "$ROOT/.env"
+    set +a
+  fi
+fi
+
 if [[ ! -x "$ROOT/bin/spicemedia" ]] || [[ "$ROOT/cmd/spicemedia/main.go" -nt "$ROOT/bin/spicemedia" ]]; then
   echo "Building Go-only spicemedia..."
   go mod tidy
