@@ -104,6 +104,7 @@ type Request struct {
 	IdentityEmbeddingWeight float64 `json:"identity_embedding_weight,omitempty"`
 	RequireIdentityEmbedding bool `json:"require_identity_embedding,omitempty"`
 	BestOfN           int      `json:"best_of_n,omitempty"`
+	SwapTopK          int      `json:"swap_top_k,omitempty"`
 	StopOnAccept      *bool    `json:"stop_on_accept,omitempty"`
 	SaveAllAttempts   *bool    `json:"save_all_attempts,omitempty"`
 	Progress          func(ProgressEvent) `json:"-"`
@@ -976,6 +977,150 @@ func runSingleAttempt(
 	return result, nil
 }
 
+func summarizeAttempt(index int, seed int64, result Result) AttemptSummary {
+	return AttemptSummary{
+		Index:index,
+		Seed:seed,
+		Status:result.Status,
+		AssetPath:result.AssetPath,
+		MetadataPath:result.MetadataPath,
+		IdentityScore:result.Identity.Score,
+		IdentityMean:result.Identity.MeanScore,
+		IdentityPass:result.Identity.Passed,
+		QualityScore:result.Quality.LocalScore,
+		QualityPass:result.QualityPassed,
+		SelectionScore:candidateSelectionScore(result),
+	}
+}
+
+func refineAttemptWithFaceSwap(
+	ctx context.Context,
+	req Request,
+	result Result,
+	refEmbeddings []referenceEmbedding,
+	rankedSources []referenceEmbedding,
+	centroidEmbedding []float64,
+	medoidScore float64,
+	medoidPath string,
+	swapper *faceswap.Swapper,
+) (Result, error) {
+	if swapper == nil || len(refEmbeddings) == 0 {
+		return result, nil
+	}
+	raw, err := os.ReadFile(result.AssetPath)
+	if err != nil { return result, fmt.Errorf("read preselected artifact: %w", err) }
+	img, _, err := image.Decode(bytes.NewReader(raw))
+	if err != nil { return result, fmt.Errorf("decode preselected artifact: %w", err) }
+
+	type swapCandidate struct {
+		img image.Image
+		meta faceswap.Meta
+		identity IdentityResult
+		quality imagemetrics.Metrics
+		mode string
+		sourceIndex int
+	}
+	m := nativecore.FromEnv()
+	candidates := make([]swapCandidate, 0, 3)
+
+	tryEmbedding := func(vec []float64, mode string, sourceIndex int) {
+		if len(vec) != 512 { return }
+		swapped, meta, swapErr := swapper.SwapImageWithEmbedding(ctx, vec, img)
+		if swapErr != nil || swapped == nil { return }
+		idResult := scoreIdentityImageCached(ctx, m, swapped, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+		if !idResult.Scored { return }
+		q, qErr := imagemetrics.AnalyzeImage(swapped)
+		if qErr != nil { return }
+		candidates = append(candidates, swapCandidate{
+			img:swapped, meta:meta, identity:idResult, quality:q, mode:mode, sourceIndex:sourceIndex,
+		})
+	}
+
+	for i, ref := range rankedSources {
+		if i >= 2 { break }
+		tryEmbedding(ref.vec, "reference_ranked", ref.index)
+	}
+	if len(centroidEmbedding) == 512 {
+		tryEmbedding(centroidEmbedding, "reference_centroid", -1)
+	}
+
+	if result.Generation == nil { result.Generation = map[string]any{} }
+	result.Generation["faceswap_preselected"] = true
+	result.Generation["faceswap_trials"] = len(candidates)
+	if len(candidates) == 0 {
+		result.Generation["faceswap_applied"] = false
+		result.Generation["faceswap_reason"] = "all preselected face-swap source trials failed"
+		return result, nil
+	}
+
+	bestSwap := candidates[0]
+	for _, candidate := range candidates[1:] {
+		if betterIdentityQuality(candidate.identity, candidate.quality, bestSwap.identity, bestSwap.quality, req.QualityThreshold) {
+			bestSwap = candidate
+		}
+	}
+
+	// Keep the original if the transfer does not improve the combined identity/quality decision.
+	if !betterIdentityQuality(bestSwap.identity, bestSwap.quality, result.Identity, result.Quality, req.QualityThreshold) {
+		result.Generation["faceswap_applied"] = false
+		result.Generation["faceswap_reverted"] = true
+		result.Generation["faceswap_revert_reason"] = "best transfer did not improve pre-swap identity/quality"
+		result.Generation["identity_post_swap_score"] = bestSwap.identity.Score
+		result.Generation["identity_post_swap_mean"] = bestSwap.identity.MeanScore
+		return result, nil
+	}
+
+	frame := generatedFrame{Image:bestSwap.img}
+	encoded, err := encodeFramePNG(frame)
+	if err != nil { return result, fmt.Errorf("encode refined artifact: %w", err) }
+	if err := os.WriteFile(result.AssetPath, encoded, 0o644); err != nil {
+		return result, fmt.Errorf("write refined artifact: %w", err)
+	}
+	if result.DocumentsPath != "" {
+		if err := os.WriteFile(result.DocumentsPath, encoded, 0o644); err != nil {
+			return result, fmt.Errorf("write refined documents artifact: %w", err)
+		}
+	}
+
+	result.Identity = bestSwap.identity
+	result.Quality = bestSwap.quality
+	result.QualityPassed = bestSwap.quality.LocalScore >= req.QualityThreshold
+	switch {
+	case !result.Identity.Scored:
+		result.Status = "rejected_identity_runtime"
+	case !result.Identity.Passed:
+		result.Status = "rejected_identity"
+	case !result.QualityPassed:
+		result.Status = "rejected_quality"
+	default:
+		result.Status = "proposed"
+	}
+	result.OK = result.Status == "proposed"
+
+	result.Generation["faceswap_applied"] = true
+	result.Generation["faceswap_reverted"] = false
+	result.Generation["faceswap_source_mode"] = bestSwap.mode
+	result.Generation["faceswap_source_index"] = bestSwap.sourceIndex
+	result.Generation["faceswap_model"] = bestSwap.meta.Model
+	result.Generation["faceswap_alignment"] = bestSwap.meta.Alignment
+	result.Generation["faceswap_target_score"] = bestSwap.meta.TargetScore
+	result.Generation["faceswap_reference_medoid_score"] = medoidScore
+	result.Generation["faceswap_reference_medoid_path"] = medoidPath
+	result.Generation["identity_post_swap_score"] = bestSwap.identity.Score
+	result.Generation["identity_post_swap_mean"] = bestSwap.identity.MeanScore
+
+	meta, _ := json.MarshalIndent(result, "", "  ")
+	if err := os.WriteFile(result.MetadataPath, meta, 0o644); err != nil {
+		return result, fmt.Errorf("write refined metadata: %w", err)
+	}
+	if result.DocumentsPath != "" {
+		if err := os.WriteFile(result.DocumentsPath+".json", meta, 0o644); err != nil {
+			return result, fmt.Errorf("write refined documents metadata: %w", err)
+		}
+	}
+	return result, nil
+}
+
 func Run(ctx context.Context, req Request) (Result, error) {
 	emitProgress(req, 2, "loading persona", nil)
 	p, err := loadPersona(req)
@@ -996,6 +1141,8 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		if strings.Contains(strings.ToLower(req.Theme), "identity") { req.BestOfN = 4 } else { req.BestOfN = 1 }
 	}
 	if req.BestOfN > 64 { req.BestOfN = 64 }
+	if req.SwapTopK <= 0 { req.SwapTopK = minInt(3, req.BestOfN) }
+	if req.SwapTopK > req.BestOfN { req.SwapTopK = req.BestOfN }
 
 	embeddingMeta, err := resolveIdentityEmbedding(ctx, &req, p)
 	if err != nil { return Result{}, err }
@@ -1033,59 +1180,101 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if baseSeed == 0 { baseSeed = time.Now().UnixNano() }
 
 	attempts := make([]AttemptSummary, 0, req.BestOfN)
-	var best Result
-	bestIndex := -1
+	type successfulAttempt struct {
+		attemptListIndex int
+		attemptIndex int
+		seed int64
+		req Request
+		result Result
+	}
+	successes := make([]successfulAttempt, 0, req.BestOfN)
 	completed := 0
+	acceptedPreSwap := false
 
+	// Stage 1: generate every candidate and cheaply score identity + quality.
+	// Do not run InSwapper here; that is reserved for the strongest candidates.
 	for i := 0; i < req.BestOfN; i++ {
 		attemptReq := req
 		attemptReq.Seed = baseSeed + int64(i)
 		attemptIndex := i + 1
 
 		result, attemptErr := runSingleAttempt(
-			ctx, attemptReq, p, refs, refEmbeddings, rankedSources, centroidEmbedding, canonicalRef, medoidScore, canonicalRefPath, swapper, attemptIndex, req.BestOfN,
+			ctx, attemptReq, p, refs, refEmbeddings, rankedSources, centroidEmbedding,
+			canonicalRef, medoidScore, canonicalRefPath, nil, attemptIndex, req.BestOfN,
 		)
 		if attemptErr != nil {
 			attempts = append(attempts, AttemptSummary{
 				Index:attemptIndex, Seed:attemptReq.Seed, Status:"attempt_error", Error:attemptErr.Error(),
 			})
-			emitProgress(req, 94, "attempt failed", map[string]any{
+			emitProgress(req, 70, "preselection attempt failed", map[string]any{
 				"attempt":attemptIndex, "best_of_n":req.BestOfN, "seed":attemptReq.Seed, "error":attemptErr.Error(),
 			})
 			continue
 		}
 		completed++
-		attempts = append(attempts, AttemptSummary{
-			Index:attemptIndex,
-			Seed:attemptReq.Seed,
-			Status:result.Status,
-			AssetPath:result.AssetPath,
-			MetadataPath:result.MetadataPath,
-			IdentityScore:result.Identity.Score,
-			IdentityMean:result.Identity.MeanScore,
-			IdentityPass:result.Identity.Passed,
-			QualityScore:result.Quality.LocalScore,
-			QualityPass:result.QualityPassed,
-			SelectionScore:candidateSelectionScore(result),
+		attempts = append(attempts, summarizeAttempt(attemptIndex, attemptReq.Seed, result))
+		successes = append(successes, successfulAttempt{
+			attemptListIndex:len(attempts)-1,
+			attemptIndex:attemptIndex,
+			seed:attemptReq.Seed,
+			req:attemptReq,
+			result:result,
 		})
 
-		if bestIndex < 0 || betterResult(result, best) {
-			best = result
-			bestIndex = len(attempts)-1
-		}
-
 		if stopOnAccept && result.Identity.Passed && result.QualityPassed {
+			acceptedPreSwap = true
 			break
 		}
 	}
 
-	if bestIndex < 0 {
+	if len(successes) == 0 {
 		lastErr := "all best-of-n attempts failed"
 		if len(attempts) > 0 && attempts[len(attempts)-1].Error != "" {
 			lastErr += ": " + attempts[len(attempts)-1].Error
 		}
 		return Result{}, fmt.Errorf("%s", lastErr)
 	}
+
+	// Stage 2: only the strongest pre-swap candidates pay the multi-source
+	// InSwapper cost. This avoids up to three swap inferences for every seed.
+	if swapper != nil && !acceptedPreSwap {
+		order := make([]int, len(successes))
+		for i := range order { order[i] = i }
+		sort.SliceStable(order, func(i,j int) bool {
+			return betterResult(successes[order[i]].result, successes[order[j]].result)
+		})
+		k := minInt(req.SwapTopK, len(order))
+		emitProgress(req, 74, "face-swap preselection", map[string]any{
+			"generated":len(successes), "swap_top_k":k, "best_of_n":req.BestOfN,
+		})
+		for rank := 0; rank < k; rank++ {
+			idx := order[rank]
+			item := &successes[idx]
+			refined, refineErr := refineAttemptWithFaceSwap(
+				ctx, item.req, item.result, refEmbeddings, rankedSources,
+				centroidEmbedding, medoidScore, canonicalRefPath, swapper,
+			)
+			if refineErr != nil {
+				if item.result.Generation == nil { item.result.Generation = map[string]any{} }
+				item.result.Generation["faceswap_refine_error"] = refineErr.Error()
+			} else {
+				item.result = refined
+			}
+			item.result.Generation["preselection_rank"] = rank + 1
+			item.result.Generation["swap_top_k"] = k
+			attempts[item.attemptListIndex] = summarizeAttempt(item.attemptIndex, item.seed, item.result)
+		}
+	}
+
+	var best Result
+	bestSuccess := 0
+	for i := range successes {
+		if i == 0 || betterResult(successes[i].result, best) {
+			best = successes[i].result
+			bestSuccess = i
+		}
+	}
+	bestIndex := successes[bestSuccess].attemptListIndex
 
 	selectedAttempt := attempts[bestIndex].Index
 	if best.Generation == nil { best.Generation = map[string]any{} }
@@ -1097,6 +1286,8 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	best.Generation["reference_embeddings_cached"] = len(refEmbeddings)
 	best.Generation["reference_centroid_dimensions"] = len(centroidEmbedding)
 	best.Generation["swap_source_candidates"] = minInt(3, len(rankedSources)+1)
+	best.Generation["swap_top_k"] = req.SwapTopK
+	best.Generation["two_stage_preselection"] = true
 	best.Generation["selection_score"] = candidateSelectionScore(best)
 	for k,v := range embeddingMeta { best.Generation[k] = v }
 
