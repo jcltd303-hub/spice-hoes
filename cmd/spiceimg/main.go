@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/jcltd303-hub/spice-hoes/internal/imagemetrics"
+	"github.com/jcltd303-hub/spice-hoes/internal/termui"
 )
 
 func main() {
@@ -14,17 +15,23 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: spiceimg metrics < image")
 		os.Exit(2)
 	}
+	progress := termui.Start("spiceimg metrics")
+	defer progress.Stop(true)
+
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
+		progress.Stop(false)
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	metrics, err := imagemetrics.Analyze(data)
 	if err != nil {
+		progress.Stop(false)
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	if err := json.NewEncoder(os.Stdout).Encode(metrics); err != nil {
+		progress.Stop(false)
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
