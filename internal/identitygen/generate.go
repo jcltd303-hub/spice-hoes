@@ -3,6 +3,8 @@ package identitygen
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -15,19 +17,55 @@ import (
 
 	ident "github.com/jcltd303-hub/spice-hoes/internal/identity"
 	"github.com/jcltd303-hub/spice-hoes/internal/imagemetrics"
+	"github.com/jcltd303-hub/spice-hoes/internal/localdream"
 	"github.com/jcltd303-hub/spice-hoes/internal/nativecore"
 	"gopkg.in/yaml.v3"
 )
 
+type PhysicalProfile struct {
+	HeightCM              int      `yaml:"height_cm" json:"height_cm"`
+	WeightKG              float64  `yaml:"weight_kg" json:"weight_kg"`
+	Build                  string   `yaml:"build" json:"build"`
+	Proportions            string   `yaml:"proportions" json:"proportions"`
+	EyeColor               string   `yaml:"eye_color" json:"eye_color"`
+	EyeShape               string   `yaml:"eye_shape" json:"eye_shape"`
+	HairColor              string   `yaml:"hair_color" json:"hair_color"`
+	HairTexture            string   `yaml:"hair_texture" json:"hair_texture"`
+	HairReferenceStyle     string   `yaml:"hair_reference_style" json:"hair_reference_style"`
+	SkinTone               string   `yaml:"skin_tone" json:"skin_tone"`
+	DistinguishingFeatures []string `yaml:"distinguishing_features" json:"distinguishing_features"`
+}
+
+type IdentityReferenceProfile struct {
+	BodyPrompt     string `yaml:"body_prompt" json:"body_prompt"`
+	WardrobeMode   string `yaml:"wardrobe_mode" json:"wardrobe_mode"`
+	HairMode       string `yaml:"hair_mode" json:"hair_mode"`
+	PoseTemplate   string `yaml:"pose_template" json:"pose_template"`
+}
+
+type AdultInterestProfile struct {
+	Type          string `yaml:"type" json:"type"`
+	Cue           string `yaml:"cue" json:"cue"`
+	PublicSubtle  bool   `yaml:"public_subtle" json:"public_subtle"`
+}
+
+type ContentCueProfile struct {
+	BarefootMinRate float64 `yaml:"barefoot_min_rate" json:"barefoot_min_rate"`
+}
+
 type Persona struct {
-	ID         string   `yaml:"id" json:"id"`
-	Name       string   `yaml:"name" json:"name"`
-	Age        int      `yaml:"age" json:"age"`
-	Fictional  bool     `yaml:"fictional" json:"fictional"`
-	Disclosure string   `yaml:"disclosure" json:"disclosure"`
-	Visual     string   `yaml:"visual" json:"visual"`
-	Voice      string   `yaml:"voice" json:"voice"`
-	Hobbies    []string `yaml:"hobbies" json:"hobbies"`
+	ID                string                   `yaml:"id" json:"id"`
+	Name              string                   `yaml:"name" json:"name"`
+	Age               int                      `yaml:"age" json:"age"`
+	Fictional         bool                     `yaml:"fictional" json:"fictional"`
+	Disclosure        string                   `yaml:"disclosure" json:"disclosure"`
+	Visual            string                   `yaml:"visual" json:"visual"`
+	Voice             string                   `yaml:"voice" json:"voice"`
+	Hobbies           []string                 `yaml:"hobbies" json:"hobbies"`
+	Physical          PhysicalProfile          `yaml:"physical" json:"physical"`
+	IdentityReference IdentityReferenceProfile `yaml:"identity_reference" json:"identity_reference"`
+	AdultInterest     AdultInterestProfile     `yaml:"adult_interest" json:"adult_interest"`
+	ContentCues       ContentCueProfile        `yaml:"content_cues" json:"content_cues"`
 }
 
 type ProgressEvent struct {
@@ -52,6 +90,7 @@ type Request struct {
 	ReferenceRoot    string  `json:"reference_root,omitempty"`
 	IdentityThreshold float64 `json:"identity_threshold,omitempty"`
 	QualityThreshold float64  `json:"quality_threshold,omitempty"`
+	Generator         string   `json:"generator,omitempty"`
 	Progress          func(ProgressEvent) `json:"-"`
 }
 
@@ -113,6 +152,32 @@ func loadPersona(req Request) (Persona, error) {
 	return p, nil
 }
 
+func physicalPrompt(p Persona) string {
+	parts := []string{}
+	if p.Physical.HeightCM > 0 { parts = append(parts, fmt.Sprintf("height %d cm", p.Physical.HeightCM)) }
+	if p.Physical.WeightKG > 0 { parts = append(parts, fmt.Sprintf("weight %.0f kg", p.Physical.WeightKG)) }
+	if strings.TrimSpace(p.Physical.Build) != "" { parts = append(parts, "build "+strings.TrimSpace(p.Physical.Build)) }
+	if strings.TrimSpace(p.Physical.Proportions) != "" { parts = append(parts, "proportions "+strings.TrimSpace(p.Physical.Proportions)) }
+	if strings.TrimSpace(p.Physical.EyeColor) != "" { parts = append(parts, strings.TrimSpace(p.Physical.EyeColor)+" eyes") }
+	if strings.TrimSpace(p.Physical.EyeShape) != "" { parts = append(parts, strings.TrimSpace(p.Physical.EyeShape)+" eye shape") }
+	if strings.TrimSpace(p.Physical.HairColor) != "" { parts = append(parts, strings.TrimSpace(p.Physical.HairColor)+" hair") }
+	if strings.TrimSpace(p.Physical.HairTexture) != "" { parts = append(parts, strings.TrimSpace(p.Physical.HairTexture)+" hair texture") }
+	if strings.TrimSpace(p.Physical.SkinTone) != "" { parts = append(parts, "skin tone "+strings.TrimSpace(p.Physical.SkinTone)) }
+	if len(p.Physical.DistinguishingFeatures) > 0 { parts = append(parts, "distinguishing features "+strings.Join(p.Physical.DistinguishingFeatures, ", ")) }
+	return strings.Join(parts, "; ")
+}
+
+func barefootDue(p Persona, req Request) bool {
+	rate := p.ContentCues.BarefootMinRate
+	if rate <= 0 { return false }
+	if rate > 1 { rate = 1 }
+	token := fmt.Sprintf("%s|%d|%s|%s", p.ID, req.Seed, strings.TrimSpace(req.Theme), strings.TrimSpace(req.Scene))
+	sum := sha256.Sum256([]byte(token))
+	n := binary.BigEndian.Uint64(sum[:8])
+	fraction := float64(n) / float64(^uint64(0))
+	return fraction < rate
+}
+
 func promptFor(p Persona, req Request) string {
 	style := strings.TrimSpace(req.Style)
 	if style == "" {
@@ -121,6 +186,8 @@ func promptFor(p Persona, req Request) string {
 	parts := []string{
 		fmt.Sprintf("Original fictional AI-generated adult character %s, age %d.", p.Name, p.Age),
 		fmt.Sprintf("Identity anchor: %s.", strings.TrimSpace(p.Visual)),
+		fmt.Sprintf("Physical identity: %s.", physicalPrompt(p)),
+		fmt.Sprintf("Body lock: %s.", strings.TrimSpace(p.IdentityReference.BodyPrompt)),
 		fmt.Sprintf("Theme: %s.", strings.TrimSpace(req.Theme)),
 		fmt.Sprintf("Style: %s.", style),
 		"Photorealistic lifestyle photography, natural skin texture, visible pores, subtle asymmetry, realistic lighting, coherent anatomy.",
@@ -129,6 +196,15 @@ func promptFor(p Persona, req Request) string {
 	}
 	if strings.TrimSpace(req.Scene) != "" {
 		parts = append(parts, "Scene: "+strings.TrimSpace(req.Scene)+".")
+	}
+	if strings.TrimSpace(p.IdentityReference.HairMode) != "" && strings.Contains(strings.ToLower(req.Theme), "identity") {
+		parts = append(parts, "Identity-reference hair: "+strings.TrimSpace(p.IdentityReference.HairMode)+".")
+	}
+	if strings.TrimSpace(p.AdultInterest.Cue) != "" {
+		parts = append(parts, "Subtle adult-coded character motif: "+strings.TrimSpace(p.AdultInterest.Cue)+". Keep it non-explicit and secondary to the scene.")
+	}
+	if barefootDue(p, req) {
+		parts = append(parts, "Wardrobe/pose cue: bare feet visible naturally in the composition; feet anatomically correct, clean, non-explicit, and contextually plausible.")
 	}
 	if len(p.Hobbies) > 0 {
 		parts = append(parts, "Character context: "+strings.Join(p.Hobbies, ", ")+".")
@@ -140,33 +216,37 @@ func promptFor(p Persona, req Request) string {
 }
 
 func arcEmbedding(ctx context.Context, m *nativecore.Manager, raw []byte) ([]float64, string, error) {
-	alignment := "center-crop-112"
-	var input []float64
-	if m.FaceDetector != "" {
-		prep, err := ident.SCRFDInput(raw)
-		if err == nil {
-			outputs, _, detErr := m.Detect(ctx, prep.Tensor)
-			if detErr == nil {
-				faces, decErr := ident.DecodeSCRFD(outputs, prep, 0.5, 0.4)
-				if decErr == nil && len(faces) > 0 {
-					input, err = ident.ArcFaceInputAligned(raw, faces[0].Landmarks)
-					if err == nil {
-						alignment = "scrfd-5pt-112"
-					}
-				}
-			}
-		}
+	const alignment = "scrfd-5pt-112"
+	if m.FaceDetector == "" {
+		return nil, alignment, fmt.Errorf("SCRFD face detector is not configured")
 	}
-	if input == nil {
-		var err error
-		input, err = ident.ArcFaceInput(raw)
-		if err != nil {
-			return nil, alignment, err
+	if m.IdentityVision == "" {
+		return nil, alignment, fmt.Errorf("ArcFace embedding model is not configured")
+	}
+
+	prep, err := ident.SCRFDInput(raw)
+	if err != nil {
+		return nil, alignment, fmt.Errorf("prepare SCRFD input: %w", err)
+	}
+	outputs, _, err := m.Detect(ctx, prep.Tensor)
+	if err != nil {
+		return nil, alignment, fmt.Errorf("SCRFD detection failed: %w", err)
+	}
+	faces, err := ident.DecodeSCRFD(outputs, prep, 0.5, 0.4)
+	if err != nil || len(faces) == 0 {
+		if err == nil {
+			err = fmt.Errorf("no face detected")
 		}
+		return nil, alignment, fmt.Errorf("SCRFD landmarks unavailable: %w", err)
+	}
+
+	input, err := ident.ArcFaceInputAligned(raw, faces[0].Landmarks)
+	if err != nil {
+		return nil, alignment, fmt.Errorf("five-point alignment failed: %w", err)
 	}
 	vec, _, err := m.Embed(ctx, input)
 	if err != nil {
-		return nil, alignment, err
+		return nil, alignment, fmt.Errorf("ArcFace embedding failed: %w", err)
 	}
 	return ident.Normalize(vec), alignment, nil
 }
@@ -181,13 +261,17 @@ func loadReferences(root, personaID string) ([][]byte, error) {
 		return nil, err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-	out := make([][]byte, 0, 6)
+	out := make([][]byte, 0, 8)
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
-		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		name := strings.ToLower(entry.Name())
+		ext := strings.ToLower(filepath.Ext(name))
 		if ext != ".png" && ext != ".jpg" && ext != ".jpeg" {
+			continue
+		}
+		if strings.HasPrefix(name, "master_") || strings.HasPrefix(name, "contact_") || strings.Contains(name, "_rear") {
 			continue
 		}
 		b, err := os.ReadFile(filepath.Join(dir, entry.Name()))
@@ -195,7 +279,7 @@ func loadReferences(root, personaID string) ([][]byte, error) {
 			continue
 		}
 		out = append(out, b)
-		if len(out) == 6 {
+		if len(out) == 8 {
 			break
 		}
 	}
@@ -278,6 +362,76 @@ func emitProgress(req Request, percent float64, stage string, metrics map[string
 	if req.Progress != nil { req.Progress(ProgressEvent{Percent: percent, Stage: stage, Metrics: metrics}) }
 }
 
+func generationBackend(req Request) string {
+	backend := strings.ToLower(strings.TrimSpace(req.Generator))
+	if backend == "" {
+		backend = strings.ToLower(strings.TrimSpace(os.Getenv("SPICE_IDENTITY_GENERATOR")))
+	}
+	if backend == "" || backend == "auto" {
+		if strings.TrimSpace(os.Getenv("LOCAL_DREAM_URL")) != "" {
+			return "local-dream"
+		}
+		return "qnn"
+	}
+	switch backend {
+	case "local-dream", "localdream", "ld":
+		return "local-dream"
+	default:
+		return "qnn"
+	}
+}
+
+func generateRaw(ctx context.Context, req Request, prompt string) ([]byte, map[string]any, string, error) {
+	backend := generationBackend(req)
+	if backend == "local-dream" {
+		client := localdream.FromEnv()
+		out, err := client.Generate(ctx, localdream.GenerateRequest{
+			Prompt: prompt, NegativePrompt: req.NegativePrompt, Seed: req.Seed,
+			Width: req.Width, Height: req.Height,
+		})
+		if err != nil {
+			return nil, nil, backend, err
+		}
+		meta := out.Generation
+		if meta == nil {
+			meta = map[string]any{}
+		}
+		meta["generator"] = "local-dream"
+		return out.Image, meta, backend, nil
+	}
+
+	m := nativecore.FromEnv()
+	if m.ModelDir == "" {
+		return nil, nil, backend, fmt.Errorf("QNN identity generation requires SPICE_QNN_MODEL_DIR")
+	}
+	payload := map[string]any{
+		"prompt": reqPrompt(prompt),
+		"negative_prompt": req.NegativePrompt,
+		"width": req.Width,
+		"height": req.Height,
+		"steps": req.Steps,
+		"guidance": req.Guidance,
+		"output_format": "png",
+	}
+	if req.Seed != 0 {
+		payload["seed"] = req.Seed
+	}
+	out, err := m.Generate(ctx, payload)
+	if err != nil {
+		return nil, nil, backend, err
+	}
+	imageB64, _ := out["image"].(string)
+	if imageB64 == "" {
+		return nil, nil, backend, fmt.Errorf("QNN generation returned no image")
+	}
+	imageBytes, err := base64.StdEncoding.DecodeString(imageB64)
+	if err != nil {
+		return nil, nil, backend, fmt.Errorf("decode generated image: %w", err)
+	}
+	out["generator"] = "qnn"
+	return imageBytes, out, backend, nil
+}
+
 func Run(ctx context.Context, req Request) (Result, error) {
 	emitProgress(req, 2, "loading persona", nil)
 	p, err := loadPersona(req)
@@ -318,38 +472,19 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	emitProgress(req, 8, "building prompt", map[string]any{"persona":p.ID,"seed":req.Seed})
 	prompt := promptFor(p, req)
 	m := nativecore.FromEnv()
-	if m.ModelDir == "" {
-		return Result{}, fmt.Errorf("identity generation requires SPICE_QNN_MODEL_DIR")
-	}
-
-	payload := map[string]any{
-		"prompt": reqPrompt(prompt),
-		"negative_prompt": req.NegativePrompt,
-		"width": req.Width,
-		"height": req.Height,
-		"steps": req.Steps,
-		"guidance": req.Guidance,
-		"output_format": "png",
-	}
-	if req.Seed != 0 {
-		payload["seed"] = req.Seed
-	}
-
-	emitProgress(req, 15, "QNN generation", map[string]any{"size":fmt.Sprintf("%dx%d",req.Width,req.Height),"steps":req.Steps,"guidance":req.Guidance})
+	backend := generationBackend(req)
+	emitProgress(req, 15, backend+" generation", map[string]any{
+		"generator":backend, "size":fmt.Sprintf("%dx%d",req.Width,req.Height),
+		"steps":req.Steps, "guidance":req.Guidance,
+	})
 	genStarted := time.Now()
-	out, err := m.Generate(ctx, payload)
+	imageBytes, out, backend, err := generateRaw(ctx, req, prompt)
 	if err != nil {
 		return Result{}, err
 	}
-	emitProgress(req, 62, "generation complete", map[string]any{"generation_elapsed":time.Since(genStarted).Round(time.Millisecond)})
-	imageB64, _ := out["image"].(string)
-	if imageB64 == "" {
-		return Result{}, fmt.Errorf("QNN generation returned no image")
-	}
-	imageBytes, err := base64.StdEncoding.DecodeString(imageB64)
-	if err != nil {
-		return Result{}, fmt.Errorf("decode generated image: %w", err)
-	}
+	emitProgress(req, 62, "generation complete", map[string]any{
+		"generator":backend, "generation_elapsed":time.Since(genStarted).Round(time.Millisecond),
+	})
 
 	if err := os.MkdirAll(req.OutputDir, 0o755); err != nil {
 		return Result{}, err
@@ -376,11 +511,13 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	qualityPassed := quality.LocalScore >= req.QualityThreshold
 	emitProgress(req, 94, "quality scored", map[string]any{"quality_score":quality.LocalScore,"quality_pass":qualityPassed,"sharpness":quality.Sharpness,"contrast":quality.Contrast,"exposure":quality.ExposureScore,"resolution":quality.ResolutionScore})
 	status := "proposed"
-	if identity.Scored && !identity.Passed {
+	if len(refs) > 0 && !identity.Scored {
+		status = "rejected_identity_runtime"
+	} else if identity.Scored && !identity.Passed {
 		status = "rejected_identity"
 	} else if !qualityPassed {
 		status = "rejected_quality"
-	} else if !identity.Scored {
+	} else if len(refs) == 0 {
 		status = "bootstrap_candidate"
 	}
 

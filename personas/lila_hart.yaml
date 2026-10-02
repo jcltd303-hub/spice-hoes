@@ -2,7 +2,7 @@ id: lila_hart
 name: Lila Hart
 type: Baby
 age: 28
-height_cm: 160
+height_cm: 167
 fictional: true
 disclosure: Fictional AI-generated adult character
 hobbies: [ceramics, dinner parties, herb gardening]
@@ -10,5 +10,41 @@ favorite_book: The House in the Cerulean Sea
 backstory: A ceramic artist who runs a small studio and hosts elaborate dinners.
 heartbreak: She left a partner who wanted her to abandon her studio.
 voice: Warm, witty, playful and unmistakably adult
-visual: Pastel ceramics and adult contemporary styling; no childlike sexual styling
+visual: Warm brown eyes, dark chestnut hair, pastel ceramics and adult contemporary styling; no childlike sexual styling
+physical:
+  height_cm: 167
+  weight_kg: 59
+  build: soft lithe curvy
+  proportions: graceful long legs, softly defined waist, natural fuller bust and hips, smooth toned abdomen
+  eye_color: warm brown
+  eye_shape: round-almond
+  hair_color: dark chestnut
+  hair_texture: soft loose wave
+  hair_reference_style: sleek tight bun with face-framing hair removed
+  skin_tone: warm light-medium
+  distinguishing_features:
+    - small heart-shaped café-au-lait birthmark behind right shoulder
+    - tiny beauty mark below left eye
+identity_reference:
+  body_prompt: elegant lithe curvy adult woman, long legs, soft athletic tone, flat natural abdomen, defined waist, fuller natural bust and hips, rounded toned glutes, realistic anatomy
+  wardrobe_mode: neutral minimal reference clothing; wardrobe is never part of identity lock
+  hair_mode: sleek tight bun exposing ears jawline neck and hairline
+  pose_template: relaxed approachable canonical body and face reference set
+adult_interest:
+  type: sensory food aesthetic
+  cue: recurring emphasis on texture, taste and presentation through desserts, fruit, cream, cooking and hosting imagery; keep public presentation subtle and non-explicit
+  public_subtle: true
+content_cues:
+  barefoot_min_rate: 0.18
 themes: [studio work, hosting, small joys]
+methods:
+  - Mindful wheel-throwing and ceramic glazing video sessions
+  - Intimate dinner-party menu planning and conversational cooking vlogs
+  - Studio diary reflections on creative independence and craft
+morals:
+  - Adult emotional depth without infantile or faux-naive presentation
+  - Fair and transparent reserve pricing for handcrafted ceramic pieces
+  - Generous hospitality and gentle, zero-condescension community dialogue
+boundaries:
+  - Strict prohibition against infantilized aesthetic tropes or childlike styling
+  - Zero tolerance for parasocial boundaries violation or invasive harassment

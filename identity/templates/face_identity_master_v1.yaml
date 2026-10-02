@@ -1,0 +1,49 @@
+version: 1
+id: face_identity_master_v1
+purpose: reusable face and head identity portfolio template
+render:
+  aspect_ratio: "1:1"
+  panel_grid: "3x3"
+  background: seamless light neutral gray studio
+  lighting: soft even neutral studio light
+  camera: head-and-shoulders, eye-level, consistent focal length and distance
+  hair_policy: tight high bun or tight updo; ears, jawline, neck, nape and hairline unobstructed
+  makeup: minimal natural
+views:
+  - id: front
+    label: Front Neutral
+    instruction: strict front head-and-shoulders, neutral expression, both eyes and ears readable
+  - id: three_quarter_left
+    label: Three-Quarter Left
+    instruction: head turned about 35 degrees left, both eyes visible, jawline and nose geometry readable
+  - id: three_quarter_right
+    label: Three-Quarter Right
+    instruction: head turned about 35 degrees right, both eyes visible, jawline and nose geometry readable
+  - id: left_profile
+    label: Left Profile
+    instruction: strict left facial profile, ear, nose bridge, lips and chin readable
+  - id: right_profile
+    label: Right Profile
+    instruction: strict right facial profile, ear, nose bridge, lips and chin readable
+  - id: rear_head
+    label: Rear Head
+    instruction: strict rear head and shoulders, show hairline, nape and head shape, no face visible
+  - id: face_close_neutral
+    label: Face 1 Neutral
+    instruction: tight straight-on close-up, neutral expression
+  - id: face_close_smile
+    label: Face 2 Soft Smile
+    instruction: tight straight-on close-up, restrained soft smile
+  - id: face_close_serious
+    label: Face 3 Serious
+    instruction: tight straight-on close-up, serious composed expression
+identity_rules:
+  detector: SCRFD
+  alignment: five_point_112
+  embedding: ArcFace
+  gate_face_views: true
+  rear_view_face_gate: false
+  use_persona_physical_lock: true
+  preserve_eye_color_and_shape: true
+  preserve_hairline: true
+  preserve_distinguishing_features: true

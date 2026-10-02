@@ -1,0 +1,50 @@
+version: 1
+id: body_posture_master_v1
+purpose: reusable full-body identity portfolio composition template
+render:
+  aspect_ratio: "1:1"
+  panel_grid: "3x3"
+  background: seamless light neutral gray studio
+  lighting: soft even neutral studio light
+  camera: full-body, eye-level, consistent focal length and distance across panels
+  framing: full body visible head-to-toe with consistent subject scale
+  wardrobe_policy: minimal neutral reference clothing only; wardrobe is not identity
+  footwear_policy: removable; barefoot may be substituted when persona content policy schedules it
+  hair_policy: tight updo for transferability; ears, jawline, neck and hairline unobstructed
+  anatomy: realistic, consistent proportions, no pose-to-pose body drift
+poses:
+  - id: front_relaxed
+    label: Front Relaxed
+    instruction: front-facing relaxed standing pose, feet natural, arms loose at sides, weight balanced
+  - id: three_quarter_left
+    label: Three-Quarter Left
+    instruction: standing body turned about 35 degrees left, face visible, relaxed weight distribution
+  - id: three_quarter_right
+    label: Three-Quarter Right
+    instruction: standing body turned about 35 degrees right, face visible, relaxed weight distribution
+  - id: left_profile
+    label: Left Profile
+    instruction: strict full-body left side profile, neutral posture, silhouette readable
+  - id: right_profile
+    label: Right Profile
+    instruction: strict full-body right side profile, neutral posture, silhouette readable
+  - id: rear_standing
+    label: Rear Standing
+    instruction: strict full-body rear view, shoulders level, glute and leg proportions readable, face not visible
+  - id: walking_forward
+    label: Walking Forward
+    instruction: natural walking mid-step toward camera, realistic gait, no exaggerated stride
+  - id: seated_front
+    label: Seated Front
+    instruction: seated facing camera on simple neutral stool, upright posture, legs naturally positioned
+  - id: hands_on_hips
+    label: Hands On Hips
+    instruction: standing front-facing confident posture, hands on hips, feet slightly apart
+production_rules:
+  use_persona_physical_lock: true
+  use_persona_hair_lock: true
+  preserve_distinguishing_features: true
+  preserve_height_impression: true
+  preserve_body_proportions: true
+  preserve_limb_difference: true
+  never_lock_wardrobe_as_identity: true

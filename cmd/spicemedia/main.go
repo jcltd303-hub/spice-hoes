@@ -94,44 +94,40 @@ func commandQuality() {
 }
 
 func arcFaceEmbedding(manager *nativecore.Manager, raw []byte) ([]float64,map[string]any,string,error) {
-    alignment:="center-crop-112"
-    var input []float64
-    var err error
-    detectorLatency:=any(nil)
-
-    if manager.FaceDetector!="" {
-        prep,prepErr:=ident.SCRFDInput(raw)
-        if prepErr==nil {
-            ctx,cancel:=context.WithTimeout(context.Background(),2*time.Minute)
-            outputs,meta,detErr:=manager.Detect(ctx,prep.Tensor)
-            cancel()
-            if detErr==nil {
-                faces,decodeErr:=ident.DecodeSCRFD(outputs,prep,0.5,0.4)
-                if decodeErr==nil && len(faces)>0 {
-                    input,err=ident.ArcFaceInputAligned(raw,faces[0].Landmarks)
-                    if err==nil {
-                        alignment="scrfd-5pt-112"
-                        detectorLatency=meta["latency_ms"]
-                    }
-                }
-            }
-        }
+    const alignment = "scrfd-5pt-112"
+    if manager.FaceDetector == "" {
+        return nil,nil,alignment,fmt.Errorf("SPICE_FACE_DETECT_MODEL is not configured")
+    }
+    if manager.IdentityVision == "" {
+        return nil,nil,alignment,fmt.Errorf("SPICE_FACE_EMBED_MODEL is not configured")
     }
 
-    if input==nil {
-        input,err=ident.ArcFaceInput(raw)
-        if err!=nil { return nil,nil,alignment,err }
+    prep,err:=ident.SCRFDInput(raw)
+    if err!=nil { return nil,nil,alignment,fmt.Errorf("prepare SCRFD input: %w",err) }
+
+    detectCtx,detectCancel:=context.WithTimeout(context.Background(),2*time.Minute)
+    outputs,detectMeta,err:=manager.Detect(detectCtx,prep.Tensor)
+    detectCancel()
+    if err!=nil { return nil,nil,alignment,fmt.Errorf("SCRFD detection failed: %w",err) }
+
+    faces,err:=ident.DecodeSCRFD(outputs,prep,0.5,0.4)
+    if err!=nil || len(faces)==0 {
+        if err==nil { err=fmt.Errorf("no face detected") }
+        return nil,nil,alignment,fmt.Errorf("SCRFD landmarks unavailable: %w",err)
     }
 
-    ctx,cancel:=context.WithTimeout(context.Background(),2*time.Minute)
-    vec,meta,err:=manager.Embed(ctx,input)
-    cancel()
-    if err!=nil { return nil,nil,alignment,err }
+    input,err:=ident.ArcFaceInputAligned(raw,faces[0].Landmarks)
+    if err!=nil { return nil,nil,alignment,fmt.Errorf("five-point alignment failed: %w",err) }
+
+    embedCtx,embedCancel:=context.WithTimeout(context.Background(),2*time.Minute)
+    vec,meta,err:=manager.Embed(embedCtx,input)
+    embedCancel()
+    if err!=nil { return nil,nil,alignment,fmt.Errorf("ArcFace embedding failed: %w",err) }
+
     meta["alignment"]=alignment
-    if detectorLatency!=nil { meta["detector_latency_ms"]=detectorLatency }
+    meta["detector_latency_ms"]=detectMeta["latency_ms"]
     return ident.Normalize(vec),meta,alignment,nil
 }
-
 func commandDetect() {
     payload:=readObject()
     raw,err:=decodeB64(payload["image_base64"]); if err!=nil { fail(err) }
@@ -295,6 +291,40 @@ func commandIdentityBootstrapAll() {
     write(out)
 }
 
+func commandIdentityPoses() {
+    payload:=readObject()
+    raw,err:=json.Marshal(payload); if err!=nil { fail(err) }
+    var req identitygen.PoseMasterRequest
+    if err:=json.Unmarshal(raw,&req); err!=nil { fail(err) }
+    req.Progress=progressEvent
+    ctx,cancel:=context.WithTimeout(context.Background(),2*time.Hour); defer cancel()
+    out,err:=identitygen.GeneratePoseMasters(ctx,req); if err!=nil { fail(err) }
+    finish("identity pose metrics",map[string]any{
+        "persona":out.PersonaID,"ok":out.OK,"template":out.TemplateID,
+        "poses":len(out.Assets),"contact_sheet":out.ContactSheet,
+    })
+    write(out)
+}
+
+func commandIdentityAutonomous() {
+    payload:=readObject()
+    raw,err:=json.Marshal(payload); if err!=nil { fail(err) }
+    var req identitygen.AutonomousRequest
+    if err:=json.Unmarshal(raw,&req); err!=nil { fail(err) }
+    req.Progress=progressEvent
+    ctx,cancel:=context.WithTimeout(context.Background(),6*time.Hour); defer cancel()
+    out,err:=identitygen.AutonomousIdentity(ctx,req); if err!=nil { fail(err) }
+    finish("autonomous identity metrics",map[string]any{
+        "persona":out.PersonaID,"ok":out.OK,
+        "reference_complete":out.ReferenceComplete,
+        "portfolio_complete":out.PortfolioComplete,
+        "swap_available":out.SwapAvailable,
+        "portfolio_sheet":out.PortfolioSheet,
+        "manifest":out.ManifestPath,
+    })
+    write(out)
+}
+
 func commandHealth() {
     ctx,cancel:=context.WithTimeout(context.Background(),50*time.Second); defer cancel()
     m:=nativecore.FromEnv()
@@ -314,7 +344,7 @@ func commandHealth() {
 }
 
 func main() {
-    if len(os.Args)!=2 { fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|identity|identity-generate|identity-bootstrap-all|health")) }
+    if len(os.Args)!=2 { fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|identity|identity-generate|identity-bootstrap-all|identity-poses|identity-autonomous|health")) }
     command:=os.Args[1]
     progress=termui.Start(termui.Label("spicemedia", command))
     defer func(){ if progress!=nil { progress.Stop(true) } }()
@@ -327,6 +357,8 @@ func main() {
     case "identity": commandIdentity()
     case "identity-generate": commandIdentityGenerate()
     case "identity-bootstrap-all": commandIdentityBootstrapAll()
+    case "identity-poses": commandIdentityPoses()
+    case "identity-autonomous": commandIdentityAutonomous()
     case "health": commandHealth()
     default: fail(fmt.Errorf("unknown command: %s",command))
     }

@@ -2,7 +2,7 @@ id: ruby_wren
 name: Ruby Wren
 type: Ginger
 age: 30
-height_cm: 164
+height_cm: 170
 fictional: true
 disclosure: Fictional AI-generated adult character
 hobbies: [zine writing, astronomy, karaoke]
@@ -10,5 +10,41 @@ favorite_book: The Dispossessed
 backstory: A zine writer who began self-publishing after a failed gallery collaboration.
 heartbreak: A gallery partner dismissed her writing just before an exhibition.
 voice: Fiery, eloquent, irreverent
-visual: Copper-toned hair, colorful modern silhouettes, unique iconography
+visual: Copper-toned hair, green-hazel eyes, colorful modern silhouettes, unique iconography
+physical:
+  height_cm: 170
+  weight_kg: 60
+  build: lean curvy
+  proportions: long legs, narrow waist, lightly defined abdomen, balanced natural bust and hips, firm rounded glutes
+  eye_color: green-hazel
+  eye_shape: upturned almond
+  hair_color: copper auburn
+  hair_texture: straight with slight wave
+  hair_reference_style: tight high bun exposing forehead ears and nape
+  skin_tone: fair neutral with light freckles
+  distinguishing_features:
+    - prominent constellation-like freckle cluster across left shoulder and collarbone
+    - slight sectoral heterochromia in right iris
+identity_reference:
+  body_prompt: lean curvy adult woman with elongated proportions, long legs, lightly defined flat abdomen, narrow waist, balanced natural bust and hips, firm toned glutes, realistic anatomy
+  wardrobe_mode: neutral minimal reference clothing; wardrobe is never part of identity lock
+  hair_mode: tight high bun exposing all facial contours and nape
+  pose_template: expressive canonical body and face reference set
+adult_interest:
+  type: power-contrast aesthetic
+  cue: recurring visual tension between defiant and composed poses, controlled gaze, structured styling and deliberate posture; keep non-explicit
+  public_subtle: true
+content_cues:
+  barefoot_min_rate: 0.18
 themes: [mini essays, stargazing, creative arguments]
+methods:
+  - Miniature illustrated essays on cultural paradoxes and astronomy
+  - Live nocturnal telescope observations with poetic commentary
+  - Self-published risograph zine previews and reader essay critiques
+morals:
+  - Scrupulous intellectual attribution and citation for all historical ideas
+  - Uncompromising defense of independent creator copyright and fair use
+  - Rejection of corporate ghostwriting or hollow promotional puffery
+boundaries:
+  - Refuses to write paid propaganda or soften critique for advertisers
+  - Never uses private audience submissions without express prior consent

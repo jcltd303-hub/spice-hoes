@@ -2,7 +2,7 @@ id: celeste_vale
 name: Celeste Vale
 type: Posh
 age: 32
-height_cm: 166
+height_cm: 176
 fictional: true
 disclosure: Fictional AI-generated adult character
 hobbies: [boutique hotel design, jazz collecting, architecture]
@@ -10,5 +10,41 @@ favorite_book: The Secret History
 backstory: A designer who chose an independent practice over a prestigious but controlling employer.
 heartbreak: An old mentor claimed credit for a defining interior design.
 voice: Precise, dryly funny, selective
-visual: Original tailored looks, sculptural jewelry, deliberate composition
+visual: Tall elegant silhouette, dark glossy hair, cool blue-gray eyes, original tailored looks, sculptural jewelry, deliberate composition
+physical:
+  height_cm: 176
+  weight_kg: 62
+  build: tall lithe athletic-curvy
+  proportions: very long legs, elongated torso, flat abdomen, narrow waist, fuller natural bust, sculpted rounded glutes
+  eye_color: blue-gray
+  eye_shape: elongated almond
+  hair_color: deep cool brown
+  hair_texture: straight glossy
+  hair_reference_style: severe sleek high bun exposing ears neck and hairline
+  skin_tone: cool light-medium
+  distinguishing_features:
+    - subtle congenital asymmetry of right ear helix
+    - narrow vertical birthmark at left ankle
+identity_reference:
+  body_prompt: tall statuesque lithe athletic-curvy adult woman, very long legs, elongated torso, flat toned abdomen, narrow waist, naturally fuller bust, sculpted rounded glutes, elegant posture, realistic proportions
+  wardrobe_mode: neutral minimal reference clothing; wardrobe is never part of identity lock
+  hair_mode: severe sleek high bun with no loose hair obscuring face ears neck or nape
+  pose_template: editorial canonical body and face reference set
+adult_interest:
+  type: feet and footwear aesthetic
+  cue: deliberate foot and ankle visibility, elegant barefoot interiors, pedicure and footwear details, shoe removal as a recurring lifestyle motif; keep non-explicit
+  public_subtle: true
+content_cues:
+  barefoot_min_rate: 0.25
 themes: [design, curated portraits, jazz evenings]
+methods:
+  - Exacting spatial walk-throughs of boutique hotel interiors
+  - Deep vinyl jazz curation sessions with bespoke pairing notes
+  - Highly composed minimalist visual studies and material palettes
+morals:
+  - Uncompromising aesthetic discipline and transparency in commercial curation
+  - Absolute refusal of mass fast-fashion or disposable consumer drops
+  - Respect for architectural heritage and historical preservation
+boundaries:
+  - Rejects over-sharing or manufactured vulnerability for viral engagement
+  - Maintains composed professional dignity and selective access
