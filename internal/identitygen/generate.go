@@ -682,7 +682,7 @@ func generateFrame(ctx context.Context, req Request, prompt string) (generatedFr
 		client := localdream.FromEnv()
 		out, err := client.Generate(ctx, localdream.GenerateRequest{
 			Prompt: prompt, NegativePrompt: req.NegativePrompt, Seed: req.Seed,
-			Width: req.Width, Height: req.Height,
+			Width: req.Width, Height: req.Height, Steps: req.Steps, Guidance: req.Guidance,
 		})
 		if err != nil { return generatedFrame{}, nil, backend, err }
 		meta := out.Generation
