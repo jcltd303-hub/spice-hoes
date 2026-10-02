@@ -29,6 +29,7 @@ type BootstrapAllRequest struct {
 	Steps             int     `json:"steps,omitempty"`
 	Guidance          float64 `json:"guidance,omitempty"`
 	IdentityThreshold float64 `json:"identity_threshold,omitempty"`
+	IdentityMeanThreshold float64 `json:"identity_mean_threshold,omitempty"`
 	QualityThreshold  float64 `json:"quality_threshold,omitempty"`
 	Generator         string  `json:"generator,omitempty"`
 	Seed              int64   `json:"seed,omitempty"`
@@ -309,7 +310,7 @@ func selectBootstrapConsensus(ctx context.Context, manager *nativecore.Manager, 
 		if len(refs) < 2 {
 			continue
 		}
-		identity := scoreIdentity(ctx, manager, raw, refs, threshold)
+		identity := scoreIdentity(ctx, manager, raw, refs, threshold, threshold)
 		if !identity.Scored {
 			continue
 		}
@@ -381,6 +382,9 @@ func BootstrapAll(ctx context.Context, req BootstrapAllRequest) (BootstrapAllRes
 	if req.IdentityThreshold == 0 {
 		req.IdentityThreshold = 0.82
 	}
+	if req.IdentityMeanThreshold == 0 {
+		req.IdentityMeanThreshold = 0.70
+	}
 	if req.QualityThreshold == 0 {
 		req.QualityThreshold = 0.78
 	}
@@ -450,6 +454,7 @@ func BootstrapAll(ctx context.Context, req BootstrapAllRequest) (BootstrapAllRes
 				OutputDir: filepath.Join(req.OutputRoot, p.ID),
 				ReferenceRoot: req.ReferenceRoot,
 				IdentityThreshold: req.IdentityThreshold,
+				IdentityMeanThreshold: req.IdentityMeanThreshold,
 				QualityThreshold: req.QualityThreshold,
 				Generator: req.Generator,
 				Progress: func(ev ProgressEvent) {
