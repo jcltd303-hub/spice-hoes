@@ -25,6 +25,7 @@ type BootstrapAllRequest struct {
 	IdentityThreshold float64 `json:"identity_threshold,omitempty"`
 	QualityThreshold  float64 `json:"quality_threshold,omitempty"`
 	Seed              int64   `json:"seed,omitempty"`
+	Progress          func(ProgressEvent) `json:"-"`
 }
 
 type PersonaBootstrapResult struct {
@@ -170,6 +171,7 @@ func BootstrapAll(ctx context.Context, req BootstrapAllRequest) (BootstrapAllRes
 	}
 
 	out := BootstrapAllResult{Total: len(files), TargetReferences: req.TargetReferences}
+	if req.Progress != nil { req.Progress(ProgressEvent{Percent:1,Stage:"bootstrap initialized",Metrics:map[string]any{"personas":len(files),"target_refs":req.TargetReferences,"max_attempts":req.MaxAttempts}}) }
 	for pi, path := range files {
 		p, err := loadPersona(Request{PersonaPath: path})
 		if err != nil {
@@ -177,6 +179,8 @@ func BootstrapAll(ctx context.Context, req BootstrapAllRequest) (BootstrapAllRes
 			continue
 		}
 		pr := PersonaBootstrapResult{PersonaID: p.ID, TargetReferences: req.TargetReferences}
+		basePercent := 100.0 * float64(pi) / float64(len(files))
+		if req.Progress != nil { req.Progress(ProgressEvent{Percent:basePercent,Stage:"persona "+p.ID,Metrics:map[string]any{"persona":fmt.Sprintf("%d/%d",pi+1,len(files))}}) }
 		refCount := countReferences(req.ReferenceRoot, p.ID)
 		pr.ReferenceCount = refCount
 
@@ -187,6 +191,7 @@ func BootstrapAll(ctx context.Context, req BootstrapAllRequest) (BootstrapAllRes
 			default:
 			}
 			pr.Attempts++
+			if req.Progress != nil { req.Progress(ProgressEvent{Percent:basePercent,Stage:"attempt",Metrics:map[string]any{"persona_id":p.ID,"attempt":fmt.Sprintf("%d/%d",attempt+1,req.MaxAttempts),"references":fmt.Sprintf("%d/%d",refCount,req.TargetReferences)}}) }
 			seed := req.Seed
 			if seed != 0 {
 				seed += int64(pi*10000 + attempt)
@@ -206,6 +211,15 @@ func BootstrapAll(ctx context.Context, req BootstrapAllRequest) (BootstrapAllRes
 				ReferenceRoot: req.ReferenceRoot,
 				IdentityThreshold: req.IdentityThreshold,
 				QualityThreshold: req.QualityThreshold,
+				Progress: func(ev ProgressEvent) {
+					if req.Progress == nil { return }
+					personaSpan := 100.0 / float64(len(files))
+					attemptFraction := (float64(attempt) + ev.Percent/100.0) / float64(req.MaxAttempts)
+					pct := basePercent + personaSpan*attemptFraction
+					m := map[string]any{"persona_id":p.ID,"attempt":fmt.Sprintf("%d/%d",attempt+1,req.MaxAttempts),"references":fmt.Sprintf("%d/%d",refCount,req.TargetReferences)}
+					for k,v := range ev.Metrics { m[k]=v }
+					req.Progress(ProgressEvent{Percent:pct,Stage:ev.Stage,Metrics:m})
+				},
 			})
 			if runErr != nil {
 				pr.Error = runErr.Error()
@@ -232,6 +246,7 @@ func BootstrapAll(ctx context.Context, req BootstrapAllRequest) (BootstrapAllRes
 			pr.Promoted = append(pr.Promoted, dst)
 			refCount++
 			pr.ReferenceCount = refCount
+			if req.Progress != nil { req.Progress(ProgressEvent{Percent:basePercent,Stage:"reference promoted",Metrics:map[string]any{"persona_id":p.ID,"references":fmt.Sprintf("%d/%d",refCount,req.TargetReferences),"identity_score":r.Identity.Score,"quality_score":r.Quality.LocalScore}}) }
 		}
 
 		pr.Complete = refCount >= req.TargetReferences
@@ -241,6 +256,7 @@ func BootstrapAll(ctx context.Context, req BootstrapAllRequest) (BootstrapAllRes
 		out.Personas = append(out.Personas, pr)
 	}
 	out.OK = out.Complete == out.Total
+	if req.Progress != nil { req.Progress(ProgressEvent{Percent:100,Stage:"bootstrap complete",Metrics:map[string]any{"complete":fmt.Sprintf("%d/%d",out.Complete,out.Total),"ok":out.OK}}) }
 
 	manifestDir := filepath.Join(req.ReferenceRoot, "_manifests")
 	if err := os.MkdirAll(manifestDir, 0o755); err == nil {
