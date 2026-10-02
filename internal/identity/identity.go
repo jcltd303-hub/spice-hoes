@@ -92,8 +92,7 @@ func AlignFace(img image.Image, landmarks [5]Point) (image.Image,error) {
     return out,nil
 }
 
-func ArcFaceInputAligned(data []byte, landmarks [5]Point) ([]float64,error) {
-    img,_,err:=image.Decode(bytes.NewReader(data)); if err!=nil { return nil,fmt.Errorf("decode image: %w",err) }
+func ArcFaceInputAlignedImage(img image.Image, landmarks [5]Point) ([]float64,error) {
     aligned,err:=AlignFace(img,landmarks); if err!=nil { return nil,err }
     plane:=ArcFaceSize*ArcFaceSize
     out:=make([]float64,3*plane)
@@ -107,6 +106,12 @@ func ArcFaceInputAligned(data []byte, landmarks [5]Point) ([]float64,error) {
         }
     }
     return out,nil
+}
+
+
+func ArcFaceInputAligned(data []byte, landmarks [5]Point) ([]float64,error) {
+    img,_,err:=image.Decode(bytes.NewReader(data)); if err!=nil { return nil,fmt.Errorf("decode image: %w",err) }
+    return ArcFaceInputAlignedImage(img, landmarks)
 }
 
 func ArcFaceInput(data []byte) ([]float64,error) {
