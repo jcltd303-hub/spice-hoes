@@ -15,9 +15,10 @@ PERSONA_ID="${1:-}"
 GENERATOR="${2:-${SPICE_IDENTITY_GENERATOR:-local-dream}}"
 SWAP_MODE="${3:-auto}"
 SEED="${4:-41000}"
+RUN_ID="${5:-${SPICE_AUTONOMOUS_RUN_ID:-}}"
 
 if [[ -z "$PERSONA_ID" ]]; then
-  echo "usage: $0 <persona_id> [local-dream|qnn] [auto|required|disabled] [seed]" >&2
+  echo "usage: $0 <persona_id> [local-dream|qnn] [auto|required|disabled] [seed] [run_id]" >&2
   exit 2
 fi
 
@@ -49,6 +50,7 @@ fi
 cat <<JSON | "$ROOT/bin/spicemedia" identity-autonomous
 {
   "persona_id": "$PERSONA_ID",
+  "run_id": "$RUN_ID",
   "generator": "$GENERATOR",
   "swap_mode": "$SWAP_MODE",
   "seed": $SEED,
@@ -58,3 +60,10 @@ cat <<JSON | "$ROOT/bin/spicemedia" identity-autonomous
   "quality_threshold": ${SPICE_QUALITY_THRESHOLD:-0.78}
 }
 JSON
+
+echo
+if command -v find >/dev/null 2>&1; then
+  DOC_ROOT="${SPICE_DOCUMENTS_ROOT:-$HOME/storage/documents}"
+  echo "Latest mirrored autonomous outputs:"
+  find "$DOC_ROOT/sh/$PERSONA_ID/autonomous" -maxdepth 2 -type f \( -name 'identity_master_9pose.png' -o -name 'identity_portfolio_manifest.json' \) -print 2>/dev/null | sort | tail -n 4 || true
+fi
