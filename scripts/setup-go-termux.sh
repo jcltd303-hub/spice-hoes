@@ -17,18 +17,17 @@ install -m 0755 scripts/hoes "$PREFIX/bin/hoes"
 echo "[4/6] Checking GitHub authentication"
 gh auth status
 
-echo "[5/6] Checking native artifacts"
-QNN_RUN="$(gh run list -R jcltd303-hub/spice-hoes --workflow "Build Spice QNN Runtime" --status success --limit 1 --json databaseId --jq '.[0].databaseId' || true)"
-FACE_RUN="$(gh run list -R jcltd303-hub/spice-hoes --workflow "Build Face Embedding QNN" --status success --limit 1 --json databaseId --jq '.[0].databaseId' || true)"
-
-if [[ -z "$QNN_RUN" || "$QNN_RUN" == "null" || -z "$FACE_RUN" || "$FACE_RUN" == "null" ]]; then
-  echo "Native artifacts are not ready yet."
-  echo "Trigger them with:"
-  echo "  ./scripts/build-native-artifacts.sh"
-  exit 2
-fi
+echo "[5/6] Installing reused local-dream QNN runtime"
+bash scripts/install-local-dream-runtime.sh
 
 echo "[6/6] Installing Go/QNN runtime and face models"
+FACE_RUN="$(gh run list -R jcltd303-hub/spice-hoes --workflow "Build Face Embedding QNN" --status success --limit 1 --json databaseId --jq '.[0].databaseId' || true)"
+if [[ -z "$FACE_RUN" || "$FACE_RUN" == "null" ]]; then
+  echo "Face model artifact is not ready yet."
+  echo "Trigger only the face model build with:"
+  echo "  gh workflow run \"Build Face Embedding QNN\" -R jcltd303-hub/spice-hoes"
+  exit 2
+fi
 ./scripts/install-spicemedia-termux.sh
 
 echo
