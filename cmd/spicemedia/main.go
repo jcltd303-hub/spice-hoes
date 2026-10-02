@@ -110,7 +110,7 @@ func arcFaceEmbedding(manager *nativecore.Manager, raw []byte) ([]float64,map[st
     detectCancel()
     if err!=nil { return nil,nil,alignment,fmt.Errorf("SCRFD detection failed: %w",err) }
 
-    faces,err:=ident.DecodeSCRFD(outputs,prep,0.5,0.4)
+    faces,err:=ident.DecodeSCRFD(outputs,prep,ident.SCRFDThreshold(0.5),0.4)
     if err!=nil || len(faces)==0 {
         if err==nil { err=fmt.Errorf("no face detected") }
         return nil,nil,alignment,fmt.Errorf("SCRFD landmarks unavailable: %w",err)
@@ -138,7 +138,7 @@ func commandDetect() {
     ctx,cancel:=context.WithTimeout(context.Background(),2*time.Minute); defer cancel()
     progress.SetProgress(35,"SCRFD detection")
     outputs,meta,err:=manager.Detect(ctx,prep.Tensor); if err!=nil { fail(err) }
-    faces,err:=ident.DecodeSCRFD(outputs,prep,0.5,0.4); if err!=nil { fail(err) }
+    faces,err:=ident.DecodeSCRFD(outputs,prep,ident.SCRFDThreshold(0.5),0.4); if err!=nil { fail(err) }
 
     result:=make([]map[string]any,0,len(faces))
     for _,face:=range faces {
