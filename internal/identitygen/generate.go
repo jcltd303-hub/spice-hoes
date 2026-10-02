@@ -30,6 +30,12 @@ type Persona struct {
 	Hobbies    []string `yaml:"hobbies" json:"hobbies"`
 }
 
+type ProgressEvent struct {
+	Percent float64
+	Stage string
+	Metrics map[string]any
+}
+
 type Request struct {
 	PersonaID        string  `json:"persona_id"`
 	PersonaPath      string  `json:"persona_path,omitempty"`
@@ -267,7 +273,12 @@ func randomID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 
+func emitProgress(req Request, percent float64, stage string, metrics map[string]any) {
+	if req.Progress != nil { req.Progress(ProgressEvent{Percent: percent, Stage: stage, Metrics: metrics}) }
+}
+
 func Run(ctx context.Context, req Request) (Result, error) {
+	emitProgress(req, 2, "loading persona", nil)
 	p, err := loadPersona(req)
 	if err != nil {
 		return Result{}, err
@@ -303,6 +314,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		req.NegativePrompt = defaultNegative
 	}
 
+	emitProgress(req, 8, "building prompt", map[string]any{"persona":p.ID,"seed":req.Seed})
 	prompt := promptFor(p, req)
 	m := nativecore.FromEnv()
 	if m.ModelDir == "" {
@@ -322,10 +334,13 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		payload["seed"] = req.Seed
 	}
 
+	emitProgress(req, 15, "QNN generation", map[string]any{"size":fmt.Sprintf("%dx%d",req.Width,req.Height),"steps":req.Steps,"guidance":req.Guidance})
+	genStarted := time.Now()
 	out, err := m.Generate(ctx, payload)
 	if err != nil {
 		return Result{}, err
 	}
+	emitProgress(req, 62, "generation complete", map[string]any{"generation_elapsed":time.Since(genStarted).Round(time.Millisecond)})
 	imageB64, _ := out["image"].(string)
 	if imageB64 == "" {
 		return Result{}, fmt.Errorf("QNN generation returned no image")
@@ -344,16 +359,21 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 
+	emitProgress(req, 70, "loading identity references", nil)
 	refs, err := loadReferences(req.ReferenceRoot, p.ID)
 	if err != nil {
 		return Result{}, fmt.Errorf("load references: %w", err)
 	}
+	emitProgress(req, 76, "SCRFD + ArcFace identity", map[string]any{"references":len(refs),"identity_threshold":req.IdentityThreshold})
 	identity := scoreIdentity(ctx, m, imageBytes, refs, req.IdentityThreshold)
+	emitProgress(req, 86, "identity scored", map[string]any{"identity_score":identity.Score,"identity_mean":identity.MeanScore,"identity_pass":identity.Passed,"alignment":identity.Alignment})
+	emitProgress(req, 88, "image quality analysis", nil)
 	quality, err := imagemetrics.Analyze(imageBytes)
 	if err != nil {
 		return Result{}, err
 	}
 	qualityPassed := quality.LocalScore >= req.QualityThreshold
+	emitProgress(req, 94, "quality scored", map[string]any{"quality_score":quality.LocalScore,"quality_pass":qualityPassed,"sharpness":quality.Sharpness,"contrast":quality.Contrast,"exposure":quality.ExposureScore,"resolution":quality.ResolutionScore})
 	status := "proposed"
 	if identity.Scored && !identity.Passed {
 		status = "rejected_identity"
@@ -393,6 +413,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		docMetaPath = docAssetPath + ".json"
 	}
 
+	emitProgress(req, 97, "saving asset + metadata", map[string]any{"status":status,"asset":assetPath,"documents":result.DocumentsPath})
 	meta, _ := json.MarshalIndent(result, "", "  ")
 	if err := os.WriteFile(metaPath, meta, 0o644); err != nil {
 		return Result{}, err
@@ -402,6 +423,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			return Result{}, fmt.Errorf("copy generated metadata to documents: %w", err)
 		}
 	}
+	emitProgress(req, 100, "complete", map[string]any{"status":status,"identity_score":identity.Score,"quality_score":quality.LocalScore,"asset":assetPath,"documents":result.DocumentsPath})
 	return result, nil
 }
 
