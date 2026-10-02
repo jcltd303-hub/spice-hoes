@@ -12,10 +12,10 @@ mkdir -p bin
 go build -trimpath -ldflags="-s -w" -o bin/spiceimg ./cmd/spiceimg
 go build -trimpath -ldflags="-s -w" -o bin/spicemedia ./cmd/spicemedia
 
-echo "[2/5] Reusing compiled QNN runtime from local-dream"
-bash scripts/install-local-dream-runtime.sh
+echo "[2/5] Installing Spice QNN runtime artifact"
+bash scripts/install-spice-qnn-runtime-termux.sh
 
-echo "[3/5] Verifying reused native runtime"
+echo "[3/5] Verifying Spice native runtime"
 chmod +x runtime/bin/spice-qnn-core bin/spicemedia bin/spiceimg
 test -s runtime/bin/spice-qnn-core
 test -s runtime/lib/libQnnHtp.so
@@ -56,9 +56,10 @@ fi
 echo
 echo "Installed Go media runtime."
 echo "Python is not required for spicemedia runtime; model conversion happens only in GitHub Actions."
-echo "Next, export the existing generation model if needed:"
-echo "  ./scripts/import-local-dream-model.sh cyber_realistic_v10"
 echo "Then load config:"
 echo "  set -a; source .env.spicemedia; set +a"
-echo "Health:"
-echo "  echo '{}' | ./bin/spicemedia health"
+echo "Running health check..."
+set -a
+source .env.spicemedia
+set +a
+echo '{}' | ./bin/spicemedia health
