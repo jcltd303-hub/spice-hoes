@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-  push:
-    branches: [main]
     paths:
       - ".github/workflows/spice-qnn-runtime.yml"
 
@@ -26,7 +24,6 @@ env:
 
 jobs:
   build:
-    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'ci: run spice qnn runtime'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
