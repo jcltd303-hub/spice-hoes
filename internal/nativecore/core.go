@@ -87,6 +87,9 @@ func (m *Manager) Ensure(ctx context.Context) error {
         args = []string{"--upscaler_mode","--lib_dir",m.LibDir,"--port",strconv.Itoa(m.Port)}
     } else {
         args = []string{"--type",m.Type,"--model_dir",m.ModelDir,"--lib_dir",m.LibDir,"--port",strconv.Itoa(m.Port)}
+        if m.Type == "sdxl" {
+            args = append(args, "--no_img2img", "--lowram")
+        }
     }
     if m.IdentityVision != "" {
         identityPath, err := filepath.Abs(m.IdentityVision); if err != nil { return err }
