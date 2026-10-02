@@ -21,6 +21,7 @@ import (
 
 	ident "github.com/jcltd303-hub/spice-hoes/internal/identity"
 	"github.com/jcltd303-hub/spice-hoes/internal/imagemetrics"
+	"github.com/jcltd303-hub/spice-hoes/internal/faceswap"
 	"github.com/jcltd303-hub/spice-hoes/internal/localdream"
 	"github.com/jcltd303-hub/spice-hoes/internal/nativecore"
 	"gopkg.in/yaml.v3"
@@ -284,6 +285,36 @@ func loadReferences(root, personaID string) ([][]byte, error) {
 	return out, nil
 }
 
+func selectBestReference(ctx context.Context, m *nativecore.Manager, generated image.Image, refs [][]byte) ([]byte, float64, error) {
+	if len(refs) == 0 {
+		return nil, 0, fmt.Errorf("no identity references")
+	}
+	genVec, _, err := arcEmbeddingImage(ctx, m, generated)
+	if err != nil {
+		return nil, 0, fmt.Errorf("candidate embedding: %w", err)
+	}
+	bestIndex := -1
+	bestScore := -2.0
+	for i, ref := range refs {
+		refVec, _, err := arcEmbedding(ctx, m, ref)
+		if err != nil {
+			continue
+		}
+		score, err := ident.Cosine(genVec, refVec)
+		if err != nil {
+			continue
+		}
+		if bestIndex < 0 || score > bestScore {
+			bestIndex = i
+			bestScore = score
+		}
+	}
+	if bestIndex < 0 {
+		return nil, 0, fmt.Errorf("no reference embedding succeeded")
+	}
+	return refs[bestIndex], bestScore, nil
+}
+
 func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated image.Image, refs [][]byte, threshold float64) IdentityResult {
 	result := IdentityResult{
 		Threshold: threshold,
@@ -525,6 +556,52 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("load references: %w", err)
 	}
+
+	if len(refs) > 0 {
+		cfg := faceswap.ConfigFromEnv()
+		if faceswap.Available(cfg) {
+			emitProgress(req, 72, "identity face transfer", map[string]any{"references":len(refs)})
+			sourceRef, sourceScore, selectErr := selectBestReference(ctx, m, frame.Image, refs)
+			if selectErr != nil {
+				out["faceswap_applied"] = false
+				out["faceswap_reason"] = selectErr.Error()
+			} else {
+				swapper, swapErr := faceswap.New(ctx, cfg, m)
+				if swapErr != nil {
+					out["faceswap_applied"] = false
+					out["faceswap_reason"] = swapErr.Error()
+				} else {
+					swapped, swapMeta, swapErr := swapper.Swap(ctx, sourceRef, imageBytes)
+					swapper.Close()
+					if swapErr != nil {
+						out["faceswap_applied"] = false
+						out["faceswap_reason"] = swapErr.Error()
+					} else {
+						swappedImg, _, decodeErr := image.Decode(bytes.NewReader(swapped))
+						if decodeErr != nil {
+							out["faceswap_applied"] = false
+							out["faceswap_reason"] = "decode swapped image: " + decodeErr.Error()
+						} else {
+							frame = generatedFrame{Image: swappedImg, Encoded: swapped}
+							imageBytes = swapped
+							if err := os.WriteFile(assetPath, imageBytes, 0o644); err != nil {
+								return Result{}, fmt.Errorf("write swapped artifact: %w", err)
+							}
+							out["faceswap_applied"] = true
+							out["faceswap_model"] = swapMeta.Model
+							out["faceswap_alignment"] = swapMeta.Alignment
+							out["faceswap_target_score"] = swapMeta.TargetScore
+							out["faceswap_source_score"] = sourceScore
+						}
+					}
+				}
+			}
+		} else {
+			out["faceswap_applied"] = false
+			out["faceswap_reason"] = "face swap assets unavailable"
+		}
+	}
+
 	emitProgress(req, 76, "SCRFD + ArcFace identity", map[string]any{"references":len(refs),"identity_threshold":req.IdentityThreshold})
 	identity := scoreIdentityImage(ctx, m, frame.Image, refs, req.IdentityThreshold)
 	emitProgress(req, 86, "identity scored", map[string]any{"identity_score":identity.Score,"identity_mean":identity.MeanScore,"identity_pass":identity.Passed,"alignment":identity.Alignment})
