@@ -90,13 +90,28 @@ func decodeImagePayload(raw []byte, obj map[string]any) (image.Image,[]byte,stri
 	width:=intField(obj,"width")
 	height:=intField(obj,"height")
 	channels:=intField(obj,"channels")
-	if channels==0 { channels=3 }
-	if width>0 && height>0 && len(raw)==width*height*channels {
-		img,err:=rawRGBImage(raw,width,height,channels)
-		if err!=nil{return nil,nil,"",err}
-		obj["source_format"]="raw-rgb"
-		obj["format"]="raw"
-		return img,nil,"application/x-raw-rgb",nil
+	if width>0 && height>0 {
+		pixels:=width*height
+		if channels!=3 && channels!=4 {
+			switch len(raw) {
+			case pixels*4:
+				channels=4
+			case pixels*3:
+				channels=3
+			}
+		}
+		if len(raw)==pixels*channels && (channels==3 || channels==4) {
+			img,err:=rawRGBImage(raw,width,height,channels)
+			if err!=nil{return nil,nil,"",err}
+			if channels==4 {
+				obj["source_format"]="raw-rgba8888"
+			} else {
+				obj["source_format"]="raw-rgb24"
+			}
+			obj["source_channels"]=channels
+			obj["format"]="raw"
+			return img,nil,"application/x-raw-rgb",nil
+		}
 	}
 	return nil,nil,"",fmt.Errorf("unsupported local dream image payload: %d bytes (width=%d height=%d channels=%d)",len(raw),width,height,channels)
 }
