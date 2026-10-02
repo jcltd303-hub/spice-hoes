@@ -7,6 +7,9 @@ import (
     _ "image/jpeg"
     _ "image/png"
     "math"
+    "os"
+    "strconv"
+    "strings"
 
     "github.com/jcltd303-hub/spice-hoes/internal/nativecore"
 )
@@ -99,6 +102,14 @@ func inferChannels(out nativecore.TensorOutput) int {
     return 0
 }
 
+func SCRFDThreshold(defaultValue float64) float64 {
+    raw := strings.TrimSpace(os.Getenv("SPICE_SCRFD_THRESHOLD"))
+    if raw == "" { return defaultValue }
+    v, err := strconv.ParseFloat(raw, 64)
+    if err != nil || v <= 0 || v >= 1 { return defaultValue }
+    return v
+}
+
 func DecodeSCRFD(outputs []nativecore.TensorOutput, prep DetectorInput, threshold,nmsThreshold float64) ([]FaceDetection,error) {
     type grouped struct {
         score,bbox,kps []float64
@@ -119,6 +130,7 @@ func DecodeSCRFD(outputs []nativecore.TensorOutput, prep DetectorInput, threshol
     }
 
     detections:=make([]FaceDetection,0)
+    maxScore := math.Inf(-1)
     const anchors=2
     for count,g:=range groups {
         if len(g.score)==0 || len(g.bbox)!=count*4 || len(g.kps)!=count*10 { continue }
@@ -131,6 +143,7 @@ func DecodeSCRFD(outputs []nativecore.TensorOutput, prep DetectorInput, threshol
 
         for i:=0;i<count;i++ {
             score:=g.score[i]
+            if score > maxScore { maxScore = score }
             if score<threshold { continue }
             cell:=i/anchors
             gx:=cell%grid
@@ -168,7 +181,12 @@ func DecodeSCRFD(outputs []nativecore.TensorOutput, prep DetectorInput, threshol
             })
         }
     }
-    if len(detections)==0 { return nil,fmt.Errorf("SCRFD found no face above threshold %.2f",threshold) }
+    if len(detections)==0 {
+        if math.IsInf(maxScore, -1) {
+            return nil,fmt.Errorf("SCRFD found no usable score tensor")
+        }
+        return nil,fmt.Errorf("SCRFD found no face above threshold %.2f (max score %.6f)",threshold,maxScore)
+    }
     return nms(detections,nmsThreshold),nil
 }
 
