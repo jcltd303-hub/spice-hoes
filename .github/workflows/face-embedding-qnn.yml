@@ -68,8 +68,12 @@ jobs:
 
       - name: Install converter dependencies
         run: |
-          # QAIRT converter still imports distutils (gone from 3.12 stdlib).
-          python -m pip install --disable-pip-version-check setuptools numpy onnx pyyaml protobuf packaging psutil pandas
+          # QAIRT converter needs onnx.version (removed in recent onnx).
+          python -m pip install --disable-pip-version-check \
+            setuptools \
+            "onnx==1.14.1" \
+            "numpy<2" \
+            pyyaml protobuf packaging psutil pandas
 
       - name: Restore InsightFace model cache
         id: cache-face-models
@@ -168,10 +172,20 @@ jobs:
           set -eu
           ARC_INPUT="$(python -c 'import json; print(json.load(open("work/contracts.json"))["arcface"]["input_name"])')"
           DET_INPUT="$(python -c 'import json; print(json.load(open("work/contracts.json"))["scrfd"]["input_name"])')"
+          SITE_PACKAGES="$(python -c 'import site; print(":".join(site.getsitepackages()))')"
+          CONVERT_PYTHONPATH="$SITE_PACKAGES:$QNN_SDK_ROOT/lib/python"
 
-          python "$CONVERTER"             --input_network work/buffalo/w600k_r50.onnx             --input_dim "$ARC_INPUT" 1,3,112,112             --output_path work/arcface_w600k_r50.cpp             --input_list work/calibration/arcface/input_list.txt
+          PYTHONPATH="$CONVERT_PYTHONPATH" python "$CONVERTER" \
+            --input_network work/buffalo/w600k_r50.onnx \
+            --input_dim "$ARC_INPUT" 1,3,112,112 \
+            --output_path work/arcface_w600k_r50.cpp \
+            --input_list work/calibration/arcface/input_list.txt
 
-          python "$CONVERTER"             --input_network work/buffalo/det_10g.onnx             --input_dim "$DET_INPUT" 1,3,640,640             --output_path work/scrfd_10g.cpp             --input_list work/calibration/scrfd/input_list.txt
+          PYTHONPATH="$CONVERT_PYTHONPATH" python "$CONVERTER" \
+            --input_network work/buffalo/det_10g.onnx \
+            --input_dim "$DET_INPUT" 1,3,640,640 \
+            --output_path work/scrfd_10g.cpp \
+            --input_list work/calibration/scrfd/input_list.txt
 
       - name: Build host model libraries
         run: |
