@@ -190,11 +190,11 @@ func GeneratePoseMasters(ctx context.Context, req PoseMasterRequest) (PoseMaster
 				Steps:20, Guidance:7, Generator:req.Generator,
 			}
 			prompt := posePrompt(p, t, pose)
-			raw, meta, backend, genErr := generateRaw(ctx, genReq, prompt)
+			frame, meta, backend, genErr := generateFrame(ctx, genReq, prompt)
 			if genErr != nil {
 				continue
 			}
-			quality, qErr := imagemetrics.Analyze(raw)
+			quality, qErr := imagemetrics.AnalyzeImage(frame.Image)
 			if qErr != nil {
 				continue
 			}
@@ -209,7 +209,11 @@ func GeneratePoseMasters(ctx context.Context, req PoseMasterRequest) (PoseMaster
 				continue
 			}
 			path := filepath.Join(outDir, fmt.Sprintf("%02d_%s.png", i, pose.ID))
-			if err := os.WriteFile(path, raw, 0o644); err != nil {
+			encoded, encErr := encodeFramePNG(frame)
+			if encErr != nil {
+				return result, encErr
+			}
+			if err := os.WriteFile(path, encoded, 0o644); err != nil {
 				return result, err
 			}
 			selected = PoseAsset{
