@@ -215,8 +215,7 @@ func promptFor(p Persona, req Request) string {
 	}
 	parts := []string{
 		fmt.Sprintf("Original fictional AI-generated adult character %s, age %d.", p.Name, p.Age),
-		fmt.Sprintf("Identity anchor: %s.", strings.TrimSpace(p.Visual)),
-		fmt.Sprintf("Physical identity: %s.", physicalPrompt(p)),
+		fmt.Sprintf("Immutable identity lock: %s.", physicalPrompt(p)),
 		fmt.Sprintf("Body lock: %s.", strings.TrimSpace(p.IdentityReference.BodyPrompt)),
 		fmt.Sprintf("Theme: %s.", strings.TrimSpace(req.Theme)),
 		fmt.Sprintf("Style: %s.", style),
