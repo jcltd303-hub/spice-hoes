@@ -10,25 +10,27 @@ favorite_book: The Secret History
 backstory: A designer who chose an independent practice over a prestigious but controlling employer.
 heartbreak: An old mentor claimed credit for a defining interior design.
 voice: Precise, dryly funny, selective
-visual: Tall elegant silhouette, dark glossy hair, cool blue-gray eyes, original tailored looks, sculptural jewelry, deliberate composition
+visual: Tall elegant silhouette, warm olive skin with faint freckles, dark brown almond eyes, espresso-brown collarbone-length softly wavy hair, small beauty mark on left cheek, original tailored looks, sculptural jewelry, deliberate composition
 physical:
   height_cm: 176
   weight_kg: 62
   build: tall lithe athletic-curvy
   proportions: very long legs, elongated torso, flat abdomen, narrow waist, fuller natural bust, sculpted rounded glutes
-  eye_color: blue-gray
-  eye_shape: elongated almond
-  hair_color: deep cool brown
-  hair_texture: straight glossy
-  hair_reference_style: severe sleek high bun exposing ears neck and hairline
-  skin_tone: cool light-medium
+  eye_color: dark brown
+  eye_shape: almond
+  hair_color: espresso-brown
+  hair_texture: soft waves
+  hair_reference_style: collarbone-length softly wavy hair, face unobscured
+  skin_tone: warm olive with faint freckles
   distinguishing_features:
-    - subtle congenital asymmetry of right ear helix
-    - narrow vertical birthmark at left ankle
+    - slightly asymmetric arched brows
+    - straight softly rounded nose
+    - natural full lips
+    - small beauty mark on left cheek
 identity_reference:
   body_prompt: tall statuesque lithe athletic-curvy adult woman, very long legs, elongated torso, flat toned abdomen, narrow waist, naturally fuller bust, sculpted rounded glutes, elegant posture, realistic proportions
   wardrobe_mode: neutral minimal reference clothing; wardrobe is never part of identity lock
-  hair_mode: severe sleek high bun with no loose hair obscuring face ears neck or nape
+  hair_mode: espresso-brown collarbone-length softly wavy hair with face unobscured
   pose_template: editorial canonical body and face reference set
 adult_interest:
   type: feet and footwear aesthetic
