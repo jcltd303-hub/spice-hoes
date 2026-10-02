@@ -16,11 +16,12 @@ def main():
     ap.add_argument("--persona",default="celeste_vale")
     ap.add_argument("--token",default="cvceleste")
     ap.add_argument("--reference-root",default="data/references")
+    ap.add_argument("--reference-dir",default="")
     ap.add_argument("--output-root",default="data/embedding-training")
     ap.add_argument("--min-images",type=int,default=4)
     args=ap.parse_args()
 
-    src=Path(args.reference_root)/args.persona
+    src=Path(args.reference_dir) if args.reference_dir else Path(args.reference_root)/args.persona
     out=Path(args.output_root)/args.persona
     images=out/"images"
     if not src.exists(): raise SystemExit(f"missing reference directory: {src}")
