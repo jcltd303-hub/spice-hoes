@@ -437,6 +437,47 @@ func selectCanonicalReference(refs [][]byte, paths []string, embedded []referenc
 	return refs[embedded[best].index], path, bestMean, nil
 }
 
+func rankedReferenceEmbeddings(refs []referenceEmbedding) []referenceEmbedding {
+	if len(refs) <= 1 { return append([]referenceEmbedding(nil), refs...) }
+	type ranked struct {
+		ref referenceEmbedding
+		mean float64
+	}
+	items := make([]ranked, 0, len(refs))
+	for i := range refs {
+		sum := 0.0
+		count := 0
+		for j := range refs {
+			if i == j { continue }
+			s, err := ident.Cosine(refs[i].vec, refs[j].vec)
+			if err != nil { continue }
+			sum += s
+			count++
+		}
+		mean := -2.0
+		if count > 0 { mean = sum / float64(count) }
+		items = append(items, ranked{ref:refs[i], mean:mean})
+	}
+	sort.SliceStable(items, func(i,j int) bool { return items[i].mean > items[j].mean })
+	out := make([]referenceEmbedding, 0, len(items))
+	for _, item := range items { out = append(out, item.ref) }
+	return out
+}
+
+func betterIdentityQuality(a IdentityResult, aq imagemetrics.Metrics, b IdentityResult, bq imagemetrics.Metrics, qualityThreshold float64) bool {
+	aPass := a.Passed && aq.LocalScore >= qualityThreshold
+	bPass := b.Passed && bq.LocalScore >= qualityThreshold
+	if aPass != bPass { return aPass }
+	if a.Passed != b.Passed { return a.Passed }
+	// Identity remains primary, but allow a substantial quality advantage to break near-ties.
+	if math.Abs(a.Score-b.Score) <= 0.015 && aq.LocalScore != bq.LocalScore {
+		return aq.LocalScore > bq.LocalScore
+	}
+	if a.Score != b.Score { return a.Score > b.Score }
+	if a.MeanScore != b.MeanScore { return a.MeanScore > b.MeanScore }
+	return aq.LocalScore > bq.LocalScore
+}
+
 func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated image.Image, refs [][]byte, threshold, meanThreshold float64) IdentityResult {
 	result := IdentityResult{
 		Threshold: threshold,
@@ -610,6 +651,8 @@ func generateFrame(ctx context.Context, req Request, prompt string) (generatedFr
 }
 
 
+func minInt(a,b int) int { if a < b { return a }; return b }
+
 func boolOption(v *bool, fallback bool) bool {
 	if v == nil { return fallback }
 	return *v
@@ -647,6 +690,7 @@ func runSingleAttempt(
 	p Persona,
 	refs [][]byte,
 	refEmbeddings []referenceEmbedding,
+	rankedSources []referenceEmbedding,
 	centroidEmbedding []float64,
 	canonicalRef []byte,
 	medoidScore float64,
@@ -701,44 +745,67 @@ func runSingleAttempt(
 			emitProgress(req, 72, "identity face transfer", map[string]any{
 				"attempt":attemptIndex, "best_of_n":attemptTotal, "references":len(refs),
 			})
-			var swappedImg image.Image
-			var swapMeta faceswap.Meta
-			var swapErr error
-			if len(centroidEmbedding) == 512 {
-				swappedImg, swapMeta, swapErr = swapper.SwapImageWithEmbedding(ctx, centroidEmbedding, frame.Image)
-				out["faceswap_source_mode"] = "reference_centroid"
-			} else {
-				var swapped []byte
-				swapped, swapMeta, swapErr = swapper.Swap(ctx, canonicalRef, imageBytes)
-				if swapErr == nil {
-					swappedImg, _, swapErr = image.Decode(bytes.NewReader(swapped))
-				}
-				out["faceswap_source_mode"] = "reference_medoid"
+
+			type swapCandidate struct {
+				img image.Image
+				meta faceswap.Meta
+				identity IdentityResult
+				quality imagemetrics.Metrics
+				mode string
+				sourceIndex int
 			}
-			if swapErr != nil {
+			swapCandidates := make([]swapCandidate, 0, 3)
+
+			tryEmbedding := func(vec []float64, mode string, sourceIndex int) {
+				if len(vec) != 512 { return }
+				swappedImg, meta, swapErr := swapper.SwapImageWithEmbedding(ctx, vec, frame.Image)
+				if swapErr != nil || swappedImg == nil { return }
+				idResult := scoreIdentityImageCached(ctx, m, swappedImg, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+				if !idResult.Scored { return }
+				q, qErr := imagemetrics.AnalyzeImage(swappedImg)
+				if qErr != nil { return }
+				swapCandidates = append(swapCandidates, swapCandidate{
+					img:swappedImg, meta:meta, identity:idResult, quality:q, mode:mode, sourceIndex:sourceIndex,
+				})
+			}
+
+			// Test the two most central real references first; these preserve
+			// concrete identity better than an averaged centroid in current runs.
+			for i, ref := range rankedSources {
+				if i >= 2 { break }
+				tryEmbedding(ref.vec, "reference_ranked", ref.index)
+			}
+			// Also test the centroid as a diversity candidate.
+			if len(centroidEmbedding) == 512 {
+				tryEmbedding(centroidEmbedding, "reference_centroid", -1)
+			}
+
+			if len(swapCandidates) == 0 {
 				out["faceswap_applied"] = false
-				out["faceswap_reason"] = swapErr.Error()
-			} else if swappedImg == nil {
-				out["faceswap_applied"] = false
-				out["faceswap_reason"] = "face swap returned no image"
+				out["faceswap_reason"] = "all face-swap source trials failed"
 			} else {
-				frame = generatedFrame{Image: swappedImg}
-				imageBytes, swapErr = encodeFramePNG(frame)
-				if swapErr != nil {
-					out["faceswap_applied"] = false
-					out["faceswap_reason"] = "encode swapped image: " + swapErr.Error()
-				} else {
-					frame.Encoded = imageBytes
-					if err := os.WriteFile(assetPath, imageBytes, 0o644); err != nil {
-						return Result{}, fmt.Errorf("write swapped artifact: %w", err)
+				bestSwap := swapCandidates[0]
+				for _, candidate := range swapCandidates[1:] {
+					if betterIdentityQuality(candidate.identity, candidate.quality, bestSwap.identity, bestSwap.quality, req.QualityThreshold) {
+						bestSwap = candidate
 					}
-					out["faceswap_applied"] = true
-					out["faceswap_model"] = swapMeta.Model
-					out["faceswap_alignment"] = swapMeta.Alignment
-					out["faceswap_target_score"] = swapMeta.TargetScore
-					out["faceswap_reference_medoid_score"] = medoidScore
-					out["faceswap_reference_medoid_path"] = medoidPath
 				}
+				frame = generatedFrame{Image:bestSwap.img}
+				imageBytes, err = encodeFramePNG(frame)
+				if err != nil { return Result{}, fmt.Errorf("encode swapped image: %w", err) }
+				frame.Encoded = imageBytes
+				if err := os.WriteFile(assetPath, imageBytes, 0o644); err != nil {
+					return Result{}, fmt.Errorf("write swapped artifact: %w", err)
+				}
+				out["faceswap_applied"] = true
+				out["faceswap_source_mode"] = bestSwap.mode
+				out["faceswap_source_index"] = bestSwap.sourceIndex
+				out["faceswap_trials"] = len(swapCandidates)
+				out["faceswap_model"] = bestSwap.meta.Model
+				out["faceswap_alignment"] = bestSwap.meta.Alignment
+				out["faceswap_target_score"] = bestSwap.meta.TargetScore
+				out["faceswap_reference_medoid_score"] = medoidScore
+				out["faceswap_reference_medoid_path"] = medoidPath
 			}
 		} else {
 			out["faceswap_applied"] = false
@@ -866,6 +933,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 
 	m := nativecore.FromEnv()
 	refEmbeddings := embedReferences(ctx, m, refs)
+	rankedSources := rankedReferenceEmbeddings(refEmbeddings)
 	centroidEmbedding, _ := referenceCentroid(refEmbeddings)
 	var canonicalRef []byte
 	canonicalRefPath := ""
@@ -897,7 +965,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		attemptIndex := i + 1
 
 		result, attemptErr := runSingleAttempt(
-			ctx, attemptReq, p, refs, refEmbeddings, centroidEmbedding, canonicalRef, medoidScore, canonicalRefPath, swapper, attemptIndex, req.BestOfN,
+			ctx, attemptReq, p, refs, refEmbeddings, rankedSources, centroidEmbedding, canonicalRef, medoidScore, canonicalRefPath, swapper, attemptIndex, req.BestOfN,
 		)
 		if attemptErr != nil {
 			attempts = append(attempts, AttemptSummary{
@@ -950,6 +1018,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	best.Generation["stop_on_accept"] = stopOnAccept
 	best.Generation["reference_embeddings_cached"] = len(refEmbeddings)
 	best.Generation["reference_centroid_dimensions"] = len(centroidEmbedding)
+	best.Generation["swap_source_candidates"] = minInt(3, len(rankedSources)+1)
 	best.Generation["selection_score"] = candidateSelectionScore(best)
 
 	best.Batch = &BatchSummary{
