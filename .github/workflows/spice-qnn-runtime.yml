@@ -1,0 +1,152 @@
+name: Build Spice QNN Runtime
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: spice-qnn-runtime
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  LOCAL_DREAM_COMMIT: "59b99bb9040645a7fa970e6c628a27500fed8a2a"
+  QAIRT_VERSION: "2.50.40.260831"
+  QAIRT_URL: "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.50.40.260831/v2.50.40.260831.zip"
+  CARGO_BUILD_JOBS: "1"
+  CARGO_INCREMENTAL: "0"
+  RUSTFLAGS: "-C link-arg=-fuse-ld=bfd"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch pinned native QNN core source
+        run: |
+          git init native-src
+          git -C native-src remote add origin https://github.com/jcltd303-hub/local-dream.git
+          git -C native-src fetch --depth 1 origin "$LOCAL_DREAM_COMMIT"
+          git -C native-src checkout --detach FETCH_HEAD
+          git -C native-src submodule update --init --depth 1 \
+            app/src/main/cpp/3rdparty/cpp-httplib \
+            app/src/main/cpp/3rdparty/json \
+            app/src/main/cpp/3rdparty/stb \
+            app/src/main/cpp/3rdparty/xtensor \
+            app/src/main/cpp/3rdparty/xtl \
+            app/src/main/cpp/3rdparty/MNN \
+            app/src/main/cpp/3rdparty/xsimd \
+            app/src/main/cpp/3rdparty/zstd \
+            app/src/main/cpp/3rdparty/xtensor-blas \
+            app/src/main/cpp/3rdparty/tokenizers-cpp \
+            app/src/main/cpp/3rdparty/stable-diffusion.cpp
+          git -C native-src/app/src/main/cpp/3rdparty/tokenizers-cpp submodule update --init --recursive --depth 1
+
+      - name: Patch tokenizers for current Rust
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("native-src/app/src/main/cpp/3rdparty/tokenizers-cpp/rust/src/lib.rs")
+          s = p.read_text()
+          s = s.replace("*out_len = (*handle).decode_str.len();", "*out_len = (&(*handle).decode_str).len();")
+          s = s.replace("*out_len = (*handle).id_to_token_result.len();", "*out_len = (&(*handle).id_to_token_result).len();")
+          p.write_text(s)
+          PY
+
+      - name: Patch QAIRT const compatibility
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("native-src/app/src/main/cpp/src/QnnModel.hpp")
+          s = p.read_text()
+          s = s.replace("copyFromFloatToNative(source, &input)", "copyFromFloatToNative(const_cast<float *>(source), &input)")
+          s = s.replace("copyFromFloatToNative(input, &inputs[0])", "copyFromFloatToNative(const_cast<float *>(input), &inputs[0])")
+          p.write_text(s)
+          PY
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android native toolchain
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "cmake;3.31.1"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - name: Cache Qualcomm AI Runtime SDK
+        id: cache-qairt
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/qairt
+          key: qairt-${{ runner.os }}-${{ env.QAIRT_VERSION }}
+
+      - name: Download Qualcomm AI Runtime SDK
+        if: steps.cache-qairt.outputs.cache-hit != 'true'
+        run: |
+          rm -rf "$RUNNER_TEMP/qairt"
+          mkdir -p "$RUNNER_TEMP/qairt"
+          curl --fail --location --retry 4 --retry-delay 5 "$QAIRT_URL" --output "$RUNNER_TEMP/qairt.zip"
+          unzip -q "$RUNNER_TEMP/qairt.zip" -d "$RUNNER_TEMP/qairt"
+
+      - name: Locate Qualcomm QNN SDK and stage HTP assets
+        run: |
+          QNN_INCLUDE="$(find "$RUNNER_TEMP/qairt" -type d -path '*/include/QNN' -print -quit)"
+          if [ -z "$QNN_INCLUDE" ]; then
+            echo "::error::QAIRT archive does not contain include/QNN"
+            exit 1
+          fi
+          QNN_SDK_ROOT="$(dirname "$(dirname "$QNN_INCLUDE")")"
+          test -d "$QNN_SDK_ROOT/examples/QNN/SampleApp/SampleApp"
+          test -d "$QNN_SDK_ROOT/lib/aarch64-android"
+          echo "QNN_SDK_ROOT=$QNN_SDK_ROOT" >> "$GITHUB_ENV"
+
+          rm -rf native-src/app/src/main/assets/qnnlibs
+          mkdir -p native-src/app/src/main/assets/qnnlibs
+          cp "$QNN_SDK_ROOT/lib/aarch64-android/libQnnHtp.so" native-src/app/src/main/assets/qnnlibs/
+          cp "$QNN_SDK_ROOT/lib/aarch64-android/libQnnSystem.so" native-src/app/src/main/assets/qnnlibs/
+          for arch in 68 69 73 75 79 81; do
+            cp "$QNN_SDK_ROOT/lib/aarch64-android/libQnnHtpV${arch}Stub.so" native-src/app/src/main/assets/qnnlibs/
+            cp "$QNN_SDK_ROOT/lib/hexagon-v${arch}/unsigned/libQnnHtpV${arch}.so" native-src/app/src/main/assets/qnnlibs/
+            cp "$QNN_SDK_ROOT/lib/hexagon-v${arch}/unsigned/libQnnHtpV${arch}Skel.so" native-src/app/src/main/assets/qnnlibs/
+          done
+          ls -lh native-src/app/src/main/assets/qnnlibs
+
+      - name: Install Rust Android target
+        run: |
+          rustup target add aarch64-linux-android
+          sudo apt-get update
+          sudo apt-get install -y binutils
+
+      - name: Build pinned native core
+        working-directory: native-src
+        run: ./gradlew assembleBasicDebug --no-daemon
+
+      - name: Extract standalone Spice QNN runtime
+        run: |
+          set -eu
+          APK="$(find native-src/app/build/outputs/apk/basic/debug -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          rm -rf runtime && mkdir -p runtime/bin runtime/lib
+          unzip -p "$APK" lib/arm64-v8a/libstable_diffusion_core.so > runtime/bin/spice-qnn-core
+          chmod +x runtime/bin/spice-qnn-core
+          unzip -q "$APK" "assets/qnnlibs/*" -d runtime/raw
+          cp runtime/raw/assets/qnnlibs/* runtime/lib/
+          rm -rf runtime/raw
+          printf "%s\n" "$LOCAL_DREAM_COMMIT" > runtime/NATIVE_CORE_COMMIT
+          printf "%s\n" "$QAIRT_VERSION" > runtime/QAIRT_VERSION
+          test -s runtime/bin/spice-qnn-core
+          test -s runtime/lib/libQnnHtp.so
+          test -s runtime/lib/libQnnSystem.so
+
+      - name: Upload standalone runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: spice-qnn-runtime-arm64
+          path: runtime/
+          if-no-files-found: error
