@@ -246,7 +246,7 @@ func BootstrapAll(ctx context.Context, req BootstrapAllRequest) (BootstrapAllRes
 			pr.Promoted = append(pr.Promoted, dst)
 			refCount++
 			pr.ReferenceCount = refCount
-			if req.Progress != nil { req.Progress(ProgressEvent{Percent:basePercent,Stage:"reference promoted",Metrics:map[string]any{"persona_id":p.ID,"references":fmt.Sprintf("%d/%d",refCount,req.TargetReferences),"identity_score":r.Identity.Score,"quality_score":r.Quality.LocalScore}}) }
+			if req.Progress != nil { personaSpan:=100.0/float64(len(files)); pct:=basePercent+personaSpan*float64(attempt+1)/float64(req.MaxAttempts); req.Progress(ProgressEvent{Percent:pct,Stage:"reference promoted",Metrics:map[string]any{"persona_id":p.ID,"references":fmt.Sprintf("%d/%d",refCount,req.TargetReferences),"identity_score":r.Identity.Score,"quality_score":r.Quality.LocalScore}}) }
 		}
 
 		pr.Complete = refCount >= req.TargetReferences
