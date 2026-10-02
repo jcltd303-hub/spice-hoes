@@ -33,8 +33,10 @@ func indexComma(s string) int { for i:=0;i<len(s);i++ { if s[i]==',' { return i 
 
 func commandGenerate() {
     payload:=readObject()
+    manager:=nativecore.FromEnv()
+    if manager.ModelDir=="" { fail(fmt.Errorf("generation requires SPICE_QNN_MODEL_DIR")) }
     ctx,cancel:=context.WithTimeout(context.Background(),12*time.Minute); defer cancel()
-    out,err:=nativecore.FromEnv().Generate(ctx,payload); if err!=nil { fail(err) }
+    out,err:=manager.Generate(ctx,payload); if err!=nil { fail(err) }
     img,_:=out["image"].(string); format,_:=out["format"].(string); if format=="" { format="png" }
     mime:="image/png"; if format=="jpeg" || format=="jpg" { mime="image/jpeg" }
     response:=map[string]any{"image_base64":img,"mime_type":mime,"model":"spicemedia:qnn","backend":"go-managed-qnn"}
@@ -201,8 +203,17 @@ func commandIdentity() {
 }
 
 func commandHealth() {
-    ctx,cancel:=context.WithTimeout(context.Background(),time.Second); defer cancel()
-    m:=nativecore.FromEnv(); write(map[string]any{"ok":m.Health(ctx),"backend":"go-managed-qnn"})
+    ctx,cancel:=context.WithTimeout(context.Background(),50*time.Second); defer cancel()
+    m:=nativecore.FromEnv()
+    if err:=m.Ensure(ctx); err!=nil {
+        write(map[string]any{"ok":false,"backend":"go-managed-qnn","error":err.Error()})
+        return
+    }
+    write(map[string]any{
+        "ok":true,
+        "backend":"go-managed-qnn",
+        "mode":func() string { if m.ModelDir=="" { return "face-only" }; return "generation" }(),
+    })
 }
 
 func main() {
