@@ -52,6 +52,7 @@ type Request struct {
 	ReferenceRoot    string  `json:"reference_root,omitempty"`
 	IdentityThreshold float64 `json:"identity_threshold,omitempty"`
 	QualityThreshold float64  `json:"quality_threshold,omitempty"`
+	Progress          func(ProgressEvent) `json:"-"`
 }
 
 type IdentityResult struct {
