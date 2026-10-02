@@ -106,8 +106,8 @@ func (s *Swapper) Close() {
 	if s.rt != nil { _ = s.rt.Close() }
 }
 
-func detectPrimary(ctx context.Context, m *nativecore.Manager, raw []byte) (ident.FaceDetection, error) {
-	prep, err := ident.SCRFDInput(raw)
+func detectPrimaryImage(ctx context.Context, m *nativecore.Manager, img image.Image) (ident.FaceDetection, error) {
+	prep, err := ident.SCRFDInputImage(img)
 	if err != nil { return ident.FaceDetection{}, err }
 	outputs, _, err := m.Detect(ctx, prep.Tensor)
 	if err != nil { return ident.FaceDetection{}, err }
@@ -117,10 +117,16 @@ func detectPrimary(ctx context.Context, m *nativecore.Manager, raw []byte) (iden
 	return faces[0], nil
 }
 
-func sourceEmbedding(ctx context.Context, m *nativecore.Manager, raw []byte) ([]float64, error) {
-	face, err := detectPrimary(ctx, m, raw)
+func detectPrimary(ctx context.Context, m *nativecore.Manager, raw []byte) (ident.FaceDetection, error) {
+	img,_,err:=image.Decode(bytes.NewReader(raw))
+	if err!=nil{return ident.FaceDetection{},err}
+	return detectPrimaryImage(ctx,m,img)
+}
+
+func sourceEmbeddingImage(ctx context.Context, m *nativecore.Manager, img image.Image) ([]float64, error) {
+	face, err := detectPrimaryImage(ctx, m, img)
 	if err != nil { return nil, err }
-	input, err := ident.ArcFaceInputAligned(raw, face.Landmarks)
+	input, err := ident.ArcFaceInputAlignedImage(img, face.Landmarks)
 	if err != nil { return nil, err }
 	vec, _, err := m.Embed(ctx, input)
 	if err != nil { return nil, err }
@@ -129,6 +135,12 @@ func sourceEmbedding(ctx context.Context, m *nativecore.Manager, raw []byte) ([]
 		return nil, fmt.Errorf("InSwapper requires 512D ArcFace embedding, got %d", len(vec))
 	}
 	return vec, nil
+}
+
+func sourceEmbedding(ctx context.Context, m *nativecore.Manager, raw []byte) ([]float64, error) {
+	img,_,err:=image.Decode(bytes.NewReader(raw))
+	if err!=nil{return nil,err}
+	return sourceEmbeddingImage(ctx,m,img)
 }
 
 func bilinear(img image.Image, x, y float64) color.RGBA {
@@ -257,14 +269,12 @@ func pasteBack(target image.Image, fake *image.RGBA, t ident.SimilarityTransform
 	return out
 }
 
-func (s *Swapper) Swap(ctx context.Context, sourceRaw, targetRaw []byte) ([]byte, Meta, error) {
+func (s *Swapper) SwapImage(ctx context.Context, sourceImg, targetImg image.Image) (image.Image, Meta, error) {
 	if s == nil || s.session == nil { return nil,Meta{},fmt.Errorf("swapper not initialized") }
-	sourceVec,err:=sourceEmbedding(ctx,s.manager,sourceRaw)
+	sourceVec,err:=sourceEmbeddingImage(ctx,s.manager,sourceImg)
 	if err!=nil { return nil,Meta{},fmt.Errorf("source identity: %w",err) }
-	targetFace,err:=detectPrimary(ctx,s.manager,targetRaw)
+	targetFace,err:=detectPrimaryImage(ctx,s.manager,targetImg)
 	if err!=nil { return nil,Meta{},fmt.Errorf("target face: %w",err) }
-	targetImg,_,err:=image.Decode(bytes.NewReader(targetRaw))
-	if err!=nil { return nil,Meta{},fmt.Errorf("decode target: %w",err) }
 	crop,t,err:=alignedCrop(targetImg,targetFace.Landmarks)
 	if err!=nil { return nil,Meta{},err }
 	imageInput:=imageTensor(crop)
@@ -287,9 +297,19 @@ func (s *Swapper) Swap(ctx context.Context, sourceRaw, targetRaw []byte) ([]byte
 	fake,err:=outputImage(data,shape)
 	if err!=nil { return nil,Meta{},err }
 	merged:=pasteBack(targetImg,fake,t,targetFace)
+	return merged,Meta{Model:s.model,Alignment:"scrfd-5pt-128",TargetScore:targetFace.Score},nil
+}
+
+func (s *Swapper) Swap(ctx context.Context, sourceRaw, targetRaw []byte) ([]byte, Meta, error) {
+	sourceImg,_,err:=image.Decode(bytes.NewReader(sourceRaw))
+	if err!=nil{return nil,Meta{},fmt.Errorf("decode source: %w",err)}
+	targetImg,_,err:=image.Decode(bytes.NewReader(targetRaw))
+	if err!=nil{return nil,Meta{},fmt.Errorf("decode target: %w",err)}
+	merged,meta,err:=s.SwapImage(ctx,sourceImg,targetImg)
+	if err!=nil{return nil,Meta{},err}
 	var buf bytes.Buffer
-	if err:=png.Encode(&buf,merged); err!=nil { return nil,Meta{},err }
-	return buf.Bytes(),Meta{Model:s.model,Alignment:"scrfd-5pt-128",TargetScore:targetFace.Score},nil
+	if err:=png.Encode(&buf,merged);err!=nil{return nil,Meta{},err}
+	return buf.Bytes(),meta,nil
 }
 
 func readUvarint(data []byte, pos *int) (uint64,error) {
