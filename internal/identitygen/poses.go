@@ -51,6 +51,7 @@ type PoseTemplate struct {
 }
 
 type PoseAsset struct {
+	Image         image.Image            `json:"-"`
 	PoseID        string               `json:"pose_id"`
 	Label         string               `json:"label"`
 	Path          string               `json:"path"`
@@ -217,6 +218,7 @@ func GeneratePoseMasters(ctx context.Context, req PoseMasterRequest) (PoseMaster
 				return result, err
 			}
 			selected = PoseAsset{
+				Image:frame.Image,
 				PoseID:pose.ID, Label:pose.Label, Path:path, MetadataPath:path+".json",
 				Seed:seed, Attempts:attempt+1, Quality:quality,
 				QualityPassed:quality.LocalScore >= req.QualityThreshold,
