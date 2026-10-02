@@ -29,6 +29,7 @@ type AutonomousRequest struct {
 	MaxAttempts       int     `json:"max_attempts,omitempty"`
 	PoseAttempts      int     `json:"pose_attempts,omitempty"`
 	IdentityThreshold float64 `json:"identity_threshold,omitempty"`
+	IdentityMeanThreshold float64 `json:"identity_mean_threshold,omitempty"`
 	QualityThreshold  float64 `json:"quality_threshold,omitempty"`
 	Progress          func(ProgressEvent) `json:"-"`
 }
@@ -117,6 +118,7 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 	if req.MaxAttempts<=0 { req.MaxAttempts=48 }
 	if req.PoseAttempts<=0 { req.PoseAttempts=4 }
 	if req.IdentityThreshold<=0 { req.IdentityThreshold=0.82 }
+	if req.IdentityMeanThreshold<=0 { req.IdentityMeanThreshold=0.70 }
 	if req.QualityThreshold<=0 { req.QualityThreshold=0.78 }
 	if req.SwapMode=="" { req.SwapMode="auto" }
 	req.SwapMode=strings.ToLower(strings.TrimSpace(req.SwapMode))
@@ -129,7 +131,7 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 		Theme:"canonical identity reference portfolio",
 		Style:"photorealistic neutral identity reference photography",
 		Width:1024,Height:1024,Steps:20,Guidance:7,
-		IdentityThreshold:req.IdentityThreshold,QualityThreshold:req.QualityThreshold,
+		IdentityThreshold:req.IdentityThreshold,IdentityMeanThreshold:req.IdentityMeanThreshold,QualityThreshold:req.QualityThreshold,
 		Generator:req.Generator,Seed:req.Seed,
 		Progress:func(ev ProgressEvent){
 			emitAuto(req,2+ev.Percent*0.43,ev.Stage,ev.Metrics)
@@ -156,7 +158,7 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 	if err!=nil { return result,err }
 	result.Poses=poseResult
 
-	gallery,err:=loadReferences(req.ReferenceRoot,req.PersonaID)
+	gallery,_,err:=loadReferences(req.ReferenceRoot,req.PersonaID)
 	if err!=nil { return result,err }
 	if len(gallery)==0 { return result,fmt.Errorf("reference gallery empty after bootstrap") }
 	sourcePath:=filepath.Join(req.ReferenceRoot,req.PersonaID,"00_front.png")
@@ -194,11 +196,11 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 		reason:=""
 		identity:=IdentityResult{Passed:true,Reason:"rear_pose_no_face_gate",Metric:"not_applicable_rear_view"}
 		if asset.PoseID!="rear_standing" {
-			identity=scoreIdentityImage(ctx,manager,targetImg,gallery,req.IdentityThreshold)
+			identity=scoreIdentityImage(ctx,manager,targetImg,gallery,req.IdentityThreshold,req.IdentityMeanThreshold)
 			if !(identity.Scored && identity.Passed) && swapper!=nil {
 				swapped,_,swapErr:=swapper.SwapImage(ctx,sourceImg,targetImg)
 				if swapErr==nil {
-					swappedIdentity:=scoreIdentityImage(ctx,manager,swapped,gallery,req.IdentityThreshold)
+					swappedIdentity:=scoreIdentityImage(ctx,manager,swapped,gallery,req.IdentityThreshold,req.IdentityMeanThreshold)
 					if swappedIdentity.Scored && swappedIdentity.Passed {
 						finalImg=swapped
 						identity=swappedIdentity
