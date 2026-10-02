@@ -319,6 +319,9 @@ func commandIdentityAutonomous() {
         "reference_complete":out.ReferenceComplete,
         "portfolio_complete":out.PortfolioComplete,
         "swap_available":out.SwapAvailable,
+        "run_id":out.RunID,
+        "run_root":out.RunRoot,
+        "documents":out.DocumentsPath,
         "portfolio_sheet":out.PortfolioSheet,
         "manifest":out.ManifestPath,
     })
