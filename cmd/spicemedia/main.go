@@ -39,28 +39,53 @@ func decodeB64(v any) ([]byte,error) {
 
 func indexComma(s string) int { for i:=0;i<len(s);i++ { if s[i]==',' { return i } }; return -1 }
 
+func progressEvent(ev identitygen.ProgressEvent) {
+    if progress==nil { return }
+    progress.SetProgress(ev.Percent,ev.Stage)
+    progress.SetMetrics(ev.Metrics)
+}
+
+func finish(title string, metrics map[string]any) {
+    if progress==nil { return }
+    progress.SetMetrics(metrics)
+    progress.SetProgress(100,"complete")
+    progress.Stop(true)
+    progress.Summary(title)
+    progress=nil
+}
+
 func commandGenerate() {
     payload:=readObject()
     manager:=nativecore.FromEnv()
     if manager.ModelDir=="" { fail(fmt.Errorf("generation requires SPICE_QNN_MODEL_DIR")) }
     ctx,cancel:=context.WithTimeout(context.Background(),12*time.Minute); defer cancel()
+    progress.SetProgress(15,"QNN generation")
     out,err:=manager.Generate(ctx,payload); if err!=nil { fail(err) }
+    progress.SetProgress(90,"packing response")
     img,_:=out["image"].(string); format,_:=out["format"].(string); if format=="" { format="png" }
     mime:="image/png"; if format=="jpeg" || format=="jpg" { mime="image/jpeg" }
     response:=map[string]any{"image_base64":img,"mime_type":mime,"model":"spicemedia:qnn","backend":"go-managed-qnn"}
     for _,k:=range []string{"seed","width","height","channels","generation_time_ms","first_step_time_ms"} { if v,ok:=out[k]; ok { response[k]=v } }
+    finish("generation metrics",response)
     write(response)
 }
 
 func commandQuality() {
     payload:=readObject(); raw,err:=decodeB64(payload["image_base64"]); if err!=nil { fail(err) }
+    progress.SetProgress(25,"analyzing pixels")
     m,err:=imagemetrics.Analyze(raw); if err!=nil { fail(err) }
-    write(map[string]any{
+    result:=map[string]any{
         "semantic_scored":false,
         "overall":m.LocalScore,
         "local":m,
         "model":"go-stdlib-quality-v1",
+    }
+    finish("quality metrics",map[string]any{
+        "quality_score":m.LocalScore,"size":fmt.Sprintf("%dx%d",m.Width,m.Height),
+        "sharpness":m.Sharpness,"contrast":m.Contrast,"brightness":m.Brightness,
+        "exposure":m.ExposureScore,"resolution":m.ResolutionScore,"backend":m.Backend,
     })
+    write(result)
 }
 
 func arcFaceEmbedding(manager *nativecore.Manager, raw []byte) ([]float64,map[string]any,string,error) {
@@ -110,6 +135,7 @@ func commandDetect() {
 
     prep,err:=ident.SCRFDInput(raw); if err!=nil { fail(err) }
     ctx,cancel:=context.WithTimeout(context.Background(),2*time.Minute); defer cancel()
+    progress.SetProgress(35,"SCRFD detection")
     outputs,meta,err:=manager.Detect(ctx,prep.Tensor); if err!=nil { fail(err) }
     faces,err:=ident.DecodeSCRFD(outputs,prep,0.5,0.4); if err!=nil { fail(err) }
 
@@ -125,13 +151,15 @@ func commandDetect() {
             "landmarks":points,
         })
     }
-    write(map[string]any{
+    response:=map[string]any{
         "faces":result,
         "count":len(result),
         "model":"scrfd-10g-qnn",
         "npu":true,
         "latency_ms":meta["latency_ms"],
-    })
+    }
+    finish("face detection metrics",map[string]any{"faces":len(result),"latency_ms":meta["latency_ms"],"model":"scrfd-10g-qnn","npu":true})
+    write(response)
 }
 
 func commandEmbed() {
@@ -139,8 +167,9 @@ func commandEmbed() {
     raw,err:=decodeB64(payload["image_base64"]); if err!=nil { fail(err) }
     manager:=nativecore.FromEnv()
     if manager.IdentityVision=="" { fail(fmt.Errorf("SPICE_FACE_EMBED_MODEL is not configured")) }
+    progress.SetProgress(30,"SCRFD + ArcFace embedding")
     vec,meta,alignment,err:=arcFaceEmbedding(manager,raw); if err!=nil { fail(err) }
-    write(map[string]any{
+    response:=map[string]any{
         "embedding":vec,
         "dimensions":len(vec),
         "model":"arcface-w600k-r50-qnn",
@@ -149,7 +178,9 @@ func commandEmbed() {
         "latency_ms":meta["latency_ms"],
         "detector_latency_ms":meta["detector_latency_ms"],
         "l2_norm":meta["l2_norm"],
-    })
+    }
+    finish("embedding metrics",map[string]any{"dimensions":len(vec),"alignment":alignment,"latency_ms":meta["latency_ms"],"detector_latency_ms":meta["detector_latency_ms"],"l2_norm":meta["l2_norm"],"model":"arcface-w600k-r50-qnn"})
+    write(response)
 }
 
 func commandIdentity() {
@@ -172,7 +203,7 @@ func commandIdentity() {
             if len(scores)>0 {
                 maxScore,sum:=scores[0],0.0
                 for _,s:=range scores { if s>maxScore {maxScore=s}; sum+=s }
-                write(map[string]any{
+                response:=map[string]any{
                     "score":maxScore,
                     "mean_score":sum/float64(len(scores)),
                     "reference_count":len(scores),
@@ -184,7 +215,9 @@ func commandIdentity() {
                     "latency_ms":meta["latency_ms"],
                     "detector_latency_ms":meta["detector_latency_ms"],
                     "l2_norm":meta["l2_norm"],
-                })
+                }
+                finish("identity metrics",map[string]any{"score":maxScore,"mean_score":sum/float64(len(scores)),"references":len(scores),"alignment":alignment,"latency_ms":meta["latency_ms"],"model":"arcface-w600k-r50-qnn","npu":true})
+                write(response)
                 return
             }
         }
@@ -198,7 +231,7 @@ func commandIdentity() {
     }
     if len(scores)==0 { fail(fmt.Errorf("no decodable identity references")) }
     maxScore,sum:=scores[0],0.0; for _,s:=range scores { if s>maxScore {maxScore=s}; sum+=s }
-    write(map[string]any{
+    response:=map[string]any{
         "score":maxScore,
         "mean_score":sum/float64(len(scores)),
         "reference_count":len(scores),
@@ -207,7 +240,9 @@ func commandIdentity() {
         "alignment":"none",
         "npu":false,
         "fallback_reason":"SPICE_FACE_EMBED_MODEL unavailable or NPU embedding failed",
-    })
+    }
+    finish("identity metrics",map[string]any{"score":maxScore,"mean_score":sum/float64(len(scores)),"references":len(scores),"model":"go-perceptual-identity-v1","npu":false})
+    write(response)
 }
 
 func commandIdentityGenerate() {
@@ -215,8 +250,17 @@ func commandIdentityGenerate() {
     raw,err:=json.Marshal(payload); if err!=nil { fail(err) }
     var req identitygen.Request
     if err:=json.Unmarshal(raw,&req); err!=nil { fail(err) }
+    req.Progress=progressEvent
     ctx,cancel:=context.WithTimeout(context.Background(),20*time.Minute); defer cancel()
     out,err:=identitygen.Run(ctx,req); if err!=nil { fail(err) }
+    finish("identity generation metrics",map[string]any{
+        "persona":out.PersonaID,"status":out.Status,"asset":out.AssetPath,"documents":out.DocumentsPath,
+        "identity_score":out.Identity.Score,"identity_mean":out.Identity.MeanScore,"identity_pass":out.Identity.Passed,
+        "identity_threshold":out.Identity.Threshold,"references":out.Identity.ReferenceCount,"alignment":out.Identity.Alignment,
+        "quality_score":out.Quality.LocalScore,"quality_pass":out.QualityPassed,"quality_threshold":out.QualityThreshold,
+        "sharpness":out.Quality.Sharpness,"contrast":out.Quality.Contrast,"brightness":out.Quality.Brightness,
+        "exposure":out.Quality.ExposureScore,"resolution":out.Quality.ResolutionScore,
+    })
     write(out)
 }
 
@@ -225,8 +269,24 @@ func commandIdentityBootstrapAll() {
     raw,err:=json.Marshal(payload); if err!=nil { fail(err) }
     var req identitygen.BootstrapAllRequest
     if err:=json.Unmarshal(raw,&req); err!=nil { fail(err) }
+    req.Progress=progressEvent
     ctx,cancel:=context.WithTimeout(context.Background(),2*time.Hour); defer cancel()
     out,err:=identitygen.BootstrapAll(ctx,req); if err!=nil { fail(err) }
+    attempts:=0
+    promoted:=0
+    bestIdentity:=0.0
+    bestQuality:=0.0
+    for _,p:=range out.Personas {
+        attempts+=p.Attempts
+        promoted+=len(p.Promoted)
+        if p.BestIdentity>bestIdentity { bestIdentity=p.BestIdentity }
+        if p.BestQuality>bestQuality { bestQuality=p.BestQuality }
+    }
+    finish("identity bootstrap metrics",map[string]any{
+        "complete":fmt.Sprintf("%d/%d",out.Complete,out.Total),"ok":out.OK,
+        "target_refs":out.TargetReferences,"attempts":attempts,"promoted":promoted,
+        "best_identity":bestIdentity,"best_quality":bestQuality,
+    })
     write(out)
 }
 
@@ -234,14 +294,18 @@ func commandHealth() {
     ctx,cancel:=context.WithTimeout(context.Background(),50*time.Second); defer cancel()
     m:=nativecore.FromEnv()
     if err:=m.Ensure(ctx); err!=nil {
-        write(map[string]any{"ok":false,"backend":"go-managed-qnn","error":err.Error()})
+        result:=map[string]any{"ok":false,"backend":"go-managed-qnn","error":err.Error()}
+        finish("health metrics",result)
+        write(result)
         return
     }
-    write(map[string]any{
+    result:=map[string]any{
         "ok":true,
         "backend":"go-managed-qnn",
         "mode":func() string { if m.ModelDir=="" { return "face-only" }; return "generation" }(),
-    })
+    }
+    finish("health metrics",result)
+    write(result)
 }
 
 func main() {
