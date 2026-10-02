@@ -94,6 +94,7 @@ type Request struct {
 	OutputDir        string  `json:"output_dir,omitempty"`
 	ReferenceRoot    string  `json:"reference_root,omitempty"`
 	IdentityThreshold float64 `json:"identity_threshold,omitempty"`
+	IdentityMeanThreshold float64 `json:"identity_mean_threshold,omitempty"`
 	QualityThreshold float64  `json:"quality_threshold,omitempty"`
 	Generator         string   `json:"generator,omitempty"`
 	BestOfN           int      `json:"best_of_n,omitempty"`
@@ -108,6 +109,7 @@ type IdentityResult struct {
 	Score          float64 `json:"score,omitempty"`
 	MeanScore      float64 `json:"mean_score,omitempty"`
 	Threshold      float64 `json:"threshold"`
+	MeanThreshold  float64 `json:"mean_threshold,omitempty"`
 	ReferenceCount int     `json:"reference_count"`
 	Model          string  `json:"model"`
 	Metric         string  `json:"metric"`
@@ -354,9 +356,10 @@ func selectCanonicalReference(ctx context.Context, m *nativecore.Manager, refs [
 	return refs[embedded[best].index], bestMean, nil
 }
 
-func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated image.Image, refs [][]byte, threshold float64) IdentityResult {
+func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated image.Image, refs [][]byte, threshold, meanThreshold float64) IdentityResult {
 	result := IdentityResult{
 		Threshold: threshold,
+		MeanThreshold: meanThreshold,
 		ReferenceCount: len(refs),
 		Model: "arcface-w600k-r50-qnn",
 		Metric: "cosine",
@@ -399,17 +402,17 @@ func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated im
 	result.Score = maxScore
 	result.MeanScore = sum / float64(len(scores))
 	result.ReferenceCount = len(scores)
-	result.Passed = maxScore >= threshold
+	result.Passed = maxScore >= threshold && result.MeanScore >= meanThreshold
 	return result
 }
 
 
-func scoreIdentity(ctx context.Context, m *nativecore.Manager, generated []byte, refs [][]byte, threshold float64) IdentityResult {
+func scoreIdentity(ctx context.Context, m *nativecore.Manager, generated []byte, refs [][]byte, threshold, meanThreshold float64) IdentityResult {
 	img,_,err:=image.Decode(bytes.NewReader(generated))
 	if err!=nil {
-		return IdentityResult{Threshold:threshold,ReferenceCount:len(refs),Model:"arcface-w600k-r50-qnn",Metric:"cosine",NPU:true,Reason:"decode image: "+err.Error()}
+		return IdentityResult{Threshold:threshold,MeanThreshold:meanThreshold,ReferenceCount:len(refs),Model:"arcface-w600k-r50-qnn",Metric:"cosine",NPU:true,Reason:"decode image: "+err.Error()}
 	}
-	return scoreIdentityImage(ctx,m,img,refs,threshold)
+	return scoreIdentityImage(ctx,m,img,refs,threshold,meanThreshold)
 }
 
 type generatedFrame struct {
@@ -624,7 +627,7 @@ func runSingleAttempt(
 		"attempt":attemptIndex, "best_of_n":attemptTotal,
 		"references":len(refs), "identity_threshold":req.IdentityThreshold,
 	})
-	identity := scoreIdentityImage(ctx, m, frame.Image, refs, req.IdentityThreshold)
+	identity := scoreIdentityImage(ctx, m, frame.Image, refs, req.IdentityThreshold, req.IdentityMeanThreshold)
 
 	emitProgress(req, 88, "image quality analysis", map[string]any{
 		"attempt":attemptIndex, "best_of_n":attemptTotal,
@@ -703,6 +706,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if req.OutputDir == "" { req.OutputDir = filepath.Join("data", "identity-candidates", p.ID) }
 	if req.ReferenceRoot == "" { req.ReferenceRoot = filepath.Join("data", "references") }
 	if req.IdentityThreshold == 0 { req.IdentityThreshold = 0.82 }
+	if req.IdentityMeanThreshold == 0 { req.IdentityMeanThreshold = 0.70 }
 	if req.QualityThreshold == 0 { req.QualityThreshold = 0.78 }
 	if req.NegativePrompt == "" { req.NegativePrompt = defaultNegative }
 	if req.BestOfN <= 0 { req.BestOfN = 1 }
