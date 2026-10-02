@@ -270,6 +270,8 @@ func commandIdentityGenerate() {
         "embedding_loaded":out.Generation["identity_embedding_loaded"],
         "swap_source":out.Generation["faceswap_source_mode"],
         "swap_trials":out.Generation["faceswap_trials"],
+        "swap_top_k":out.Generation["swap_top_k"],
+        "two_stage_preselection":out.Generation["two_stage_preselection"],
         "medoid":out.Generation["faceswap_reference_medoid_path"],
     })
     write(out)
