@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/png"
 	"errors"
 	"fmt"
 	"io"
@@ -33,6 +35,68 @@ type GenerateResult struct {
 	Image      []byte
 	MIME       string
 	Generation map[string]any
+}
+
+func intField(obj map[string]any, key string) int {
+	switch v:=obj[key].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case json.Number:
+		n,_:=v.Int64(); return int(n)
+	default:
+		return 0
+	}
+}
+
+func encodeRawRGBToPNG(raw []byte, width, height, channels int) ([]byte, error) {
+	if width<=0 || height<=0 {
+		return nil, fmt.Errorf("raw image missing dimensions")
+	}
+	if channels==0 { channels=3 }
+	if channels!=3 && channels!=4 {
+		return nil, fmt.Errorf("unsupported raw image channel count %d",channels)
+	}
+	want:=width*height*channels
+	if len(raw)!=want {
+		return nil, fmt.Errorf("raw image size mismatch: got %d bytes, expected %d for %dx%dx%d",len(raw),want,width,height,channels)
+	}
+	img:=image.NewNRGBA(image.Rect(0,0,width,height))
+	for y:=0;y<height;y++ {
+		for x:=0;x<width;x++ {
+			src:=(y*width+x)*channels
+			dst:=y*img.Stride+x*4
+			img.Pix[dst]=raw[src]
+			img.Pix[dst+1]=raw[src+1]
+			img.Pix[dst+2]=raw[src+2]
+			if channels==4 { img.Pix[dst+3]=raw[src+3] } else { img.Pix[dst+3]=255 }
+		}
+	}
+	var buf bytes.Buffer
+	if err:=png.Encode(&buf,img);err!=nil{return nil,err}
+	return buf.Bytes(),nil
+}
+
+func normalizeImagePayload(raw []byte, obj map[string]any) ([]byte,string,error) {
+	if len(raw)>=8 && bytes.Equal(raw[:8],[]byte{0x89,'P','N','G',0x0d,0x0a,0x1a,0x0a}) {
+		return raw,"image/png",nil
+	}
+	if len(raw)>=3 && raw[0]==0xff && raw[1]==0xd8 && raw[2]==0xff {
+		return raw,"image/jpeg",nil
+	}
+	width:=intField(obj,"width")
+	height:=intField(obj,"height")
+	channels:=intField(obj,"channels")
+	if channels==0 { channels=3 }
+	if width>0 && height>0 && len(raw)==width*height*channels {
+		encoded,err:=encodeRawRGBToPNG(raw,width,height,channels)
+		if err!=nil{return nil,"",err}
+		obj["source_format"]="raw-rgb"
+		obj["format"]="png"
+		return encoded,"image/png",nil
+	}
+	return nil,"",fmt.Errorf("unsupported local dream image payload: %d bytes (width=%d height=%d channels=%d)",len(raw),width,height,channels)
 }
 
 func FromEnv() *Client {
@@ -132,10 +196,9 @@ func (c *Client) Generate(ctx context.Context, in GenerateRequest) (GenerateResu
 		if err != nil {
 			return GenerateResult{}, fmt.Errorf("decode local dream image: %w", err)
 		}
-		format := strings.ToLower(fmt.Sprint(obj["format"]))
-		mime := "image/png"
-		if format == "jpeg" || format == "jpg" {
-			mime = "image/jpeg"
+		img, mime, err := normalizeImagePayload(img, obj)
+		if err != nil {
+			return GenerateResult{}, err
 		}
 		obj["backend"] = "local-dream"
 		return GenerateResult{Image: img, MIME: mime, Generation: obj}, nil
