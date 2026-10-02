@@ -47,7 +47,7 @@ func progressEvent(ev identitygen.ProgressEvent) {
 
 func finish(title string, metrics map[string]any) {
     if progress==nil { return }
-    progress.SetMetrics(metrics)
+    progress.ReplaceMetrics(metrics)
     progress.SetProgress(100,"complete")
     progress.Stop(true)
     progress.Summary(title)
@@ -257,10 +257,14 @@ func commandIdentityGenerate() {
     finish("identity generation metrics",map[string]any{
         "persona":out.PersonaID,"status":out.Status,"asset":out.AssetPath,"documents":out.DocumentsPath,
         "identity_score":out.Identity.Score,"identity_mean":out.Identity.MeanScore,"identity_pass":out.Identity.Passed,
-        "identity_threshold":out.Identity.Threshold,"references":out.Identity.ReferenceCount,"alignment":out.Identity.Alignment,
+        "identity_threshold":out.Identity.Threshold,"identity_mean_threshold":out.Identity.MeanThreshold,
+        "references":out.Identity.ReferenceCount,"alignment":out.Identity.Alignment,
         "quality_score":out.Quality.LocalScore,"quality_pass":out.QualityPassed,"quality_threshold":out.QualityThreshold,
         "sharpness":out.Quality.Sharpness,"contrast":out.Quality.Contrast,"brightness":out.Quality.Brightness,
         "exposure":out.Quality.ExposureScore,"resolution":out.Quality.ResolutionScore,
+        "selected_attempt":out.Generation["selected_attempt"],"selected_seed":out.Generation["selected_seed"],
+        "best_of_n":out.Generation["best_of_n"],"completed":out.Generation["best_of_n_completed"],
+        "medoid":out.Generation["faceswap_reference_medoid_path"],
     })
     write(out)
 }
