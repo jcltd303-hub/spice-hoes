@@ -54,14 +54,22 @@ func (m *Manager) Health(ctx context.Context) bool {
     return resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
+func (m *Manager) faceOnly() bool {
+    return m.ModelDir == "" && (m.IdentityVision != "" || m.FaceDetector != "")
+}
+
 func (m *Manager) validate() error {
-    if m.ModelDir == "" { return errors.New("SPICE_QNN_MODEL_DIR is required") }
+    if !m.faceOnly() && m.ModelDir == "" { return errors.New("SPICE_QNN_MODEL_DIR is required") }
     if m.LibDir == "" { return errors.New("SPICE_QNN_LIB_DIR is required") }
     binary, err := filepath.Abs(m.Binary); if err != nil { return err }; m.Binary = binary
-    modelDir, err := filepath.Abs(m.ModelDir); if err != nil { return err }; m.ModelDir = modelDir
+    if m.ModelDir != "" {
+        modelDir, err := filepath.Abs(m.ModelDir); if err != nil { return err }; m.ModelDir = modelDir
+    }
     libDir, err := filepath.Abs(m.LibDir); if err != nil { return err }; m.LibDir = libDir
     if _, err := os.Stat(m.Binary); err != nil { return fmt.Errorf("QNN core binary unavailable: %w", err) }
-    if info, err := os.Stat(m.ModelDir); err != nil || !info.IsDir() { return fmt.Errorf("QNN model directory unavailable: %s", m.ModelDir) }
+    if m.ModelDir != "" {
+        if info, err := os.Stat(m.ModelDir); err != nil || !info.IsDir() { return fmt.Errorf("QNN model directory unavailable: %s", m.ModelDir) }
+    }
     if info, err := os.Stat(m.LibDir); err != nil || !info.IsDir() { return fmt.Errorf("QNN runtime directory unavailable: %s", m.LibDir) }
     return nil
 }
@@ -72,7 +80,14 @@ func (m *Manager) Ensure(ctx context.Context) error {
     if err := m.validate(); err != nil { return err }
     if err := os.MkdirAll(filepath.Dir(m.LogPath), 0755); err != nil { return err }
     logFile, err := os.OpenFile(m.LogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); if err != nil { return err }
-    args := []string{"--type",m.Type,"--model_dir",m.ModelDir,"--lib_dir",m.LibDir,"--port",strconv.Itoa(m.Port)}
+    args := []string{}
+    if m.faceOnly() {
+        // Native core's upscaler mode initializes QNN without loading a
+        // diffusion pipeline, which is exactly what face detect/embed need.
+        args = []string{"--upscaler_mode","--lib_dir",m.LibDir,"--port",strconv.Itoa(m.Port)}
+    } else {
+        args = []string{"--type",m.Type,"--model_dir",m.ModelDir,"--lib_dir",m.LibDir,"--port",strconv.Itoa(m.Port)}
+    }
     if m.IdentityVision != "" {
         identityPath, err := filepath.Abs(m.IdentityVision); if err != nil { return err }
         if _, err := os.Stat(identityPath); err != nil { return fmt.Errorf("face embedding model unavailable: %w", err) }
