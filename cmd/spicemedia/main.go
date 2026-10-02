@@ -11,6 +11,7 @@ import (
 
     ident "github.com/jcltd303-hub/spice-hoes/internal/identity"
     "github.com/jcltd303-hub/spice-hoes/internal/imagemetrics"
+    "github.com/jcltd303-hub/spice-hoes/internal/identitygen"
     "github.com/jcltd303-hub/spice-hoes/internal/nativecore"
 )
 
@@ -202,6 +203,17 @@ func commandIdentity() {
     })
 }
 
+
+func commandIdentityGenerate() {
+    payload:=readObject()
+    raw,err:=json.Marshal(payload); if err!=nil { fail(err) }
+    var req identitygen.Request
+    if err:=json.Unmarshal(raw,&req); err!=nil { fail(err) }
+    ctx,cancel:=context.WithTimeout(context.Background(),20*time.Minute); defer cancel()
+    out,err:=identitygen.Run(ctx,req); if err!=nil { fail(err) }
+    write(out)
+}
+
 func commandHealth() {
     ctx,cancel:=context.WithTimeout(context.Background(),50*time.Second); defer cancel()
     m:=nativecore.FromEnv()
@@ -217,13 +229,14 @@ func commandHealth() {
 }
 
 func main() {
-    if len(os.Args)!=2 { fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|identity|health")) }
+    if len(os.Args)!=2 { fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|identity|identity-generate|health")) }
     switch os.Args[1] {
     case "generate": commandGenerate()
     case "quality": commandQuality()
     case "detect": commandDetect()
     case "embed": commandEmbed()
     case "identity": commandIdentity()
+    case "identity-generate": commandIdentityGenerate()
     case "health": commandHealth()
     default: fail(fmt.Errorf("unknown command: %s",os.Args[1]))
     }
