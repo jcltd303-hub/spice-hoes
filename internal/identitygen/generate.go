@@ -756,7 +756,9 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if req.IdentityMeanThreshold == 0 { req.IdentityMeanThreshold = 0.70 }
 	if req.QualityThreshold == 0 { req.QualityThreshold = 0.78 }
 	if req.NegativePrompt == "" { req.NegativePrompt = defaultNegative }
-	if req.BestOfN <= 0 { req.BestOfN = 1 }
+	if req.BestOfN <= 0 {
+		if strings.Contains(strings.ToLower(req.Theme), "identity") { req.BestOfN = 4 } else { req.BestOfN = 1 }
+	}
 	if req.BestOfN > 64 { req.BestOfN = 64 }
 
 	stopOnAccept := boolOption(req.StopOnAccept, true)
