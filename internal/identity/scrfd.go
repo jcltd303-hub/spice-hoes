@@ -31,8 +31,7 @@ type FaceDetection struct {
     Landmarks [5]Point
 }
 
-func SCRFDInput(data []byte) (DetectorInput,error) {
-    img,_,err:=image.Decode(bytes.NewReader(data)); if err!=nil { return DetectorInput{},fmt.Errorf("decode image: %w",err) }
+func SCRFDInputImage(img image.Image) (DetectorInput,error) {
     b:=img.Bounds()
     w,h:=b.Dx(),b.Dy()
     if w<=0 || h<=0 { return DetectorInput{},fmt.Errorf("empty image") }
@@ -67,6 +66,12 @@ func SCRFDInput(data []byte) (DetectorInput,error) {
         Tensor:out,Scale:scale,PadX:padX,PadY:padY,
         OriginalWidth:w,OriginalHeight:h,
     },nil
+}
+
+
+func SCRFDInput(data []byte) (DetectorInput,error) {
+    img,_,err:=image.Decode(bytes.NewReader(data)); if err!=nil { return DetectorInput{},fmt.Errorf("decode image: %w",err) }
+    return SCRFDInputImage(img)
 }
 
 type scrfdHeadSet struct {
