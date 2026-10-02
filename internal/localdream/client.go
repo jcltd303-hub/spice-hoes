@@ -30,6 +30,8 @@ type GenerateRequest struct {
 	Seed           int64
 	Width          int
 	Height         int
+	Steps          int
+	Guidance       float64
 }
 
 type EmbeddingInventory struct {
@@ -195,6 +197,12 @@ func (c *Client) Generate(ctx context.Context, in GenerateRequest) (GenerateResu
 		"negative_prompt": in.NegativePrompt,
 		"width":           in.Width,
 		"height":          in.Height,
+	}
+	if in.Steps > 0 {
+		payload["steps"] = in.Steps
+	}
+	if in.Guidance > 0 {
+		payload["cfg"] = in.Guidance
 	}
 	if in.Seed != 0 {
 		payload["seed"] = in.Seed
