@@ -151,6 +151,25 @@ func (c *Client) Embeddings(ctx context.Context) (EmbeddingInventory, error) {
 	return out, nil
 }
 
+func (c *Client) ReloadEmbeddings(ctx context.Context) (EmbeddingInventory, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/embeddings/reload", bytes.NewReader([]byte("{}")))
+	if err != nil { return EmbeddingInventory{}, err }
+	req.Header.Set("Content-Type", "application/json")
+	if c.Token != "" { req.Header.Set("Authorization", "Bearer "+c.Token) }
+	client := c.HTTP
+	if client == nil { client = &http.Client{Timeout: 30 * time.Second} }
+	resp, err := client.Do(req)
+	if err != nil { return EmbeddingInventory{}, fmt.Errorf("local dream embeddings reload: %w", err) }
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return EmbeddingInventory{}, fmt.Errorf("local dream embeddings reload HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var out EmbeddingInventory
+	if err := json.Unmarshal(body, &out); err != nil { return EmbeddingInventory{}, err }
+	return out, nil
+}
+
 func (c *Client) HasEmbedding(ctx context.Context, token string) (bool, EmbeddingInventory, error) {
 	token = strings.ToLower(strings.TrimSpace(token))
 	inv, err := c.Embeddings(ctx)
