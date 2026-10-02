@@ -13,9 +13,16 @@ import (
     "github.com/jcltd303-hub/spice-hoes/internal/imagemetrics"
     "github.com/jcltd303-hub/spice-hoes/internal/identitygen"
     "github.com/jcltd303-hub/spice-hoes/internal/nativecore"
+    "github.com/jcltd303-hub/spice-hoes/internal/termui"
 )
 
-func fail(err error) { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
+var progress *termui.Spinner
+
+func fail(err error) {
+    if progress != nil { progress.Stop(false) }
+    fmt.Fprintln(os.Stderr, err)
+    os.Exit(1)
+}
 
 func readObject() map[string]any {
     b,err:=io.ReadAll(os.Stdin); if err!=nil { fail(err) }
@@ -203,7 +210,6 @@ func commandIdentity() {
     })
 }
 
-
 func commandIdentityGenerate() {
     payload:=readObject()
     raw,err:=json.Marshal(payload); if err!=nil { fail(err) }
@@ -240,7 +246,11 @@ func commandHealth() {
 
 func main() {
     if len(os.Args)!=2 { fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|identity|identity-generate|identity-bootstrap-all|health")) }
-    switch os.Args[1] {
+    command:=os.Args[1]
+    progress=termui.Start(termui.Label("spicemedia", command))
+    defer func(){ if progress!=nil { progress.Stop(true) } }()
+
+    switch command {
     case "generate": commandGenerate()
     case "quality": commandQuality()
     case "detect": commandDetect()
@@ -249,6 +259,6 @@ func main() {
     case "identity-generate": commandIdentityGenerate()
     case "identity-bootstrap-all": commandIdentityBootstrapAll()
     case "health": commandHealth()
-    default: fail(fmt.Errorf("unknown command: %s",os.Args[1]))
+    default: fail(fmt.Errorf("unknown command: %s",command))
     }
 }
