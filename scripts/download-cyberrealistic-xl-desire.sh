@@ -83,6 +83,13 @@ printf '%s\n' "$HF_REPO" > "$MODEL_DIR/SOURCE_HF_REPO"
 printf '%s\n' "$HF_REV" > "$MODEL_DIR/SOURCE_HF_REV"
 printf '%s\n' "$ZIP_NAME" > "$MODEL_DIR/SOURCE_HF_FILE"
 
+if [[ ! -x "$ROOT/bin/spicemedia" ]]; then
+  echo
+  echo "spicemedia binary missing; building Go media tools..."
+  command -v go >/dev/null || { echo "Go is required: pkg install golang" >&2; exit 4; }
+  bash "$ROOT/scripts/build-go-tools.sh"
+fi
+
 echo
 echo "Installed prebuilt QNN model:"
 echo "  $MODEL_DIR"
