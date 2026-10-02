@@ -214,6 +214,16 @@ func commandIdentityGenerate() {
     write(out)
 }
 
+func commandIdentityBootstrapAll() {
+    payload:=readObject()
+    raw,err:=json.Marshal(payload); if err!=nil { fail(err) }
+    var req identitygen.BootstrapAllRequest
+    if err:=json.Unmarshal(raw,&req); err!=nil { fail(err) }
+    ctx,cancel:=context.WithTimeout(context.Background(),2*time.Hour); defer cancel()
+    out,err:=identitygen.BootstrapAll(ctx,req); if err!=nil { fail(err) }
+    write(out)
+}
+
 func commandHealth() {
     ctx,cancel:=context.WithTimeout(context.Background(),50*time.Second); defer cancel()
     m:=nativecore.FromEnv()
@@ -229,7 +239,7 @@ func commandHealth() {
 }
 
 func main() {
-    if len(os.Args)!=2 { fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|identity|identity-generate|health")) }
+    if len(os.Args)!=2 { fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|identity|identity-generate|identity-bootstrap-all|health")) }
     switch os.Args[1] {
     case "generate": commandGenerate()
     case "quality": commandQuality()
@@ -237,6 +247,7 @@ func main() {
     case "embed": commandEmbed()
     case "identity": commandIdentity()
     case "identity-generate": commandIdentityGenerate()
+    case "identity-bootstrap-all": commandIdentityBootstrapAll()
     case "health": commandHealth()
     default: fail(fmt.Errorf("unknown command: %s",os.Args[1]))
     }
