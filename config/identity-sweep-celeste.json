@@ -1,17 +1,33 @@
 {
-  "notes": "Default tournament space implemented by scripts/sweep-identity.py",
+  "notes": "Identity-first tournament space implemented by scripts/sweep-identity.py",
   "stage1": {
-    "guidance": [5.5, 6.5, 7.0, 7.5, 8.5],
-    "embedding_weight": [0.95, 1.05, 1.10, 1.20],
+    "guidance": [
+      6,
+      6.5,
+      7
+    ],
+    "embedding_weight": [
+      1.05,
+      1.1,
+      1.15
+    ],
     "steps": 20,
-    "best_of_n": 1,
+    "best_of_n": 4,
     "swap_top_k": 1,
     "keep": 6
   },
   "stage2": {
-    "steps": [16, 20, 24, 28],
-    "swap_top_k": [1, 2, 3],
-    "best_of_n": 4
+    "steps": [
+      20,
+      22,
+      24
+    ],
+    "swap_top_k": [
+      2,
+      4,
+      8
+    ],
+    "best_of_n": 8
   },
-  "ranking": "accepted first; then 0.55 identity max + 0.25 identity mean + 0.20 quality with a small runtime tie-breaker"
+  "ranking": "lexicographic hard gates: accepted, identity pass, identity max, identity mean, quality pass, quality; blended sweep_score is diagnostic only"
 }
