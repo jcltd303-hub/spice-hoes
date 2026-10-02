@@ -32,6 +32,11 @@ type GenerateRequest struct {
 	Height         int
 }
 
+type EmbeddingInventory struct {
+	Count int      `json:"count"`
+	Names []string `json:"names"`
+}
+
 type GenerateResult struct {
 	Frame      image.Image
 	Encoded    []byte
@@ -126,6 +131,34 @@ func FromEnv() *Client {
 		Token:   strings.TrimSpace(os.Getenv("LOCAL_DREAM_TOKEN")),
 		HTTP:    &http.Client{Timeout: 12 * time.Minute},
 	}
+}
+
+func (c *Client) Embeddings(ctx context.Context) (EmbeddingInventory, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/embeddings", nil)
+	if err != nil { return EmbeddingInventory{}, err }
+	if c.Token != "" { req.Header.Set("Authorization", "Bearer "+c.Token) }
+	client := c.HTTP
+	if client == nil { client = &http.Client{Timeout: 30 * time.Second} }
+	resp, err := client.Do(req)
+	if err != nil { return EmbeddingInventory{}, fmt.Errorf("local dream embeddings: %w", err) }
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return EmbeddingInventory{}, fmt.Errorf("local dream embeddings HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var out EmbeddingInventory
+	if err := json.Unmarshal(body, &out); err != nil { return EmbeddingInventory{}, err }
+	return out, nil
+}
+
+func (c *Client) HasEmbedding(ctx context.Context, token string) (bool, EmbeddingInventory, error) {
+	token = strings.ToLower(strings.TrimSpace(token))
+	inv, err := c.Embeddings(ctx)
+	if err != nil { return false, inv, err }
+	for _, name := range inv.Names {
+		if strings.ToLower(strings.TrimSpace(name)) == token { return true, inv, nil }
+	}
+	return false, inv, nil
 }
 
 func (c *Client) Generate(ctx context.Context, in GenerateRequest) (GenerateResult, error) {
