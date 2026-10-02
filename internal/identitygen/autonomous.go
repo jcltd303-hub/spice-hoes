@@ -1,9 +1,11 @@
 package identitygen
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,6 +162,8 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 	sourcePath:=filepath.Join(req.ReferenceRoot,req.PersonaID,"00_front.png")
 	sourceRaw,err:=os.ReadFile(sourcePath)
 	if err!=nil { return result,fmt.Errorf("read canonical source face: %w",err) }
+	sourceImg,_,err:=image.Decode(bytes.NewReader(sourceRaw))
+	if err!=nil { return result,fmt.Errorf("decode canonical source face: %w",err) }
 
 	manager:=nativecore.FromEnv()
 	swapCfg:=faceswap.ConfigFromEnv()
@@ -177,25 +181,32 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 	finalAssets:=make([]PoseAsset,0,len(poseResult.Assets))
 	passCount:=0
 	for i,asset:=range poseResult.Assets {
-		raw,readErr:=os.ReadFile(asset.Path)
-		if readErr!=nil { return result,readErr }
-		finalRaw:=raw
+		targetImg:=asset.Image
+		if targetImg==nil {
+			raw,readErr:=os.ReadFile(asset.Path)
+			if readErr!=nil { return result,readErr }
+			targetImg,_,readErr=image.Decode(bytes.NewReader(raw))
+			if readErr!=nil { return result,readErr }
+		}
+		finalImg:=targetImg
 		finalPath:=asset.Path
 		applied:=false
 		reason:=""
 		identity:=IdentityResult{Passed:true,Reason:"rear_pose_no_face_gate",Metric:"not_applicable_rear_view"}
 		if asset.PoseID!="rear_standing" {
-			identity=scoreIdentity(ctx,manager,raw,gallery,req.IdentityThreshold)
+			identity=scoreIdentityImage(ctx,manager,targetImg,gallery,req.IdentityThreshold)
 			if !(identity.Scored && identity.Passed) && swapper!=nil {
-				swapped,_,swapErr:=swapper.Swap(ctx,sourceRaw,raw)
+				swapped,_,swapErr:=swapper.SwapImage(ctx,sourceImg,targetImg)
 				if swapErr==nil {
-					swappedIdentity:=scoreIdentity(ctx,manager,swapped,gallery,req.IdentityThreshold)
+					swappedIdentity:=scoreIdentityImage(ctx,manager,swapped,gallery,req.IdentityThreshold)
 					if swappedIdentity.Scored && swappedIdentity.Passed {
-						finalRaw=swapped
+						finalImg=swapped
 						identity=swappedIdentity
 						applied=true
 						finalPath=strings.TrimSuffix(asset.Path,filepath.Ext(asset.Path))+"_identity.png"
-						if err:=os.WriteFile(finalPath,finalRaw,0o644);err!=nil{return result,err}
+						encoded,encErr:=encodeFramePNG(generatedFrame{Image:finalImg})
+						if encErr!=nil{return result,encErr}
+						if err:=os.WriteFile(finalPath,encoded,0o644);err!=nil{return result,err}
 					} else {
 						reason="swap_identity_below_threshold"
 						identity=swappedIdentity
@@ -205,7 +216,7 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 				}
 			}
 		}
-		quality,qErr:=imagemetrics.Analyze(finalRaw)
+		quality,qErr:=imagemetrics.AnalyzeImage(finalImg)
 		if qErr!=nil { return result,qErr }
 		passed:=quality.LocalScore>=req.QualityThreshold && (asset.PoseID=="rear_standing" || (identity.Scored && identity.Passed))
 		if passed { passCount++ }
@@ -217,6 +228,7 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 			IdentityApplied:applied,Identity:identity,Quality:quality,Passed:passed,Reason:reason,
 		})
 		finalAsset:=asset
+		finalAsset.Image=finalImg
 		finalAsset.Path=finalPath
 		finalAsset.Quality=quality
 		finalAsset.QualityPassed=quality.LocalScore>=req.QualityThreshold
