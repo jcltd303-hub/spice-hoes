@@ -8,16 +8,19 @@ command -v gh >/dev/null || {
   exit 1
 }
 
-echo "Triggering standalone QNN runtime build..."
-gh workflow run "Build Spice QNN Runtime" -R "$REPO"
+echo "Native runtime already exists in local-dream; no rebuild needed."
+echo "Installing reused runtime artifact..."
+bash scripts/install-local-dream-runtime.sh
 
-echo "Triggering ArcFace + SCRFD QNN model build..."
+echo
+echo "Triggering ArcFace + SCRFD QNN model build only..."
 gh workflow run "Build Face Embedding QNN" -R "$REPO"
 
 echo
-echo "Triggered both on-demand workflows."
-echo "Watch them with:"
-echo "  gh run list -R $REPO --limit 10"
+echo "Runtime installed locally from local-dream."
+echo "Face model workflow triggered."
+echo "Watch it with:"
+echo "  gh run list -R $REPO --workflow \"Build Face Embedding QNN\" --limit 5"
 echo
-echo "After both succeed:"
+echo "After face build succeeds:"
 echo "  ./scripts/install-spicemedia-termux.sh"
