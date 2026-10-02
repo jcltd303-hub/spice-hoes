@@ -1,6 +1,7 @@
 package identitygen
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -9,6 +10,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	"image/png"
 	"os"
 	"path/filepath"
 	"sort"
@@ -215,7 +219,7 @@ func promptFor(p Persona, req Request) string {
 	return strings.Join(parts, " ")
 }
 
-func arcEmbedding(ctx context.Context, m *nativecore.Manager, raw []byte) ([]float64, string, error) {
+func arcEmbeddingImage(ctx context.Context, m *nativecore.Manager, img image.Image) ([]float64, string, error) {
 	const alignment = "scrfd-5pt-112"
 	if m.FaceDetector == "" {
 		return nil, alignment, fmt.Errorf("SCRFD face detector is not configured")
@@ -223,32 +227,26 @@ func arcEmbedding(ctx context.Context, m *nativecore.Manager, raw []byte) ([]flo
 	if m.IdentityVision == "" {
 		return nil, alignment, fmt.Errorf("ArcFace embedding model is not configured")
 	}
-
-	prep, err := ident.SCRFDInput(raw)
-	if err != nil {
-		return nil, alignment, fmt.Errorf("prepare SCRFD input: %w", err)
-	}
+	prep, err := ident.SCRFDInputImage(img)
+	if err != nil { return nil, alignment, fmt.Errorf("prepare SCRFD input: %w", err) }
 	outputs, _, err := m.Detect(ctx, prep.Tensor)
-	if err != nil {
-		return nil, alignment, fmt.Errorf("SCRFD detection failed: %w", err)
-	}
+	if err != nil { return nil, alignment, fmt.Errorf("SCRFD detection failed: %w", err) }
 	faces, err := ident.DecodeSCRFD(outputs, prep, 0.5, 0.4)
 	if err != nil || len(faces) == 0 {
-		if err == nil {
-			err = fmt.Errorf("no face detected")
-		}
+		if err == nil { err = fmt.Errorf("no face detected") }
 		return nil, alignment, fmt.Errorf("SCRFD landmarks unavailable: %w", err)
 	}
-
-	input, err := ident.ArcFaceInputAligned(raw, faces[0].Landmarks)
-	if err != nil {
-		return nil, alignment, fmt.Errorf("five-point alignment failed: %w", err)
-	}
+	input, err := ident.ArcFaceInputAlignedImage(img, faces[0].Landmarks)
+	if err != nil { return nil, alignment, fmt.Errorf("five-point alignment failed: %w", err) }
 	vec, _, err := m.Embed(ctx, input)
-	if err != nil {
-		return nil, alignment, fmt.Errorf("ArcFace embedding failed: %w", err)
-	}
+	if err != nil { return nil, alignment, fmt.Errorf("ArcFace embedding failed: %w", err) }
 	return ident.Normalize(vec), alignment, nil
+}
+
+func arcEmbedding(ctx context.Context, m *nativecore.Manager, raw []byte) ([]float64, string, error) {
+	img,_,err:=image.Decode(bytes.NewReader(raw))
+	if err!=nil { return nil,"scrfd-5pt-112",fmt.Errorf("decode image: %w",err) }
+	return arcEmbeddingImage(ctx,m,img)
 }
 
 func loadReferences(root, personaID string) ([][]byte, error) {
@@ -286,7 +284,7 @@ func loadReferences(root, personaID string) ([][]byte, error) {
 	return out, nil
 }
 
-func scoreIdentity(ctx context.Context, m *nativecore.Manager, generated []byte, refs [][]byte, threshold float64) IdentityResult {
+func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated image.Image, refs [][]byte, threshold float64) IdentityResult {
 	result := IdentityResult{
 		Threshold: threshold,
 		ReferenceCount: len(refs),
@@ -298,7 +296,7 @@ func scoreIdentity(ctx context.Context, m *nativecore.Manager, generated []byte,
 		result.Reason = "no_reference_pack"
 		return result
 	}
-	genVec, alignment, err := arcEmbedding(ctx, m, generated)
+	genVec, alignment, err := arcEmbeddingImage(ctx, m, generated)
 	result.Alignment = alignment
 	if err != nil {
 		result.Reason = err.Error()
@@ -333,6 +331,31 @@ func scoreIdentity(ctx context.Context, m *nativecore.Manager, generated []byte,
 	result.ReferenceCount = len(scores)
 	result.Passed = maxScore >= threshold
 	return result
+}
+
+
+func scoreIdentity(ctx context.Context, m *nativecore.Manager, generated []byte, refs [][]byte, threshold float64) IdentityResult {
+	img,_,err:=image.Decode(bytes.NewReader(generated))
+	if err!=nil {
+		return IdentityResult{Threshold:threshold,ReferenceCount:len(refs),Model:"arcface-w600k-r50-qnn",Metric:"cosine",NPU:true,Reason:"decode image: "+err.Error()}
+	}
+	return scoreIdentityImage(ctx,m,img,refs,threshold)
+}
+
+type generatedFrame struct {
+	Image image.Image
+	Encoded []byte
+}
+
+func encodeFramePNG(frame generatedFrame) ([]byte,error) {
+	if len(frame.Encoded)>0 {
+		if _,format,err:=image.DecodeConfig(bytes.NewReader(frame.Encoded)); err==nil && format=="png" {
+			return frame.Encoded,nil
+		}
+	}
+	var buf bytes.Buffer
+	if err:=png.Encode(&buf,frame.Image);err!=nil{return nil,err}
+	return buf.Bytes(),nil
 }
 
 func documentsMirrorRoot() string {
@@ -381,7 +404,7 @@ func generationBackend(req Request) string {
 	}
 }
 
-func generateRaw(ctx context.Context, req Request, prompt string) ([]byte, map[string]any, string, error) {
+func generateFrame(ctx context.Context, req Request, prompt string) (generatedFrame, map[string]any, string, error) {
 	backend := generationBackend(req)
 	if backend == "local-dream" {
 		client := localdream.FromEnv()
@@ -389,20 +412,17 @@ func generateRaw(ctx context.Context, req Request, prompt string) ([]byte, map[s
 			Prompt: prompt, NegativePrompt: req.NegativePrompt, Seed: req.Seed,
 			Width: req.Width, Height: req.Height,
 		})
-		if err != nil {
-			return nil, nil, backend, err
-		}
+		if err != nil { return generatedFrame{}, nil, backend, err }
 		meta := out.Generation
-		if meta == nil {
-			meta = map[string]any{}
-		}
+		if meta == nil { meta = map[string]any{} }
 		meta["generator"] = "local-dream"
-		return out.Image, meta, backend, nil
+		meta["pipeline_image_mode"] = "raw-memory"
+		return generatedFrame{Image:out.Frame,Encoded:out.Encoded}, meta, backend, nil
 	}
 
 	m := nativecore.FromEnv()
 	if m.ModelDir == "" {
-		return nil, nil, backend, fmt.Errorf("QNN identity generation requires SPICE_QNN_MODEL_DIR")
+		return generatedFrame{}, nil, backend, fmt.Errorf("QNN identity generation requires SPICE_QNN_MODEL_DIR")
 	}
 	payload := map[string]any{
 		"prompt": reqPrompt(prompt),
@@ -413,23 +433,18 @@ func generateRaw(ctx context.Context, req Request, prompt string) ([]byte, map[s
 		"guidance": req.Guidance,
 		"output_format": "png",
 	}
-	if req.Seed != 0 {
-		payload["seed"] = req.Seed
-	}
+	if req.Seed != 0 { payload["seed"] = req.Seed }
 	out, err := m.Generate(ctx, payload)
-	if err != nil {
-		return nil, nil, backend, err
-	}
+	if err != nil { return generatedFrame{}, nil, backend, err }
 	imageB64, _ := out["image"].(string)
-	if imageB64 == "" {
-		return nil, nil, backend, fmt.Errorf("QNN generation returned no image")
-	}
+	if imageB64 == "" { return generatedFrame{}, nil, backend, fmt.Errorf("QNN generation returned no image") }
 	imageBytes, err := base64.StdEncoding.DecodeString(imageB64)
-	if err != nil {
-		return nil, nil, backend, fmt.Errorf("decode generated image: %w", err)
-	}
+	if err != nil { return generatedFrame{}, nil, backend, fmt.Errorf("decode generated image: %w", err) }
+	img,_,err:=image.Decode(bytes.NewReader(imageBytes))
+	if err!=nil { return generatedFrame{},nil,backend,fmt.Errorf("decode generated image pixels: %w",err) }
 	out["generator"] = "qnn"
-	return imageBytes, out, backend, nil
+	out["pipeline_image_mode"] = "decoded-memory"
+	return generatedFrame{Image:img,Encoded:imageBytes}, out, backend, nil
 }
 
 func Run(ctx context.Context, req Request) (Result, error) {
@@ -478,7 +493,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		"steps":req.Steps, "guidance":req.Guidance,
 	})
 	genStarted := time.Now()
-	imageBytes, out, backend, err := generateRaw(ctx, req, prompt)
+	frame, out, backend, err := generateFrame(ctx, req, prompt)
 	if err != nil {
 		return Result{}, err
 	}
@@ -491,6 +506,8 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	assetID := randomID()
 	assetPath := filepath.Join(req.OutputDir, assetID+".png")
+	imageBytes,err:=encodeFramePNG(frame)
+	if err!=nil { return Result{},fmt.Errorf("encode accepted artifact: %w",err) }
 	if err := os.WriteFile(assetPath, imageBytes, 0o644); err != nil {
 		return Result{}, err
 	}
@@ -501,10 +518,10 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		return Result{}, fmt.Errorf("load references: %w", err)
 	}
 	emitProgress(req, 76, "SCRFD + ArcFace identity", map[string]any{"references":len(refs),"identity_threshold":req.IdentityThreshold})
-	identity := scoreIdentity(ctx, m, imageBytes, refs, req.IdentityThreshold)
+	identity := scoreIdentityImage(ctx, m, frame.Image, refs, req.IdentityThreshold)
 	emitProgress(req, 86, "identity scored", map[string]any{"identity_score":identity.Score,"identity_mean":identity.MeanScore,"identity_pass":identity.Passed,"alignment":identity.Alignment})
 	emitProgress(req, 88, "image quality analysis", nil)
-	quality, err := imagemetrics.Analyze(imageBytes)
+	quality, err := imagemetrics.AnalyzeImage(frame.Image)
 	if err != nil {
 		return Result{}, err
 	}
