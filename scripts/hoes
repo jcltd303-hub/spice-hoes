@@ -11,6 +11,13 @@ fi
 
 cd "$REPO_DIR"
 
+if [[ -f "$REPO_DIR/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_DIR/.env"
+  set +a
+fi
+
 # Always refresh origin/main first.
 git fetch origin main --prune
 
