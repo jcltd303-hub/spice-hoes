@@ -96,6 +96,9 @@ type Request struct {
 	IdentityThreshold float64 `json:"identity_threshold,omitempty"`
 	QualityThreshold float64  `json:"quality_threshold,omitempty"`
 	Generator         string   `json:"generator,omitempty"`
+	BestOfN           int      `json:"best_of_n,omitempty"`
+	StopOnAccept      *bool    `json:"stop_on_accept,omitempty"`
+	SaveAllAttempts   *bool    `json:"save_all_attempts,omitempty"`
 	Progress          func(ProgressEvent) `json:"-"`
 }
 
@@ -128,6 +131,28 @@ type Result struct {
 	QualityPassed  bool                 `json:"quality_passed"`
 	QualityThreshold float64            `json:"quality_threshold"`
 	Generation     map[string]any       `json:"generation"`
+	Batch          *BatchSummary        `json:"batch,omitempty"`
+}
+
+type AttemptSummary struct {
+	Index         int     `json:"index"`
+	Seed          int64   `json:"seed"`
+	Status        string  `json:"status"`
+	AssetPath     string  `json:"asset_path,omitempty"`
+	MetadataPath  string  `json:"metadata_path,omitempty"`
+	IdentityScore float64 `json:"identity_score,omitempty"`
+	IdentityMean  float64 `json:"identity_mean,omitempty"`
+	IdentityPass  bool    `json:"identity_pass"`
+	QualityScore  float64 `json:"quality_score,omitempty"`
+	QualityPass   bool    `json:"quality_pass"`
+	Error         string  `json:"error,omitempty"`
+}
+
+type BatchSummary struct {
+	Requested int              `json:"requested"`
+	Completed int              `json:"completed"`
+	Selected  int              `json:"selected"`
+	Attempts  []AttemptSummary `json:"attempts,omitempty"`
 }
 
 const defaultNegative = "public figure likeness, child, teen, underage, youth-coded sexual styling, extra fingers, malformed hands, duplicate limbs, distorted face, waxy skin, plastic skin, 3d render, watermark, logo, text artifacts"
@@ -501,132 +526,114 @@ func generateFrame(ctx context.Context, req Request, prompt string) (generatedFr
 	return generatedFrame{Image:img,Encoded:imageBytes}, out, backend, nil
 }
 
-func Run(ctx context.Context, req Request) (Result, error) {
-	emitProgress(req, 2, "loading persona", nil)
-	p, err := loadPersona(req)
-	if err != nil {
-		return Result{}, err
-	}
-	if strings.TrimSpace(req.Theme) == "" {
-		req.Theme = "identity reference portrait"
-	}
-	if req.Width == 0 {
-		req.Width = 1024
-	}
-	if req.Height == 0 {
-		req.Height = 1024
-	}
-	if req.Steps == 0 {
-		req.Steps = 20
-	}
-	if req.Guidance == 0 {
-		req.Guidance = 7.0
-	}
-	if req.OutputDir == "" {
-		req.OutputDir = filepath.Join("data", "identity-candidates", p.ID)
-	}
-	if req.ReferenceRoot == "" {
-		req.ReferenceRoot = filepath.Join("data", "references")
-	}
-	if req.IdentityThreshold == 0 {
-		req.IdentityThreshold = 0.82
-	}
-	if req.QualityThreshold == 0 {
-		req.QualityThreshold = 0.78
-	}
-	if req.NegativePrompt == "" {
-		req.NegativePrompt = defaultNegative
-	}
 
-	emitProgress(req, 8, "building prompt", map[string]any{"persona":p.ID,"seed":req.Seed})
+func boolOption(v *bool, fallback bool) bool {
+	if v == nil { return fallback }
+	return *v
+}
+
+func betterResult(a, b Result) bool {
+	aAccepted := a.Identity.Passed && a.QualityPassed
+	bAccepted := b.Identity.Passed && b.QualityPassed
+	if aAccepted != bAccepted { return aAccepted }
+	if a.Identity.Passed != b.Identity.Passed { return a.Identity.Passed }
+	if a.QualityPassed != b.QualityPassed { return a.QualityPassed }
+	if a.Identity.Score != b.Identity.Score { return a.Identity.Score > b.Identity.Score }
+	if a.Quality.LocalScore != b.Quality.LocalScore { return a.Quality.LocalScore > b.Quality.LocalScore }
+	if a.Identity.MeanScore != b.Identity.MeanScore { return a.Identity.MeanScore > b.Identity.MeanScore }
+	return false
+}
+
+func runSingleAttempt(
+	ctx context.Context,
+	req Request,
+	p Persona,
+	refs [][]byte,
+	canonicalRef []byte,
+	medoidScore float64,
+	swapper *faceswap.Swapper,
+	attemptIndex int,
+	attemptTotal int,
+) (Result, error) {
 	prompt := promptFor(p, req)
 	m := nativecore.FromEnv()
 	backend := generationBackend(req)
-	emitProgress(req, 15, backend+" generation", map[string]any{
+
+	emitProgress(req, 15, "best-of-n generation", map[string]any{
+		"attempt":attemptIndex, "best_of_n":attemptTotal, "seed":req.Seed,
 		"generator":backend, "size":fmt.Sprintf("%dx%d",req.Width,req.Height),
 		"steps":req.Steps, "guidance":req.Guidance,
 	})
 	genStarted := time.Now()
 	frame, out, backend, err := generateFrame(ctx, req, prompt)
-	if err != nil {
-		return Result{}, err
-	}
+	if err != nil { return Result{}, err }
+	if out == nil { out = map[string]any{} }
+	out["attempt_index"] = attemptIndex
+	out["attempt_seed"] = req.Seed
+	out["best_of_n"] = attemptTotal
+	out["generator"] = backend
+	out["generation_elapsed_ms"] = time.Since(genStarted).Milliseconds()
+
 	emitProgress(req, 62, "generation complete", map[string]any{
+		"attempt":attemptIndex, "best_of_n":attemptTotal, "seed":req.Seed,
 		"generator":backend, "generation_elapsed":time.Since(genStarted).Round(time.Millisecond),
 	})
 
-	if err := os.MkdirAll(req.OutputDir, 0o755); err != nil {
-		return Result{}, err
-	}
+	if err := os.MkdirAll(req.OutputDir, 0o755); err != nil { return Result{}, err }
 	assetID := randomID()
 	assetPath := filepath.Join(req.OutputDir, assetID+".png")
-	imageBytes,err:=encodeFramePNG(frame)
-	if err!=nil { return Result{},fmt.Errorf("encode accepted artifact: %w",err) }
-	if err := os.WriteFile(assetPath, imageBytes, 0o644); err != nil {
-		return Result{}, err
-	}
-
-	emitProgress(req, 70, "loading identity references", nil)
-	refs, err := loadReferences(req.ReferenceRoot, p.ID)
-	if err != nil {
-		return Result{}, fmt.Errorf("load references: %w", err)
-	}
+	imageBytes, err := encodeFramePNG(frame)
+	if err != nil { return Result{}, fmt.Errorf("encode generated artifact: %w", err) }
+	if err := os.WriteFile(assetPath, imageBytes, 0o644); err != nil { return Result{}, err }
 
 	if len(refs) > 0 {
-		cfg := faceswap.ConfigFromEnv()
-		if faceswap.Available(cfg) {
-			emitProgress(req, 72, "identity face transfer", map[string]any{"references":len(refs)})
-			sourceRef, sourceScore, selectErr := selectCanonicalReference(ctx, m, refs)
-			if selectErr != nil {
+		if swapper != nil && len(canonicalRef) > 0 {
+			emitProgress(req, 72, "identity face transfer", map[string]any{
+				"attempt":attemptIndex, "best_of_n":attemptTotal, "references":len(refs),
+			})
+			swapped, swapMeta, swapErr := swapper.Swap(ctx, canonicalRef, imageBytes)
+			if swapErr != nil {
 				out["faceswap_applied"] = false
-				out["faceswap_reason"] = selectErr.Error()
+				out["faceswap_reason"] = swapErr.Error()
 			} else {
-				swapper, swapErr := faceswap.New(ctx, cfg, m)
-				if swapErr != nil {
+				swappedImg, _, decodeErr := image.Decode(bytes.NewReader(swapped))
+				if decodeErr != nil {
 					out["faceswap_applied"] = false
-					out["faceswap_reason"] = swapErr.Error()
+					out["faceswap_reason"] = "decode swapped image: " + decodeErr.Error()
 				} else {
-					swapped, swapMeta, swapErr := swapper.Swap(ctx, sourceRef, imageBytes)
-					swapper.Close()
-					if swapErr != nil {
-						out["faceswap_applied"] = false
-						out["faceswap_reason"] = swapErr.Error()
-					} else {
-						swappedImg, _, decodeErr := image.Decode(bytes.NewReader(swapped))
-						if decodeErr != nil {
-							out["faceswap_applied"] = false
-							out["faceswap_reason"] = "decode swapped image: " + decodeErr.Error()
-						} else {
-							frame = generatedFrame{Image: swappedImg, Encoded: swapped}
-							imageBytes = swapped
-							if err := os.WriteFile(assetPath, imageBytes, 0o644); err != nil {
-								return Result{}, fmt.Errorf("write swapped artifact: %w", err)
-							}
-							out["faceswap_applied"] = true
-							out["faceswap_model"] = swapMeta.Model
-							out["faceswap_alignment"] = swapMeta.Alignment
-							out["faceswap_target_score"] = swapMeta.TargetScore
-							out["faceswap_reference_medoid_score"] = sourceScore
-						}
+					frame = generatedFrame{Image: swappedImg, Encoded: swapped}
+					imageBytes = swapped
+					if err := os.WriteFile(assetPath, imageBytes, 0o644); err != nil {
+						return Result{}, fmt.Errorf("write swapped artifact: %w", err)
 					}
+					out["faceswap_applied"] = true
+					out["faceswap_model"] = swapMeta.Model
+					out["faceswap_alignment"] = swapMeta.Alignment
+					out["faceswap_target_score"] = swapMeta.TargetScore
+					out["faceswap_reference_medoid_score"] = medoidScore
 				}
 			}
 		} else {
 			out["faceswap_applied"] = false
-			out["faceswap_reason"] = "face swap assets unavailable"
+			if _, ok := out["faceswap_reason"]; !ok {
+				out["faceswap_reason"] = "face swap assets unavailable"
+			}
 		}
 	}
 
-	emitProgress(req, 76, "SCRFD + ArcFace identity", map[string]any{"references":len(refs),"identity_threshold":req.IdentityThreshold})
+	emitProgress(req, 76, "SCRFD + ArcFace identity", map[string]any{
+		"attempt":attemptIndex, "best_of_n":attemptTotal,
+		"references":len(refs), "identity_threshold":req.IdentityThreshold,
+	})
 	identity := scoreIdentityImage(ctx, m, frame.Image, refs, req.IdentityThreshold)
-	emitProgress(req, 86, "identity scored", map[string]any{"identity_score":identity.Score,"identity_mean":identity.MeanScore,"identity_pass":identity.Passed,"alignment":identity.Alignment})
-	emitProgress(req, 88, "image quality analysis", nil)
+
+	emitProgress(req, 88, "image quality analysis", map[string]any{
+		"attempt":attemptIndex, "best_of_n":attemptTotal,
+	})
 	quality, err := imagemetrics.AnalyzeImage(frame.Image)
-	if err != nil {
-		return Result{}, err
-	}
+	if err != nil { return Result{}, err }
 	qualityPassed := quality.LocalScore >= req.QualityThreshold
-	emitProgress(req, 94, "quality scored", map[string]any{"quality_score":quality.LocalScore,"quality_pass":qualityPassed,"sharpness":quality.Sharpness,"contrast":quality.Contrast,"exposure":quality.ExposureScore,"resolution":quality.ResolutionScore})
+
 	status := "proposed"
 	if len(refs) > 0 && !identity.Scored {
 		status = "rejected_identity_runtime"
@@ -654,7 +661,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		QualityThreshold: req.QualityThreshold,
 		Generation: out,
 	}
-	docMetaPath := ""
+
 	if mirrorRoot := documentsMirrorRoot(); mirrorRoot != "" {
 		dir := filepath.Join(mirrorRoot, p.ID)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -665,21 +672,169 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			return Result{}, fmt.Errorf("copy generated asset to documents: %w", err)
 		}
 		result.DocumentsPath = docAssetPath
-		docMetaPath = docAssetPath + ".json"
 	}
 
-	emitProgress(req, 97, "saving asset + metadata", map[string]any{"status":status,"asset":assetPath,"documents":result.DocumentsPath})
 	meta, _ := json.MarshalIndent(result, "", "  ")
-	if err := os.WriteFile(metaPath, meta, 0o644); err != nil {
-		return Result{}, err
-	}
-	if docMetaPath != "" {
-		if err := os.WriteFile(docMetaPath, meta, 0o644); err != nil {
+	if err := os.WriteFile(metaPath, meta, 0o644); err != nil { return Result{}, err }
+	if result.DocumentsPath != "" {
+		if err := os.WriteFile(result.DocumentsPath+".json", meta, 0o644); err != nil {
 			return Result{}, fmt.Errorf("copy generated metadata to documents: %w", err)
 		}
 	}
-	emitProgress(req, 100, "complete", map[string]any{"status":status,"identity_score":identity.Score,"quality_score":quality.LocalScore,"asset":assetPath,"documents":result.DocumentsPath})
+
+	emitProgress(req, 94, "attempt scored", map[string]any{
+		"attempt":attemptIndex, "best_of_n":attemptTotal, "seed":req.Seed,
+		"status":status, "identity_score":identity.Score, "identity_mean":identity.MeanScore,
+		"identity_pass":identity.Passed, "quality_score":quality.LocalScore, "quality_pass":qualityPassed,
+		"asset":assetPath,
+	})
 	return result, nil
+}
+
+func Run(ctx context.Context, req Request) (Result, error) {
+	emitProgress(req, 2, "loading persona", nil)
+	p, err := loadPersona(req)
+	if err != nil { return Result{}, err }
+
+	if strings.TrimSpace(req.Theme) == "" { req.Theme = "identity reference portrait" }
+	if req.Width == 0 { req.Width = 1024 }
+	if req.Height == 0 { req.Height = 1024 }
+	if req.Steps == 0 { req.Steps = 20 }
+	if req.Guidance == 0 { req.Guidance = 7.0 }
+	if req.OutputDir == "" { req.OutputDir = filepath.Join("data", "identity-candidates", p.ID) }
+	if req.ReferenceRoot == "" { req.ReferenceRoot = filepath.Join("data", "references") }
+	if req.IdentityThreshold == 0 { req.IdentityThreshold = 0.82 }
+	if req.QualityThreshold == 0 { req.QualityThreshold = 0.78 }
+	if req.NegativePrompt == "" { req.NegativePrompt = defaultNegative }
+	if req.BestOfN <= 0 { req.BestOfN = 1 }
+	if req.BestOfN > 64 { req.BestOfN = 64 }
+
+	stopOnAccept := boolOption(req.StopOnAccept, true)
+	saveAll := boolOption(req.SaveAllAttempts, true)
+
+	emitProgress(req, 8, "loading identity references", map[string]any{
+		"persona":p.ID, "best_of_n":req.BestOfN,
+	})
+	refs, err := loadReferences(req.ReferenceRoot, p.ID)
+	if err != nil { return Result{}, fmt.Errorf("load references: %w", err) }
+
+	m := nativecore.FromEnv()
+	var canonicalRef []byte
+	medoidScore := 0.0
+	var swapper *faceswap.Swapper
+	if len(refs) > 0 {
+		cfg := faceswap.ConfigFromEnv()
+		if faceswap.Available(cfg) {
+			canonicalRef, medoidScore, err = selectCanonicalReference(ctx, m, refs)
+			if err == nil {
+				swapper, err = faceswap.New(ctx, cfg, m)
+				if err != nil { swapper = nil }
+			}
+		}
+	}
+	if swapper != nil { defer swapper.Close() }
+
+	baseSeed := req.Seed
+	if baseSeed == 0 { baseSeed = time.Now().UnixNano() }
+
+	attempts := make([]AttemptSummary, 0, req.BestOfN)
+	var best Result
+	bestIndex := -1
+	completed := 0
+
+	for i := 0; i < req.BestOfN; i++ {
+		attemptReq := req
+		attemptReq.Seed = baseSeed + int64(i)
+		attemptIndex := i + 1
+
+		result, attemptErr := runSingleAttempt(
+			ctx, attemptReq, p, refs, canonicalRef, medoidScore, swapper, attemptIndex, req.BestOfN,
+		)
+		if attemptErr != nil {
+			attempts = append(attempts, AttemptSummary{
+				Index:attemptIndex, Seed:attemptReq.Seed, Status:"attempt_error", Error:attemptErr.Error(),
+			})
+			emitProgress(req, 94, "attempt failed", map[string]any{
+				"attempt":attemptIndex, "best_of_n":req.BestOfN, "seed":attemptReq.Seed, "error":attemptErr.Error(),
+			})
+			continue
+		}
+		completed++
+		attempts = append(attempts, AttemptSummary{
+			Index:attemptIndex,
+			Seed:attemptReq.Seed,
+			Status:result.Status,
+			AssetPath:result.AssetPath,
+			MetadataPath:result.MetadataPath,
+			IdentityScore:result.Identity.Score,
+			IdentityMean:result.Identity.MeanScore,
+			IdentityPass:result.Identity.Passed,
+			QualityScore:result.Quality.LocalScore,
+			QualityPass:result.QualityPassed,
+		})
+
+		if bestIndex < 0 || betterResult(result, best) {
+			best = result
+			bestIndex = len(attempts)-1
+		}
+
+		if stopOnAccept && result.Identity.Passed && result.QualityPassed {
+			break
+		}
+	}
+
+	if bestIndex < 0 {
+		lastErr := "all best-of-n attempts failed"
+		if len(attempts) > 0 && attempts[len(attempts)-1].Error != "" {
+			lastErr += ": " + attempts[len(attempts)-1].Error
+		}
+		return Result{}, fmt.Errorf("%s", lastErr)
+	}
+
+	selectedAttempt := attempts[bestIndex].Index
+	if best.Generation == nil { best.Generation = map[string]any{} }
+	best.Generation["best_of_n"] = req.BestOfN
+	best.Generation["best_of_n_completed"] = completed
+	best.Generation["selected_attempt"] = selectedAttempt
+	best.Generation["selected_seed"] = attempts[bestIndex].Seed
+	best.Generation["stop_on_accept"] = stopOnAccept
+
+	best.Batch = &BatchSummary{
+		Requested:req.BestOfN,
+		Completed:completed,
+		Selected:selectedAttempt,
+	}
+	if saveAll {
+		best.Batch.Attempts = attempts
+	} else {
+		for _, a := range attempts {
+			if a.Index == selectedAttempt { continue }
+			if a.AssetPath != "" { _ = os.Remove(a.AssetPath) }
+			if a.MetadataPath != "" { _ = os.Remove(a.MetadataPath) }
+			if a.AssetPath != "" { _ = os.Remove(a.AssetPath+".json") }
+		}
+	}
+
+	meta, _ := json.MarshalIndent(best, "", "  ")
+	if err := os.WriteFile(best.MetadataPath, meta, 0o644); err != nil { return Result{}, err }
+	if best.DocumentsPath != "" {
+		if err := os.WriteFile(best.DocumentsPath+".json", meta, 0o644); err != nil {
+			return Result{}, fmt.Errorf("update selected documents metadata: %w", err)
+		}
+	}
+
+	emitProgress(req, 100, "complete", map[string]any{
+		"status":best.Status,
+		"identity_score":best.Identity.Score,
+		"quality_score":best.Quality.LocalScore,
+		"asset":best.AssetPath,
+		"documents":best.DocumentsPath,
+		"selected_attempt":selectedAttempt,
+		"selected_seed":attempts[bestIndex].Seed,
+		"best_of_n":req.BestOfN,
+		"completed":completed,
+	})
+	return best, nil
 }
 
 func reqPrompt(s string) string { return s }
