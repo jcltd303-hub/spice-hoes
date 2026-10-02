@@ -16,8 +16,11 @@ LR="${LR:-5e-4}"
 VECTORS="${VECTORS:-4}"
 REPEATS="${REPEATS:-100}"
 SEED="${SEED:-20261002}"
+REFERENCE_DIR="${REFERENCE_DIR:-}"
 
-python3 scripts/prepare-textual-inversion.py --persona "$PERSONA" --token "$TOKEN"
+PREP=(python3 scripts/prepare-textual-inversion.py --persona "$PERSONA" --token "$TOKEN")
+if [[ -n "$REFERENCE_DIR" ]]; then PREP+=(--reference-dir "$REFERENCE_DIR"); fi
+"${PREP[@]}"
 
 python3 - <<'PY'
 import torch
