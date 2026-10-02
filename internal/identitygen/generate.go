@@ -148,6 +148,7 @@ type AttemptSummary struct {
 	IdentityPass  bool    `json:"identity_pass"`
 	QualityScore  float64 `json:"quality_score,omitempty"`
 	QualityPass   bool    `json:"quality_pass"`
+	SelectionScore float64 `json:"selection_score,omitempty"`
 	Error         string  `json:"error,omitempty"`
 }
 
@@ -158,7 +159,7 @@ type BatchSummary struct {
 	Attempts  []AttemptSummary `json:"attempts,omitempty"`
 }
 
-const defaultNegative = "public figure likeness, child, teen, underage, youth-coded sexual styling, extra fingers, malformed hands, duplicate limbs, distorted face, waxy skin, plastic skin, 3d render, watermark, logo, text artifacts"
+const defaultNegative = "public figure likeness, child, teen, underage, youth-coded sexual styling, extra fingers, malformed hands, duplicate limbs, distorted face, waxy skin, plastic skin, 3d render, watermark, logo, text artifacts, soft focus, blurry face, smeared skin texture, motion blur, low facial contrast, excessive denoise"
 
 func loadPersona(req Request) (Persona, error) {
 	path := strings.TrimSpace(req.PersonaPath)
@@ -222,7 +223,7 @@ func promptFor(p Persona, req Request) string {
 		fmt.Sprintf("Body lock: %s.", strings.TrimSpace(p.IdentityReference.BodyPrompt)),
 		fmt.Sprintf("Theme: %s.", strings.TrimSpace(req.Theme)),
 		fmt.Sprintf("Style: %s.", style),
-		"Photorealistic lifestyle photography, natural skin texture, visible pores, subtle asymmetry, realistic lighting, coherent anatomy.",
+		"Photorealistic lifestyle photography, natural skin texture, visible pores, subtle asymmetry, realistic lighting, coherent anatomy. Tack-sharp eyes and eyelashes, crisp facial microtexture, precise focus on the face, strong local contrast without oversharpening.",
 		"Maintain the same facial proportions, hairline, body proportions, and signature visual traits across generations.",
 		"Do not resemble any real person or public figure.",
 	}
@@ -326,21 +327,66 @@ func loadReferences(root, personaID string) ([][]byte, []string, error) {
 	return refs, paths, nil
 }
 
-func selectCanonicalReference(ctx context.Context, m *nativecore.Manager, refs [][]byte, paths []string) ([]byte, string, float64, error) {
-	if len(refs) == 0 {
-		return nil, "", 0, fmt.Errorf("no identity references")
-	}
-	type embeddedRef struct {
-		index int
-		vec   []float64
-	}
-	embedded := make([]embeddedRef, 0, len(refs))
+type referenceEmbedding struct {
+	index int
+	vec   []float64
+}
+
+func embedReferences(ctx context.Context, m *nativecore.Manager, refs [][]byte) []referenceEmbedding {
+	out := make([]referenceEmbedding, 0, len(refs))
 	for i, ref := range refs {
 		vec, _, err := arcEmbedding(ctx, m, ref)
-		if err != nil {
-			continue
-		}
-		embedded = append(embedded, embeddedRef{index:i, vec:vec})
+		if err != nil { continue }
+		out = append(out, referenceEmbedding{index:i, vec:vec})
+	}
+	return out
+}
+
+func scoreIdentityImageCached(ctx context.Context, m *nativecore.Manager, generated image.Image, refs []referenceEmbedding, threshold, meanThreshold float64) IdentityResult {
+	result := IdentityResult{
+		Threshold: threshold,
+		MeanThreshold: meanThreshold,
+		ReferenceCount: len(refs),
+		Model: "arcface-w600k-r50-qnn",
+		Metric: "cosine",
+		NPU: true,
+	}
+	if len(refs) == 0 {
+		result.Reason = "no_reference_embedding_succeeded"
+		return result
+	}
+	genVec, alignment, err := arcEmbeddingImage(ctx, m, generated)
+	result.Alignment = alignment
+	if err != nil {
+		result.Reason = err.Error()
+		return result
+	}
+	scores := make([]float64, 0, len(refs))
+	for _, ref := range refs {
+		score, err := ident.Cosine(genVec, ref.vec)
+		if err == nil { scores = append(scores, score) }
+	}
+	if len(scores) == 0 {
+		result.Reason = "no_reference_embedding_succeeded"
+		return result
+	}
+	maxScore := scores[0]
+	sum := 0.0
+	for _, score := range scores {
+		if score > maxScore { maxScore = score }
+		sum += score
+	}
+	result.Scored = true
+	result.Score = maxScore
+	result.MeanScore = sum / float64(len(scores))
+	result.ReferenceCount = len(scores)
+	result.Passed = result.Score >= threshold && result.MeanScore >= meanThreshold
+	return result
+}
+
+func selectCanonicalReference(refs [][]byte, paths []string, embedded []referenceEmbedding) ([]byte, string, float64, error) {
+	if len(refs) == 0 {
+		return nil, "", 0, fmt.Errorf("no identity references")
 	}
 	if len(embedded) == 0 {
 		return nil, "", 0, fmt.Errorf("no reference embedding succeeded")
@@ -553,16 +599,30 @@ func boolOption(v *bool, fallback bool) bool {
 	return *v
 }
 
+func candidateSelectionScore(r Result) float64 {
+	if !r.Identity.Scored { return -1 }
+	maxNorm := r.Identity.Score
+	if r.Identity.Threshold > 0 { maxNorm /= r.Identity.Threshold }
+	meanNorm := r.Identity.MeanScore
+	if r.Identity.MeanThreshold > 0 { meanNorm /= r.Identity.MeanThreshold }
+	qualityNorm := r.Quality.LocalScore
+	if r.QualityThreshold > 0 { qualityNorm /= r.QualityThreshold }
+	return 0.55*maxNorm + 0.25*meanNorm + 0.20*qualityNorm
+}
+
 func betterResult(a, b Result) bool {
 	aAccepted := a.Identity.Passed && a.QualityPassed
 	bAccepted := b.Identity.Passed && b.QualityPassed
 	if aAccepted != bAccepted { return aAccepted }
 	if a.Identity.Passed != b.Identity.Passed { return a.Identity.Passed }
-	if a.QualityPassed != b.QualityPassed { return a.QualityPassed }
+	if a.QualityPassed != b.QualityPassed && a.Identity.Score >= b.Identity.Score*0.98 {
+		return a.QualityPassed
+	}
+	as := candidateSelectionScore(a)
+	bs := candidateSelectionScore(b)
+	if as != bs { return as > bs }
 	if a.Identity.Score != b.Identity.Score { return a.Identity.Score > b.Identity.Score }
-	if a.Quality.LocalScore != b.Quality.LocalScore { return a.Quality.LocalScore > b.Quality.LocalScore }
-	if a.Identity.MeanScore != b.Identity.MeanScore { return a.Identity.MeanScore > b.Identity.MeanScore }
-	return false
+	return a.Quality.LocalScore > b.Quality.LocalScore
 }
 
 func runSingleAttempt(
@@ -570,6 +630,7 @@ func runSingleAttempt(
 	req Request,
 	p Persona,
 	refs [][]byte,
+	refEmbeddings []referenceEmbedding,
 	canonicalRef []byte,
 	medoidScore float64,
 	medoidPath string,
@@ -612,7 +673,7 @@ func runSingleAttempt(
 	preSwapBytes := append([]byte(nil), imageBytes...)
 	preSwapIdentity := IdentityResult{}
 	if len(refs) > 0 {
-		preSwapIdentity = scoreIdentityImage(ctx, m, frame.Image, refs, req.IdentityThreshold, req.IdentityMeanThreshold)
+		preSwapIdentity = scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
 		out["identity_pre_swap_score"] = preSwapIdentity.Score
 		out["identity_pre_swap_mean"] = preSwapIdentity.MeanScore
 		out["identity_pre_swap_scored"] = preSwapIdentity.Scored
@@ -658,7 +719,7 @@ func runSingleAttempt(
 		"attempt":attemptIndex, "best_of_n":attemptTotal,
 		"references":len(refs), "identity_threshold":req.IdentityThreshold,
 	})
-	identity := scoreIdentityImage(ctx, m, frame.Image, refs, req.IdentityThreshold, req.IdentityMeanThreshold)
+	identity := scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
 	if applied, _ := out["faceswap_applied"].(bool); applied && preSwapIdentity.Scored && identity.Scored && identity.Score < preSwapIdentity.Score {
 		out["faceswap_reverted"] = true
 		out["faceswap_revert_reason"] = fmt.Sprintf("post-swap identity %.6f below pre-swap %.6f", identity.Score, preSwapIdentity.Score)
@@ -771,6 +832,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if err != nil { return Result{}, fmt.Errorf("load references: %w", err) }
 
 	m := nativecore.FromEnv()
+	refEmbeddings := embedReferences(ctx, m, refs)
 	var canonicalRef []byte
 	canonicalRefPath := ""
 	medoidScore := 0.0
@@ -778,7 +840,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if len(refs) > 0 {
 		cfg := faceswap.ConfigFromEnv()
 		if faceswap.Available(cfg) {
-			canonicalRef, canonicalRefPath, medoidScore, err = selectCanonicalReference(ctx, m, refs, refPaths)
+			canonicalRef, canonicalRefPath, medoidScore, err = selectCanonicalReference(refs, refPaths, refEmbeddings)
 			if err == nil {
 				swapper, err = faceswap.New(ctx, cfg, m)
 				if err != nil { swapper = nil }
@@ -801,7 +863,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		attemptIndex := i + 1
 
 		result, attemptErr := runSingleAttempt(
-			ctx, attemptReq, p, refs, canonicalRef, medoidScore, canonicalRefPath, swapper, attemptIndex, req.BestOfN,
+			ctx, attemptReq, p, refs, refEmbeddings, canonicalRef, medoidScore, canonicalRefPath, swapper, attemptIndex, req.BestOfN,
 		)
 		if attemptErr != nil {
 			attempts = append(attempts, AttemptSummary{
@@ -824,6 +886,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 			IdentityPass:result.Identity.Passed,
 			QualityScore:result.Quality.LocalScore,
 			QualityPass:result.QualityPassed,
+			SelectionScore:candidateSelectionScore(result),
 		})
 
 		if bestIndex < 0 || betterResult(result, best) {
@@ -851,6 +914,8 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	best.Generation["selected_attempt"] = selectedAttempt
 	best.Generation["selected_seed"] = attempts[bestIndex].Seed
 	best.Generation["stop_on_accept"] = stopOnAccept
+	best.Generation["reference_embeddings_cached"] = len(refEmbeddings)
+	best.Generation["selection_score"] = candidateSelectionScore(best)
 
 	best.Batch = &BatchSummary{
 		Requested:req.BestOfN,
