@@ -17,8 +17,8 @@ install -m 0755 scripts/hoes "$PREFIX/bin/hoes"
 echo "[4/6] Checking GitHub authentication"
 gh auth status
 
-echo "[5/6] Installing reused local-dream QNN runtime"
-bash scripts/install-local-dream-runtime.sh
+echo "[5/6] Installing Spice QNN runtime artifact"
+bash scripts/install-spice-qnn-runtime-termux.sh
 
 echo "[6/6] Installing Go/QNN runtime and face models"
 FACE_RUN="$(gh run list -R jcltd303-hub/spice-hoes --workflow "Build Face Embedding QNN" --status success --limit 1 --json databaseId --jq '.[0].databaseId' || true)"
