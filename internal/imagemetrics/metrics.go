@@ -58,11 +58,7 @@ func stddev(values []float64, mean float64) float64 {
 	return math.Sqrt(sum / float64(len(values)))
 }
 
-func Analyze(data []byte) (Metrics, error) {
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return Metrics{}, fmt.Errorf("decode image: %w", err)
-	}
+func AnalyzeImage(img image.Image) (Metrics, error) {
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
 	if w <= 0 || h <= 0 {
@@ -129,4 +125,12 @@ func Analyze(data []byte) (Metrics, error) {
 		ExposureScore:   round6(exposure),
 		LocalScore:      round6(local),
 	}, nil
+}
+
+func Analyze(data []byte) (Metrics, error) {
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return Metrics{}, fmt.Errorf("decode image: %w", err)
+	}
+	return AnalyzeImage(img)
 }
