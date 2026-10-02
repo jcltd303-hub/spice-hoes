@@ -29,20 +29,40 @@ else
   echo "No successful face-model artifact yet; continuing without it."
 fi
 
-echo "[5/5] Writing local Go-media environment template"
-cat > .env.spicemedia <<EOF
-SPICE_MEDIA_PROVIDER=go
-SPICE_MEDIA_BIN=$ROOT/bin/spicemedia
-SPICE_QNN_CORE_BIN=$ROOT/runtime/bin/spice-qnn-core
-SPICE_QNN_LIB_DIR=$ROOT/runtime/lib
-SPICE_QNN_MODEL_DIR=
-SPICE_QNN_TYPE=sd15npu
-SPICE_QNN_HOST=127.0.0.1
-SPICE_QNN_PORT=18081
-SPICE_QNN_LOG=$ROOT/data/spicemedia/qnn-core.log
-SPICE_FACE_EMBED_MODEL=$ROOT/models/face/arcface_w600k_r50.bin
-SPICE_FACE_DETECT_MODEL=$ROOT/models/face/scrfd_10g.bin
-EOF
+echo "[5/5] Updating canonical .env"
+
+ENV_FILE="$ROOT/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  cp "$ROOT/.env.example" "$ENV_FILE"
+fi
+
+upsert_env() {
+  local key="$1"
+  local value="$2"
+  if grep -qE "^${key}=" "$ENV_FILE"; then
+    sed -i "s|^${key}=.*$|${key}=${value}|" "$ENV_FILE"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+  fi
+}
+
+upsert_env SPICE_MEDIA_PROVIDER go
+upsert_env SPICE_MEDIA_BIN "$ROOT/bin/spicemedia"
+upsert_env SPICE_QNN_CORE_BIN "$ROOT/runtime/bin/spice-qnn-core"
+upsert_env SPICE_QNN_LIB_DIR "$ROOT/runtime/lib"
+upsert_env SPICE_QNN_LOG "$ROOT/data/spicemedia/qnn-core.log"
+upsert_env SPICE_QNN_HOST 127.0.0.1
+upsert_env SPICE_QNN_PORT 18081
+upsert_env SPICE_FACE_EMBED_MODEL "$ROOT/models/face/arcface_w600k_r50.bin"
+upsert_env SPICE_FACE_DETECT_MODEL "$ROOT/models/face/scrfd_10g.bin"
+upsert_env SPICE_IDENTITY_GENERATOR "${SPICE_IDENTITY_GENERATOR:-local-dream}"
+upsert_env LOCAL_DREAM_URL "${LOCAL_DREAM_URL:-http://127.0.0.1:8081}"
+upsert_env SPICE_ONNXRUNTIME_LIB "${SPICE_ONNXRUNTIME_LIB:-$ROOT/runtime/lib/libonnxruntime.so}"
+upsert_env SPICE_INSWAPPER_MODEL "${SPICE_INSWAPPER_MODEL:-$ROOT/models/face/inswapper_128.onnx}"
+upsert_env SPICE_IDENTITY_THRESHOLD "${SPICE_IDENTITY_THRESHOLD:-0.82}"
+upsert_env SPICE_QUALITY_THRESHOLD "${SPICE_QUALITY_THRESHOLD:-0.78}"
+upsert_env SPICE_IDENTITY_MAX_ATTEMPTS "${SPICE_IDENTITY_MAX_ATTEMPTS:-48}"
+upsert_env SPICE_POSE_MAX_ATTEMPTS "${SPICE_POSE_MAX_ATTEMPTS:-4}"
 
 echo
 echo "Installing hoes launcher into Termux PATH..."
@@ -57,9 +77,9 @@ echo
 echo "Installed Go media runtime."
 echo "Python is not required for spicemedia runtime; model conversion happens only in GitHub Actions."
 echo "Then load config:"
-echo "  set -a; source .env.spicemedia; set +a"
+echo "  set -a; source .env; set +a"
 echo "Running health check..."
 set -a
-source .env.spicemedia
+source .env
 set +a
 echo '{}' | ./bin/spicemedia health
