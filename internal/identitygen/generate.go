@@ -13,6 +13,7 @@ import (
 	"image"
 	_ "image/jpeg"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -276,44 +277,58 @@ func arcEmbedding(ctx context.Context, m *nativecore.Manager, raw []byte) ([]flo
 	return arcEmbeddingImage(ctx,m,img)
 }
 
-func loadReferences(root, personaID string) ([][]byte, error) {
+func loadReferences(root, personaID string) ([][]byte, []string, error) {
 	dir := filepath.Join(root, personaID)
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-	out := make([][]byte, 0, 8)
+
+	type candidate struct {
+		path string
+		data []byte
+	}
+	candidates := make([]candidate, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
+		if entry.IsDir() { continue }
 		name := strings.ToLower(entry.Name())
 		ext := strings.ToLower(filepath.Ext(name))
-		if ext != ".png" && ext != ".jpg" && ext != ".jpeg" {
-			continue
-		}
+		if ext != ".png" && ext != ".jpg" && ext != ".jpeg" { continue }
 		if strings.HasPrefix(name, "master_") || strings.HasPrefix(name, "contact_") || strings.Contains(name, "_rear") {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(dir, entry.Name()))
-		if err != nil {
-			continue
-		}
-		out = append(out, b)
-		if len(out) == 8 {
-			break
+		path := filepath.Join(dir, entry.Name())
+		b, err := os.ReadFile(path)
+		if err != nil { continue }
+		candidates = append(candidates, candidate{path:path, data:b})
+	}
+	if len(candidates) == 0 { return nil, nil, nil }
+
+	const maxRefs = 8
+	selected := candidates
+	if len(candidates) > maxRefs {
+		selected = make([]candidate, 0, maxRefs)
+		for i := 0; i < maxRefs; i++ {
+			idx := int(math.Round(float64(i) * float64(len(candidates)-1) / float64(maxRefs-1)))
+			selected = append(selected, candidates[idx])
 		}
 	}
-	return out, nil
+	refs := make([][]byte, 0, len(selected))
+	paths := make([]string, 0, len(selected))
+	for _, item := range selected {
+		refs = append(refs, item.data)
+		paths = append(paths, item.path)
+	}
+	return refs, paths, nil
 }
 
-func selectCanonicalReference(ctx context.Context, m *nativecore.Manager, refs [][]byte) ([]byte, float64, error) {
+func selectCanonicalReference(ctx context.Context, m *nativecore.Manager, refs [][]byte, paths []string) ([]byte, string, float64, error) {
 	if len(refs) == 0 {
-		return nil, 0, fmt.Errorf("no identity references")
+		return nil, "", 0, fmt.Errorf("no identity references")
 	}
 	type embeddedRef struct {
 		index int
@@ -328,10 +343,12 @@ func selectCanonicalReference(ctx context.Context, m *nativecore.Manager, refs [
 		embedded = append(embedded, embeddedRef{index:i, vec:vec})
 	}
 	if len(embedded) == 0 {
-		return nil, 0, fmt.Errorf("no reference embedding succeeded")
+		return nil, "", 0, fmt.Errorf("no reference embedding succeeded")
 	}
 	if len(embedded) == 1 {
-		return refs[embedded[0].index], 1, nil
+		path := ""
+		if embedded[0].index < len(paths) { path = paths[embedded[0].index] }
+		return refs[embedded[0].index], path, 1, nil
 	}
 
 	best := 0
@@ -353,7 +370,9 @@ func selectCanonicalReference(ctx context.Context, m *nativecore.Manager, refs [
 			bestMean = mean
 		}
 	}
-	return refs[embedded[best].index], bestMean, nil
+	path := ""
+	if embedded[best].index < len(paths) { path = paths[embedded[best].index] }
+	return refs[embedded[best].index], path, bestMean, nil
 }
 
 func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated image.Image, refs [][]byte, threshold, meanThreshold float64) IdentityResult {
@@ -553,6 +572,7 @@ func runSingleAttempt(
 	refs [][]byte,
 	canonicalRef []byte,
 	medoidScore float64,
+	medoidPath string,
 	swapper *faceswap.Swapper,
 	attemptIndex int,
 	attemptTotal int,
@@ -613,6 +633,7 @@ func runSingleAttempt(
 					out["faceswap_alignment"] = swapMeta.Alignment
 					out["faceswap_target_score"] = swapMeta.TargetScore
 					out["faceswap_reference_medoid_score"] = medoidScore
+					out["faceswap_reference_medoid_path"] = medoidPath
 				}
 			}
 		} else {
@@ -718,17 +739,18 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	emitProgress(req, 8, "loading identity references", map[string]any{
 		"persona":p.ID, "best_of_n":req.BestOfN,
 	})
-	refs, err := loadReferences(req.ReferenceRoot, p.ID)
+	refs, refPaths, err := loadReferences(req.ReferenceRoot, p.ID)
 	if err != nil { return Result{}, fmt.Errorf("load references: %w", err) }
 
 	m := nativecore.FromEnv()
 	var canonicalRef []byte
+	canonicalRefPath := ""
 	medoidScore := 0.0
 	var swapper *faceswap.Swapper
 	if len(refs) > 0 {
 		cfg := faceswap.ConfigFromEnv()
 		if faceswap.Available(cfg) {
-			canonicalRef, medoidScore, err = selectCanonicalReference(ctx, m, refs)
+			canonicalRef, canonicalRefPath, medoidScore, err = selectCanonicalReference(ctx, m, refs, refPaths)
 			if err == nil {
 				swapper, err = faceswap.New(ctx, cfg, m)
 				if err != nil { swapper = nil }
@@ -751,7 +773,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		attemptIndex := i + 1
 
 		result, attemptErr := runSingleAttempt(
-			ctx, attemptReq, p, refs, canonicalRef, medoidScore, swapper, attemptIndex, req.BestOfN,
+			ctx, attemptReq, p, refs, canonicalRef, medoidScore, canonicalRefPath, swapper, attemptIndex, req.BestOfN,
 		)
 		if attemptErr != nil {
 			attempts = append(attempts, AttemptSummary{
