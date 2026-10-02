@@ -43,10 +43,12 @@ type PhysicalProfile struct {
 }
 
 type IdentityReferenceProfile struct {
-	BodyPrompt     string `yaml:"body_prompt" json:"body_prompt"`
-	WardrobeMode   string `yaml:"wardrobe_mode" json:"wardrobe_mode"`
-	HairMode       string `yaml:"hair_mode" json:"hair_mode"`
-	PoseTemplate   string `yaml:"pose_template" json:"pose_template"`
+	BodyPrompt       string  `yaml:"body_prompt" json:"body_prompt"`
+	WardrobeMode     string  `yaml:"wardrobe_mode" json:"wardrobe_mode"`
+	HairMode         string  `yaml:"hair_mode" json:"hair_mode"`
+	PoseTemplate     string  `yaml:"pose_template" json:"pose_template"`
+	EmbeddingToken   string  `yaml:"embedding_token,omitempty" json:"embedding_token,omitempty"`
+	EmbeddingWeight  float64 `yaml:"embedding_weight,omitempty" json:"embedding_weight,omitempty"`
 }
 
 type AdultInterestProfile struct {
@@ -98,6 +100,9 @@ type Request struct {
 	IdentityMeanThreshold float64 `json:"identity_mean_threshold,omitempty"`
 	QualityThreshold float64  `json:"quality_threshold,omitempty"`
 	Generator         string   `json:"generator,omitempty"`
+	IdentityEmbeddingToken string `json:"identity_embedding_token,omitempty"`
+	IdentityEmbeddingWeight float64 `json:"identity_embedding_weight,omitempty"`
+	RequireIdentityEmbedding bool `json:"require_identity_embedding,omitempty"`
 	BestOfN           int      `json:"best_of_n,omitempty"`
 	StopOnAccept      *bool    `json:"stop_on_accept,omitempty"`
 	SaveAllAttempts   *bool    `json:"save_all_attempts,omitempty"`
@@ -226,6 +231,11 @@ func promptFor(p Persona, req Request) string {
 		"Photorealistic lifestyle photography, natural skin texture, visible pores, subtle asymmetry, realistic lighting, coherent anatomy. Tack-sharp eyes and eyelashes, crisp facial microtexture, precise focus on the face, strong local contrast without oversharpening.",
 		"Maintain the same facial proportions, hairline, body proportions, and signature visual traits across generations.",
 		"Do not resemble any real person or public figure.",
+	}
+	if token := strings.TrimSpace(req.IdentityEmbeddingToken); token != "" {
+		weight := req.IdentityEmbeddingWeight
+		if weight <= 0 { weight = 1.1 }
+		parts = append([]string{fmt.Sprintf("(%s:%.2f)", token, weight)}, parts...)
 	}
 	if strings.TrimSpace(req.Scene) != "" {
 		parts = append(parts, "Scene: "+strings.TrimSpace(req.Scene)+".")
@@ -607,6 +617,48 @@ func generationBackend(req Request) string {
 	}
 }
 
+func resolveIdentityEmbedding(ctx context.Context, req *Request, p Persona) (map[string]any, error) {
+	meta := map[string]any{
+		"identity_embedding_requested": false,
+		"identity_embedding_loaded": false,
+	}
+	if req == nil { return meta, nil }
+
+	token := strings.TrimSpace(req.IdentityEmbeddingToken)
+	if token == "" { token = strings.TrimSpace(p.IdentityReference.EmbeddingToken) }
+	weight := req.IdentityEmbeddingWeight
+	if weight <= 0 { weight = p.IdentityReference.EmbeddingWeight }
+	if weight <= 0 { weight = 1.1 }
+
+	if token == "" || generationBackend(*req) != "local-dream" {
+		return meta, nil
+	}
+	meta["identity_embedding_requested"] = true
+	meta["identity_embedding_token"] = token
+	meta["identity_embedding_weight"] = weight
+
+	client := localdream.FromEnv()
+	ok, inv, err := client.HasEmbedding(ctx, token)
+	if err != nil {
+		meta["identity_embedding_probe_error"] = err.Error()
+		if req.RequireIdentityEmbedding {
+			return meta, fmt.Errorf("required Local Dream identity embedding %q could not be verified: %w", token, err)
+		}
+		return meta, nil
+	}
+	meta["identity_embedding_inventory_count"] = inv.Count
+	meta["identity_embedding_loaded"] = ok
+	if !ok {
+		if req.RequireIdentityEmbedding {
+			return meta, fmt.Errorf("required Local Dream identity embedding %q is not loaded", token)
+		}
+		return meta, nil
+	}
+	req.IdentityEmbeddingToken = token
+	req.IdentityEmbeddingWeight = weight
+	return meta, nil
+}
+
 func generateFrame(ctx context.Context, req Request, prompt string) (generatedFrame, map[string]any, string, error) {
 	backend := generationBackend(req)
 	if backend == "local-dream" {
@@ -712,6 +764,13 @@ func runSingleAttempt(
 	frame, out, backend, err := generateFrame(ctx, req, prompt)
 	if err != nil { return Result{}, err }
 	if out == nil { out = map[string]any{} }
+	if strings.TrimSpace(req.IdentityEmbeddingToken) != "" {
+		out["identity_embedding_token"] = req.IdentityEmbeddingToken
+		out["identity_embedding_weight"] = req.IdentityEmbeddingWeight
+		out["identity_embedding_active"] = true
+	} else {
+		out["identity_embedding_active"] = false
+	}
 	out["attempt_index"] = attemptIndex
 	out["attempt_seed"] = req.Seed
 	out["best_of_n"] = attemptTotal
@@ -922,6 +981,9 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	if req.BestOfN > 64 { req.BestOfN = 64 }
 
+	embeddingMeta, err := resolveIdentityEmbedding(ctx, &req, p)
+	if err != nil { return Result{}, err }
+
 	stopOnAccept := boolOption(req.StopOnAccept, true)
 	saveAll := boolOption(req.SaveAllAttempts, true)
 
@@ -1020,6 +1082,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	best.Generation["reference_centroid_dimensions"] = len(centroidEmbedding)
 	best.Generation["swap_source_candidates"] = minInt(3, len(rankedSources)+1)
 	best.Generation["selection_score"] = candidateSelectionScore(best)
+	for k,v := range embeddingMeta { best.Generation[k] = v }
 
 	best.Batch = &BatchSummary{
 		Requested:req.BestOfN,
