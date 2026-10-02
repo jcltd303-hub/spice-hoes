@@ -69,6 +69,7 @@ type Result struct {
 	AssetID        string               `json:"asset_id"`
 	AssetPath      string               `json:"asset_path"`
 	MetadataPath   string               `json:"metadata_path"`
+	DocumentsPath  string               `json:"documents_path,omitempty"`
 	Prompt         string               `json:"prompt"`
 	NegativePrompt string               `json:"negative_prompt"`
 	Identity       IdentityResult       `json:"identity"`
@@ -243,6 +244,21 @@ func scoreIdentity(ctx context.Context, m *nativecore.Manager, generated []byte,
 	return result
 }
 
+func documentsMirrorRoot() string {
+	if root := strings.TrimSpace(os.Getenv("SPICE_DOCUMENTS_ROOT")); root != "" {
+		return filepath.Join(root, "sh")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	documents := filepath.Join(home, "storage", "documents")
+	if info, err := os.Stat(documents); err == nil && info.IsDir() {
+		return filepath.Join(documents, "sh")
+	}
+	return ""
+}
+
 func randomID() string {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err == nil {
@@ -363,9 +379,28 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		QualityThreshold: req.QualityThreshold,
 		Generation: out,
 	}
+	docMetaPath := ""
+	if mirrorRoot := documentsMirrorRoot(); mirrorRoot != "" {
+		dir := filepath.Join(mirrorRoot, p.ID)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return Result{}, fmt.Errorf("create documents mirror: %w", err)
+		}
+		docAssetPath := filepath.Join(dir, assetID+".png")
+		if err := os.WriteFile(docAssetPath, imageBytes, 0o644); err != nil {
+			return Result{}, fmt.Errorf("copy generated asset to documents: %w", err)
+		}
+		result.DocumentsPath = docAssetPath
+		docMetaPath = docAssetPath + ".json"
+	}
+
 	meta, _ := json.MarshalIndent(result, "", "  ")
 	if err := os.WriteFile(metaPath, meta, 0o644); err != nil {
 		return Result{}, err
+	}
+	if docMetaPath != "" {
+		if err := os.WriteFile(docMetaPath, meta, 0o644); err != nil {
+			return Result{}, fmt.Errorf("copy generated metadata to documents: %w", err)
+		}
 	}
 	return result, nil
 }
