@@ -20,7 +20,7 @@ from .offers import OfferRegistry, OFFER_KINDS
 from .operations import Operations
 from .runtime_policy import RuntimePolicy
 from .policy import recommend
-from .providers import OpenAICompatibleChatProvider, OpenAICompatibleEmbeddingProvider, LocalDreamProvider, ProviderError
+from .providers import OpenAICompatibleChatProvider, OpenAICompatibleEmbeddingProvider, ProviderError, media_provider
 from .web import make_handler
 from .workflow import build_briefs
 from .ui import SpiceUI
@@ -60,7 +60,7 @@ def _asset_generator(store, asset_dir="data/assets"):
     values = _runtime_values(store)
     return AssetGenerator(
         store,
-        provider=LocalDreamProvider(),
+        provider=media_provider(),
         asset_dir=asset_dir,
         identity_threshold=values["identity_threshold"],
         reference_strength=values["reference_strength"],
