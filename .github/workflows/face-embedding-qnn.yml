@@ -61,7 +61,8 @@ jobs:
       - name: Install converter dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy onnx pyyaml protobuf packaging psutil
+          # QAIRT converter still imports distutils (gone from 3.12 stdlib).
+          python -m pip install setuptools numpy onnx pyyaml protobuf packaging psutil
 
       - name: Download official InsightFace buffalo_l models
         run: |
