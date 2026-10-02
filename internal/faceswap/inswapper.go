@@ -269,10 +269,10 @@ func pasteBack(target image.Image, fake *image.RGBA, t ident.SimilarityTransform
 	return out
 }
 
-func (s *Swapper) SwapImage(ctx context.Context, sourceImg, targetImg image.Image) (image.Image, Meta, error) {
+func (s *Swapper) SwapImageWithEmbedding(ctx context.Context, sourceVec []float64, targetImg image.Image) (image.Image, Meta, error) {
 	if s == nil || s.session == nil { return nil,Meta{},fmt.Errorf("swapper not initialized") }
-	sourceVec,err:=sourceEmbeddingImage(ctx,s.manager,sourceImg)
-	if err!=nil { return nil,Meta{},fmt.Errorf("source identity: %w",err) }
+	if len(sourceVec) != 512 { return nil,Meta{},fmt.Errorf("InSwapper requires 512D ArcFace embedding, got %d",len(sourceVec)) }
+	sourceVec = ident.Normalize(sourceVec)
 	targetFace,err:=detectPrimaryImage(ctx,s.manager,targetImg)
 	if err!=nil { return nil,Meta{},fmt.Errorf("target face: %w",err) }
 	crop,t,err:=alignedCrop(targetImg,targetFace.Landmarks)
@@ -298,6 +298,13 @@ func (s *Swapper) SwapImage(ctx context.Context, sourceImg, targetImg image.Imag
 	if err!=nil { return nil,Meta{},err }
 	merged:=pasteBack(targetImg,fake,t,targetFace)
 	return merged,Meta{Model:s.model,Alignment:"scrfd-5pt-128",TargetScore:targetFace.Score},nil
+}
+
+func (s *Swapper) SwapImage(ctx context.Context, sourceImg, targetImg image.Image) (image.Image, Meta, error) {
+	if s == nil || s.session == nil { return nil,Meta{},fmt.Errorf("swapper not initialized") }
+	sourceVec,err:=sourceEmbeddingImage(ctx,s.manager,sourceImg)
+	if err!=nil { return nil,Meta{},fmt.Errorf("source identity: %w",err) }
+	return s.SwapImageWithEmbedding(ctx,sourceVec,targetImg)
 }
 
 func (s *Swapper) Swap(ctx context.Context, sourceRaw, targetRaw []byte) ([]byte, Meta, error) {
