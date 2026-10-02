@@ -8,6 +8,7 @@ command -v curl >/dev/null || { echo "curl required: pkg install curl" >&2; exit
 command -v unzip >/dev/null || { echo "unzip required: pkg install unzip" >&2; exit 1; }
 
 ENV_FILE="$ROOT/.env"
+SPICEMEDIA_ENV_FILE="$ROOT/.env.spicemedia"
 [[ -f "$ENV_FILE" ]] || cp "$ROOT/.env.example" "$ENV_FILE"
 
 set -a
