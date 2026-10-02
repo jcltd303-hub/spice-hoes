@@ -1,0 +1,17 @@
+{
+  "notes": "Default tournament space implemented by scripts/sweep-identity.py",
+  "stage1": {
+    "guidance": [5.5, 6.5, 7.0, 7.5, 8.5],
+    "embedding_weight": [0.95, 1.05, 1.10, 1.20],
+    "steps": 20,
+    "best_of_n": 1,
+    "swap_top_k": 1,
+    "keep": 6
+  },
+  "stage2": {
+    "steps": [16, 20, 24, 28],
+    "swap_top_k": [1, 2, 3],
+    "best_of_n": 4
+  },
+  "ranking": "accepted first; then 0.55 identity max + 0.25 identity mean + 0.20 quality with a small runtime tie-breaker"
+}
