@@ -59,17 +59,26 @@ echo "[3/4] Verifying runtime assets"
 test -s "$INSWAPPER_PATH" || { echo "Missing model: $INSWAPPER_PATH" >&2; exit 1; }
 test -s "$ORT_PATH" || { echo "Missing runtime: $ORT_PATH" >&2; exit 1; }
 
-upsert_env() {
-  local key="$1"
-  local value="$2"
-  if grep -qE "^${key}=" "$ENV_FILE"; then
-    sed -i "s|^${key}=.*$|${key}=${value}|" "$ENV_FILE"
+upsert_env_file() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  [[ -f "$file" ]] || touch "$file"
+  if grep -qE "^${key}=" "$file"; then
+    sed -i "s|^${key}=.*$|${key}=${value}|" "$file"
   else
-    printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+    printf '%s=%s\n' "$key" "$value" >> "$file"
   fi
 }
 
-echo "[4/4] Updating .env"
+upsert_env() {
+  local key="$1"
+  local value="$2"
+  upsert_env_file "$ENV_FILE" "$key" "$value"
+  upsert_env_file "$SPICEMEDIA_ENV_FILE" "$key" "$value"
+}
+
+echo "[4/4] Updating .env and .env.spicemedia"
 upsert_env SPICE_INSWAPPER_MODEL "$INSWAPPER_PATH"
 upsert_env SPICE_ONNXRUNTIME_LIB "$ORT_PATH"
 upsert_env SPICE_INSWAPPER_MODEL_URL "$INSWAPPER_URL"
@@ -79,4 +88,6 @@ echo "Installed:"
 echo "  InSwapper:    $INSWAPPER_PATH"
 echo "  ONNX Runtime: $ORT_PATH"
 echo
-echo "Configured in: $ENV_FILE"
+echo "Configured in:"
+echo "  $ENV_FILE"
+echo "  $SPICEMEDIA_ENV_FILE"
