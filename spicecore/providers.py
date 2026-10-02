@@ -9,24 +9,44 @@ import urllib.error
 import urllib.request
 import subprocess
 import shutil
+import time
 
 
 class ProviderError(RuntimeError):
     pass
 
 
-def _post_json(url: str, payload: dict, headers: dict[str, str], timeout: int = 90) -> dict:
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", **headers},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
-        raise ProviderError(str(exc)) from exc
+def _post_json(url: str, payload: dict, headers: dict[str, str], timeout: int = 90,
+               retries: int = 0, backoff_seconds: float = 1.0) -> dict:
+    """POST JSON with bounded retry for rate limits and transient upstream errors."""
+    last_exc = None
+    for attempt in range(retries + 1):
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", **headers},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            last_exc = exc
+            retryable = exc.code == 429 or 500 <= exc.code < 600
+            if not retryable or attempt >= retries:
+                raise ProviderError(f"HTTP {exc.code}: {exc.reason}") from exc
+            retry_after = exc.headers.get("Retry-After") if exc.headers else None
+            try:
+                delay = float(retry_after) if retry_after else backoff_seconds * (2 ** attempt)
+            except (TypeError, ValueError):
+                delay = backoff_seconds * (2 ** attempt)
+            time.sleep(max(0.0, min(delay, 30.0)))
+        except (urllib.error.URLError, json.JSONDecodeError) as exc:
+            last_exc = exc
+            if attempt >= retries:
+                raise ProviderError(str(exc)) from exc
+            time.sleep(backoff_seconds * (2 ** attempt))
+    raise ProviderError(str(last_exc) if last_exc else "request failed")
 
 
 def _post_sse_complete(url: str, payload: dict, headers: dict[str, str],
@@ -97,29 +117,67 @@ class OpenAICompatibleChatProvider:
             headers["X-Title"] = title
         return headers
 
-    def chat(self, system: str, user: str, temperature: float = 0.4,
-             response_format: dict | None = None, max_tokens: int | None = None) -> str:
+    def chat_detailed(self, system: str, user: str, temperature: float = 0.4,
+                      response_format: dict | None = None, max_tokens: int | None = None,
+                      model: str | None = None, models: list[str] | tuple[str, ...] | None = None,
+                      reasoning_enabled: bool | None = None) -> dict:
+        requested_model = model or self.model
         payload = {
-            "model": self.model,
+            "model": requested_model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
             "temperature": temperature,
         }
+        if models:
+            ordered = []
+            for item in [requested_model, *models]:
+                if item and item not in ordered:
+                    ordered.append(item)
+            payload["models"] = ordered
         if response_format is not None:
             payload["response_format"] = response_format
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        if reasoning_enabled is not None and "openrouter.ai" in self.base_url:
+            payload["reasoning"] = {"enabled": bool(reasoning_enabled)}
+
         data = _post_json(
             f"{self.base_url}/chat/completions",
             payload,
             self._headers(),
+            retries=int(os.getenv("MOA_HTTP_RETRIES", "3")),
+            backoff_seconds=float(os.getenv("MOA_HTTP_BACKOFF_SECONDS", "1.0")),
         )
         try:
-            return data["choices"][0]["message"]["content"]
+            content = data["choices"][0]["message"]["content"]
+            if not isinstance(content, str) or not content.strip():
+                raise ProviderError("OpenAI-compatible response contained empty content")
+            return {
+                "content": content,
+                "model": data.get("model") or requested_model,
+                "requested_model": requested_model,
+                "usage": data.get("usage") if isinstance(data.get("usage"), dict) else {},
+                "id": data.get("id"),
+            }
         except (KeyError, IndexError, TypeError) as exc:
             raise ProviderError("Unexpected OpenAI-compatible response") from exc
+
+    def chat(self, system: str, user: str, temperature: float = 0.4,
+             response_format: dict | None = None, max_tokens: int | None = None,
+             model: str | None = None, models: list[str] | tuple[str, ...] | None = None,
+             reasoning_enabled: bool | None = None) -> str:
+        return self.chat_detailed(
+            system,
+            user,
+            temperature=temperature,
+            response_format=response_format,
+            max_tokens=max_tokens,
+            model=model,
+            models=models,
+            reasoning_enabled=reasoning_enabled,
+        )["content"]
 
 
 class OpenAICompatibleEmbeddingProvider:
