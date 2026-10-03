@@ -19,13 +19,13 @@ from .models import (
 )
 from .qa import VideoQA
 from .scene_builder import SceneBuilder
-from .providers.lipsync import LipSyncProvider, MockLipSyncProvider
+from .providers.lipsync import LipSyncProvider, lipsync_provider_from_env
 from .providers.video import VideoProvider, video_provider_from_env
 from .providers.voice import (
     CANONICAL_VOICE_PROFILES,
-    MockVoiceProvider,
     VoiceProfile,
     VoiceProvider,
+    voice_provider_from_env,
 )
 
 
@@ -42,8 +42,8 @@ class MediaPipeline:
     ):
         self.store = store
         self.video_provider = video_provider or video_provider_from_env()
-        self.voice_provider = voice_provider or MockVoiceProvider()
-        self.lipsync_provider = lipsync_provider or MockLipSyncProvider()
+        self.voice_provider = voice_provider or voice_provider_from_env()
+        self.lipsync_provider = lipsync_provider or lipsync_provider_from_env()
         self.output_dir = output_dir
         self.scene_builder = SceneBuilder()
         self.caption_generator = CaptionGenerator()
@@ -188,10 +188,11 @@ class MediaPipeline:
 
             # 5. FFmpeg Assembly
             final_mp4_path = os.path.join(job_dir, f"{job.persona_id}_{job.candidate_id[:8]}_vertical.mp4")
+            pre_lipsync_path = os.path.join(job_dir, "pre_lipsync.mp4")
             self.assembler.assemble(
                 scene_video_paths=scene_clips,
                 voice_audio_path=voice_audio_path,
-                output_mp4_path=final_mp4_path,
+                output_mp4_path=pre_lipsync_path,
                 caption_file_path=srt_path,
                 metadata={
                     "persona_id": job.persona_id,
@@ -199,7 +200,15 @@ class MediaPipeline:
                     "disclosure": "Fictional AI-generated adult character",
                 },
             )
-            job.output_uri = final_mp4_path
+            sync_res = self.lipsync_provider.sync(
+                video_uri=pre_lipsync_path,
+                audio_uri=voice_audio_path,
+                output_path=final_mp4_path,
+            )
+            job.lipsync_provider = str(sync_res.get("provider", job.lipsync_provider))
+            job.costs.lipsync_cents = int(sync_res.get("cost_cents", 0))
+            job.voice_provider = str(voice_res.get("provider", job.voice_provider))
+            job.output_uri = str(sync_res.get("synced_video_path", final_mp4_path))
             job.duration_seconds = total_duration
             job.costs.render_cents = 8
             job.sync_costs()
