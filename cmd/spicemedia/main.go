@@ -504,6 +504,36 @@ func commandIdentityGenerate(args []string) {
     write(out)
 }
 
+func commandIdentityAutonomous() {
+    payload := readObject()
+    raw, err := json.Marshal(payload)
+    if err != nil { fail(err) }
+
+    var req identitygen.AutonomousRequest
+    if err := json.Unmarshal(raw, &req); err != nil { fail(err) }
+    req.Progress = progressEvent
+
+    ctx, cancel := context.WithTimeout(context.Background(), 8*time.Hour)
+    defer cancel()
+    out, err := identitygen.AutonomousIdentity(ctx, req)
+    if err != nil { fail(err) }
+
+    finish("autonomous identity metrics", map[string]any{
+        "persona": out.PersonaID,
+        "ok": out.OK,
+        "run_id": out.RunID,
+        "run_root": out.RunRoot,
+        "documents": out.DocumentsPath,
+        "reference_complete": out.ReferenceComplete,
+        "portfolio_complete": out.PortfolioComplete,
+        "portfolio_sheet": out.PortfolioSheet,
+        "manifest": out.ManifestPath,
+        "swap_available": out.SwapAvailable,
+        "swap_mode": out.SwapMode,
+    })
+    write(out)
+}
+
 func commandHealth() {
     ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
     defer cancel()
@@ -521,7 +551,7 @@ func commandHealth() {
 
 func main() {
     if len(os.Args) < 2 {
-        fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|persona-embed|persona-bank-build|identity|identity-generate|health"))
+        fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|persona-embed|persona-bank-build|identity|identity-generate|identity-autonomous|health"))
     }
     command := os.Args[1]
     progress = termui.Start(termui.Label("spicemedia", command))
@@ -544,6 +574,8 @@ func main() {
         commandIdentity()
     case "identity-generate":
         commandIdentityGenerate(os.Args[2:])
+    case "identity-autonomous":
+        commandIdentityAutonomous()
     case "health":
         commandHealth()
     default:
