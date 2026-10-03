@@ -34,9 +34,15 @@ class SupabaseArchive:
             ctype = response.headers.get("content-type") or ""
             return json.loads(raw.decode("utf-8")) if raw and "json" in ctype else raw
 
-    def record_event(self, kind: str, payload: dict[str, Any],
+    def record_event(self, event_id: str, ts: str, kind: str, payload: dict[str, Any],
                      external_id: str | None = None):
-        body = json.dumps({"kind": kind, "payload": payload, "external_id": external_id}).encode("utf-8")
+        body = json.dumps({
+            "event_id": event_id,
+            "created_at": ts,
+            "kind": kind,
+            "payload": payload,
+            "external_id": external_id,
+        }).encode("utf-8")
         return self._request(
             "POST", "/rest/v1/spice_events", body,
             extra={"Prefer": "return=representation"},
