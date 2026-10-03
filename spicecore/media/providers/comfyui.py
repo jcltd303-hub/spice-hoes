@@ -41,7 +41,7 @@ class ComfyUIVideoProvider(VideoProvider):
     ):
         self.base_url = (base_url or os.getenv("COMFYUI_BASE_URL", "")).rstrip("/")
         self.workflow_path = workflow_path or os.getenv(
-            "COMFYUI_WORKFLOW", "config/comfyui/wan_i2v_api.json"
+            "COMFYUI_WORKFLOW", "config/comfyui/wan21_i2v_q4_api.json"
         )
         self.timeout_seconds = int(timeout_seconds or os.getenv("COMFYUI_TIMEOUT_SECONDS", "900"))
         self.poll_seconds = float(poll_seconds or os.getenv("COMFYUI_POLL_SECONDS", "2"))
