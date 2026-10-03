@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jcltd303-hub/spice-hoes/internal/nativecore"
 )
 
 type RepairPackResult struct {
