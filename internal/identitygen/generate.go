@@ -103,6 +103,8 @@ type Request struct {
 	IdentityEmbeddingToken string `json:"identity_embedding_token,omitempty"`
 	IdentityEmbeddingWeight float64 `json:"identity_embedding_weight,omitempty"`
 	RequireIdentityEmbedding bool `json:"require_identity_embedding,omitempty"`
+	PersonaBank        string  `json:"persona_bank,omitempty"`
+	RequirePersonaBank bool    `json:"require_persona_bank,omitempty"`
 	BestOfN           int      `json:"best_of_n,omitempty"`
 	SwapTopK          int      `json:"swap_top_k,omitempty"`
 	StopOnAccept      *bool    `json:"stop_on_accept,omitempty"`
@@ -357,6 +359,37 @@ func embedReferences(ctx context.Context, m *nativecore.Manager, refs [][]byte, 
 		out = append(out, referenceEmbedding{index:i, vec:vec})
 	}
 	return out, failures
+}
+
+func loadPersonaBankEmbedding(req Request, personaID string) ([]float64, string, error) {
+	path := strings.TrimSpace(req.PersonaBank)
+	if path == "" {
+		candidate := filepath.Join("personas", personaID+".safetensors")
+		if _, err := os.Stat(candidate); err == nil {
+			path = candidate
+		}
+	}
+	if path == "" {
+		if req.RequirePersonaBank {
+			return nil, "", fmt.Errorf("required persona bank for %s not found", personaID)
+		}
+		return nil, "", nil
+	}
+	bank, err := ident.LoadFile(path)
+	if err != nil {
+		return nil, path, fmt.Errorf("load persona bank %s: %w", path, err)
+	}
+	vec32, ok := bank.Tensors[personaID]
+	if !ok || len(vec32) == 0 {
+		return nil, path, fmt.Errorf("persona %s not present in bank %s", personaID, path)
+	}
+	vec := make([]float64, len(vec32))
+	for i, v := range vec32 { vec[i] = float64(v) }
+	vec = ident.Normalize(vec)
+	if len(vec) == 0 {
+		return nil, path, fmt.Errorf("persona %s bank embedding is empty", personaID)
+	}
+	return vec, path, nil
 }
 
 func referenceCentroid(refs []referenceEmbedding) ([]float64, error) {
@@ -1178,13 +1211,30 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if err != nil { return Result{}, fmt.Errorf("load references: %w", err) }
 
 	m := nativecore.FromEnv()
-	refEmbeddings, refEmbeddingFailures := embedReferences(ctx, m, refs, refPaths)
-	if len(refs) > 0 && len(refEmbeddings) == 0 {
+	imageRefEmbeddings, refEmbeddingFailures := embedReferences(ctx, m, refs, refPaths)
+	if len(refs) > 0 && len(imageRefEmbeddings) == 0 {
 		detail := "unknown reference embedding failure"
 		if len(refEmbeddingFailures) > 0 { detail = strings.Join(refEmbeddingFailures, " | ") }
 		return Result{}, fmt.Errorf("all identity reference embeddings failed: %s", detail)
 	}
-	rankedSources := rankedReferenceEmbeddings(refEmbeddings)
+
+	// The .safetensors persona bank is a first-class identity anchor. It
+	// participates in identity scoring and centroid selection, while only real
+	// image references are eligible as InSwapper source images.
+	bankVec, personaBankPath, bankErr := loadPersonaBankEmbedding(req, p.ID)
+	if bankErr != nil {
+		if req.RequirePersonaBank { return Result{}, bankErr }
+		refEmbeddingFailures = append(refEmbeddingFailures, bankErr.Error())
+	}
+	refEmbeddings := append([]referenceEmbedding(nil), imageRefEmbeddings...)
+	if len(bankVec) > 0 {
+		refEmbeddings = append(refEmbeddings, referenceEmbedding{index:-1, vec:bankVec})
+	}
+	if len(refEmbeddings) == 0 {
+		return Result{}, fmt.Errorf("no usable identity references or persona bank for %s", p.ID)
+	}
+
+	rankedSources := rankedReferenceEmbeddings(imageRefEmbeddings)
 	centroidEmbedding, _ := referenceCentroid(refEmbeddings)
 	var canonicalRef []byte
 	canonicalRefPath := ""
@@ -1193,7 +1243,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if len(refs) > 0 {
 		cfg := faceswap.ConfigFromEnv()
 		if faceswap.Available(cfg) {
-			canonicalRef, canonicalRefPath, medoidScore, err = selectCanonicalReference(refs, refPaths, refEmbeddings)
+			canonicalRef, canonicalRefPath, medoidScore, err = selectCanonicalReference(refs, refPaths, imageRefEmbeddings)
 			if err == nil {
 				swapper, err = faceswap.New(ctx, cfg, m)
 				if err != nil { swapper = nil }
@@ -1310,7 +1360,11 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	best.Generation["selected_seed"] = attempts[bestIndex].Seed
 	best.Generation["stop_on_accept"] = stopOnAccept
 	best.Generation["reference_embeddings_cached"] = len(refEmbeddings)
+	best.Generation["image_reference_embeddings_cached"] = len(imageRefEmbeddings)
 	best.Generation["reference_embedding_failures"] = refEmbeddingFailures
+	best.Generation["persona_bank_loaded"] = len(bankVec) > 0
+	best.Generation["persona_bank_path"] = personaBankPath
+	best.Generation["persona_bank_dimensions"] = len(bankVec)
 	best.Generation["reference_centroid_dimensions"] = len(centroidEmbedding)
 	best.Generation["swap_source_candidates"] = len(rankedSources)+1
 	best.Generation["swap_top_k"] = req.SwapTopK
