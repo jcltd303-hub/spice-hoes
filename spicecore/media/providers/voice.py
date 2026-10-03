@@ -224,3 +224,88 @@ class ElevenLabsVoiceProvider(VoiceProvider):
     def transform(self, audio_path: str, transformation_spec: Dict[str, Any],
                   output_path: Optional[str] = None) -> Dict[str, Any]:
         self._unavailable()
+
+
+class PiperVoiceProvider(VoiceProvider):
+    """Local Piper TTS subprocess adapter.
+
+    Piper is kept behind a process boundary. The maintained upstream is GPLv3;
+    this project does not vendor or modify Piper source.
+    """
+
+    def __init__(self, binary: Optional[str] = None, model: Optional[str] = None,
+                 config: Optional[str] = None, voice_map_json: Optional[str] = None):
+        self.binary = binary or os.getenv("PIPER_BIN", "piper")
+        self.model = model or os.getenv("PIPER_MODEL", "")
+        self.config = config or os.getenv("PIPER_CONFIG", "")
+        raw = voice_map_json or os.getenv("PIPER_VOICE_MAP", "{}")
+        try:
+            import json as _json
+            self.voice_map = _json.loads(raw) if raw else {}
+        except Exception as exc:
+            raise RuntimeError("PIPER_VOICE_MAP must be valid JSON") from exc
+
+    def _model_for(self, voice_profile: VoiceProfile) -> str:
+        return str(
+            self.voice_map.get(voice_profile.persona_id)
+            or self.voice_map.get(voice_profile.voice_profile_id)
+            or self.model
+        ).strip()
+
+    def synthesize(self, text: str, voice_profile: VoiceProfile,
+                   output_path: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        import shutil as _shutil
+        import subprocess as _subprocess
+        if not _shutil.which(self.binary) and not os.path.isfile(self.binary):
+            raise RuntimeError(f"Piper executable not found: {self.binary}")
+        model = self._model_for(voice_profile)
+        if not model or not os.path.isfile(model):
+            raise RuntimeError("Set PIPER_MODEL or PIPER_VOICE_MAP to a Piper ONNX voice.")
+        if output_path is None:
+            out_dir = "/tmp/spice_piper"
+            os.makedirs(out_dir, exist_ok=True)
+            output_path = os.path.join(out_dir, f"voice_{uuid.uuid4().hex[:10]}.wav")
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        cmd = [self.binary, "--model", model, "--output-file", output_path]
+        if self.config and os.path.isfile(self.config):
+            cmd += ["--config", self.config]
+        pace = max(0.25, float(voice_profile.pace or 1.0))
+        cmd += ["--length-scale", str(1.0 / pace)]
+        proc = _subprocess.run(
+            cmd, input=text + "\n", text=True, capture_output=True,
+            timeout=int(os.getenv("PIPER_TIMEOUT_SECONDS", "180"))
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"Piper failed: {(proc.stderr or proc.stdout).strip()[-2000:]}")
+        if not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
+            raise RuntimeError("Piper completed without producing audio")
+        with wave.open(output_path, "rb") as wav_file:
+            duration = wav_file.getnframes() / float(wav_file.getframerate())
+        return {
+            "audio_path": output_path,
+            "duration_seconds": round(duration, 3),
+            "cost_cents": 0,
+            "provider": "piper-local",
+            "voice_profile_id": voice_profile.voice_profile_id,
+            "persona_id": voice_profile.persona_id,
+            "model": os.path.basename(model),
+        }
+
+    def transform(self, audio_path: str, transformation_spec: Dict[str, Any],
+                  output_path: Optional[str] = None) -> Dict[str, Any]:
+        if output_path and output_path != audio_path:
+            import shutil as _shutil
+            _shutil.copyfile(audio_path, output_path)
+            return {"output_path": output_path, "applied": {}}
+        return {"output_path": audio_path, "applied": {}}
+
+
+def voice_provider_from_env() -> VoiceProvider:
+    provider = os.getenv("SPICE_VOICE_PROVIDER", "mock").strip().lower()
+    if provider in ("", "mock"):
+        return MockVoiceProvider()
+    if provider == "piper":
+        return PiperVoiceProvider()
+    if provider == "elevenlabs":
+        return ElevenLabsVoiceProvider()
+    raise RuntimeError(f"Unknown SPICE_VOICE_PROVIDER: {provider}")
