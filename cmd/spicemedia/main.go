@@ -450,8 +450,17 @@ func commandIdentity() {
     write(response)
 }
 
-func commandIdentityGenerate() {
+func commandIdentityGenerate(args []string) {
+    fs := flag.NewFlagSet("identity-generate", flag.ContinueOnError)
+    fs.SetOutput(io.Discard)
+    personaBank := fs.String("persona-bank", "", "path to persona .safetensors bank")
+    requirePersonaBank := fs.Bool("require-persona-bank", false, "fail if persona bank cannot be loaded")
+    if err := fs.Parse(args); err != nil { fail(err) }
+
     payload := readObject()
+    if *personaBank != "" { payload["persona_bank"] = *personaBank }
+    if *requirePersonaBank { payload["require_persona_bank"] = true }
+
     raw, err := json.Marshal(payload)
     if err != nil { fail(err) }
     var req identitygen.Request
@@ -473,6 +482,8 @@ func commandIdentityGenerate() {
         "identity_mean_threshold": out.Identity.MeanThreshold,
         "references": out.Identity.ReferenceCount,
         "alignment": out.Identity.Alignment,
+        "persona_bank_loaded": out.Generation["persona_bank_loaded"],
+        "persona_bank_path": out.Generation["persona_bank_path"],
     })
     write(out)
 }
@@ -514,7 +525,7 @@ func main() {
     case "identity":
         commandIdentity()
     case "identity-generate":
-        commandIdentityGenerate()
+        commandIdentityGenerate(os.Args[2:])
     case "health":
         commandHealth()
     default:
