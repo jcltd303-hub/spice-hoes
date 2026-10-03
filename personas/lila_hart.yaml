@@ -26,6 +26,8 @@ physical:
     - small heart-shaped café-au-lait birthmark behind right shoulder
     - tiny beauty mark below left eye
 identity_reference:
+  embedding_token: cvlila
+  embedding_weight: 1.10
   body_prompt: elegant lithe curvy adult woman, long legs, soft athletic tone, flat natural abdomen, defined waist, fuller natural bust and hips, rounded toned glutes, realistic anatomy
   wardrobe_mode: neutral minimal reference clothing; wardrobe is never part of identity lock
   hair_mode: sleek tight bun exposing ears jawline neck and hairline
