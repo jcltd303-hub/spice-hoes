@@ -1,5 +1,7 @@
 # Identity gate calibration
 
+> Canonical identity flow: QNN generation -> SCRFD detection -> five-point alignment -> ArcFace embedding -> calibrated max/mean reference comparison -> quality gate. See [architecture.md](architecture.md) and [master-references.md](master-references.md).
+
 The generation gate (`identity_threshold`, `identity_mean_threshold`) compares a generated image to
 a persona's reference pack using ArcFace (w600k_r50) cosine similarity. Thresholds set without
 measuring this model on your own data are guesses. `spicecalibrate` measures them.
