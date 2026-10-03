@@ -273,16 +273,17 @@ func arcEmbeddingImage(ctx context.Context, m *nativecore.Manager, img image.Ima
 	if err != nil { return nil, alignment, fmt.Errorf("prepare SCRFD input: %w", err) }
 	outputs, _, err := m.Detect(ctx, prep.Tensor)
 	if err != nil { return nil, alignment, fmt.Errorf("SCRFD detection failed: %w", err) }
-	faces, err := ident.DecodeSCRFD(outputs, prep, ident.SCRFDThreshold(0.5), 0.4)
+	faces, usedThreshold, err := ident.DecodeSCRFDWithFallback(outputs, prep, ident.SCRFDThreshold(0.5), 0.4)
 	if err != nil || len(faces) == 0 {
 		if err == nil { err = fmt.Errorf("no face detected") }
 		return nil, alignment, fmt.Errorf("SCRFD landmarks unavailable: %w", err)
 	}
+	alignmentUsed := fmt.Sprintf("scrfd-5pt-112@%.2f", usedThreshold)
 	input, err := ident.ArcFaceInputAlignedImage(img, faces[0].Landmarks)
 	if err != nil { return nil, alignment, fmt.Errorf("five-point alignment failed: %w", err) }
 	vec, _, err := m.Embed(ctx, input)
 	if err != nil { return nil, alignment, fmt.Errorf("ArcFace embedding failed: %w", err) }
-	return ident.Normalize(vec), alignment, nil
+	return ident.Normalize(vec), alignmentUsed, nil
 }
 
 func arcEmbedding(ctx context.Context, m *nativecore.Manager, raw []byte) ([]float64, string, error) {
