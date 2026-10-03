@@ -68,11 +68,28 @@ class Store:
     def close(self):
         self.db.close()
 
+    def _mirror_event(self, event: dict) -> None:
+        if not __import__("os").environ.get("SUPABASE_URL"):
+            return
+        try:
+            from .cloud import SupabaseArchive
+            SupabaseArchive().record_event(
+                event_id=event["id"],
+                ts=event["ts"],
+                kind=event["kind"],
+                payload=event["payload"],
+                external_id=event.get("external_id"),
+            )
+        except Exception:
+            if __import__("os").environ.get("SUPABASE_MIRROR_REQUIRED", "").lower() in ("1", "true", "yes"):
+                raise
+
     def _event(self, kind: str, payload: dict, external_id: str | None = None) -> dict:
         event = {'id': str(uuid.uuid4()), 'ts': datetime.now(timezone.utc).isoformat(), 'kind': kind,
                  'external_id': external_id, 'payload': payload}
         self.db.execute('INSERT INTO events(id,ts,kind,external_id,payload) VALUES(?,?,?,?,?)',
                         (event['id'], event['ts'], kind, external_id, json.dumps(payload, sort_keys=True)))
+        self._mirror_event(event)
         return event
 
     def record_event(self, kind: str, payload: dict, external_id: str | None = None) -> dict:
