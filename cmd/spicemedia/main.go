@@ -450,6 +450,22 @@ func commandIdentity() {
     write(response)
 }
 
+func commandPersonaBankBuild(args []string) {
+    fs := flag.NewFlagSet("persona-bank-build", flag.ContinueOnError)
+    fs.SetOutput(io.Discard)
+    persona := fs.String("persona", "", "persona ID")
+    referenceRoot := fs.String("reference-root", "data/references", "reference root")
+    out := fs.String("out", "", "output .safetensors path")
+    if err := fs.Parse(args); err != nil { fail(err) }
+    if strings.TrimSpace(*persona) == "" { fail(fmt.Errorf("--persona is required")) }
+
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+    defer cancel()
+    result, err := identitygen.BuildPersonaBankFromReferences(ctx, *persona, *referenceRoot, *out)
+    if err != nil { fail(err) }
+    write(result)
+}
+
 func commandIdentityGenerate(args []string) {
     fs := flag.NewFlagSet("identity-generate", flag.ContinueOnError)
     fs.SetOutput(io.Discard)
@@ -505,7 +521,7 @@ func commandHealth() {
 
 func main() {
     if len(os.Args) < 2 {
-        fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|persona-embed|identity|identity-generate|health"))
+        fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|persona-embed|persona-bank-build|identity|identity-generate|health"))
     }
     command := os.Args[1]
     progress = termui.Start(termui.Label("spicemedia", command))
@@ -522,6 +538,8 @@ func main() {
         commandEmbed()
     case "persona-embed":
         commandPersonaEmbed()
+    case "persona-bank-build":
+        commandPersonaBankBuild(os.Args[2:])
     case "identity":
         commandIdentity()
     case "identity-generate":
