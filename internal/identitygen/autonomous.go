@@ -58,6 +58,9 @@ type AutonomousResult struct {
 	Portfolio          []PortfolioPose    `json:"portfolio"`
 	PortfolioSheet     string             `json:"portfolio_sheet,omitempty"`
 	ManifestPath       string             `json:"manifest_path,omitempty"`
+	PersonaBankPath    string             `json:"persona_bank_path,omitempty"`
+	PersonaBankSnapshot string            `json:"persona_bank_snapshot,omitempty"`
+	PersonaBankDimensions int             `json:"persona_bank_dimensions,omitempty"`
 	SwapAvailable      bool               `json:"swap_available"`
 	SwapMode           string             `json:"swap_mode"`
 }
@@ -144,7 +147,41 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 		return result,nil
 	}
 
-	emitAuto(req,46,"body posture portfolio",nil)
+	// Freeze the freshly bootstrapped identity into a persistent safetensors
+	// persona bank before generating the pose portfolio. The persistent bank is
+	// the reusable identity anchor; a copy is also stored inside this run so the
+	// autonomous artifact is self-contained and mirrored to Documents.
+	personaBankPath:=filepath.Join(req.PersonaDir,req.PersonaID+".safetensors")
+	emitAuto(req,45,"building persona safetensors",map[string]any{
+		"persona_id":req.PersonaID,"output":personaBankPath,
+	})
+	bankBuild,bankBuildErr:=BuildPersonaBankFromReferences(ctx,req.PersonaID,req.ReferenceRoot,personaBankPath)
+	if bankBuildErr!=nil {
+		return result,fmt.Errorf("build persona bank: %w",bankBuildErr)
+	}
+	bankVec,loadedBankPath,bankLoadErr:=loadPersonaBankEmbedding(Request{
+		PersonaID:req.PersonaID,
+		PersonaBank:personaBankPath,
+		RequirePersonaBank:true,
+	},req.PersonaID)
+	if bankLoadErr!=nil {
+		return result,fmt.Errorf("load persona bank: %w",bankLoadErr)
+	}
+	bankSnapshot:=filepath.Join(runRoot,"identity",req.PersonaID+".safetensors")
+	if err:=copyAutonomousFile(personaBankPath,bankSnapshot);err!=nil {
+		return result,fmt.Errorf("snapshot persona bank: %w",err)
+	}
+	result.PersonaBankPath=loadedBankPath
+	result.PersonaBankSnapshot=bankSnapshot
+	result.PersonaBankDimensions=len(bankVec)
+	emitAuto(req,46,"persona safetensors loaded",map[string]any{
+		"path":loadedBankPath,
+		"snapshot":bankSnapshot,
+		"dimensions":len(bankVec),
+		"references":bankBuild.References,
+	})
+
+	emitAuto(req,47,"body posture portfolio",nil)
 	poseResult,err:=GeneratePoseMasters(ctx,PoseMasterRequest{
 		PersonaID:req.PersonaID,
 		PersonaPath:filepath.Join(req.PersonaDir,req.PersonaID+".yaml"),
@@ -152,22 +189,40 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 		Seed:req.Seed+100000,Width:768,Height:1024,
 		QualityThreshold:req.QualityThreshold,MaxAttempts:req.PoseAttempts,
 		Progress:func(ev ProgressEvent){
-			emitAuto(req,46+ev.Percent*0.30,ev.Stage,ev.Metrics)
+			emitAuto(req,47+ev.Percent*0.29,ev.Stage,ev.Metrics)
 		},
 	})
 	if err!=nil { return result,err }
 	result.Poses=poseResult
 
-	gallery,_,err:=loadReferences(req.ReferenceRoot,req.PersonaID)
+	gallery,galleryPaths,err:=loadReferences(req.ReferenceRoot,req.PersonaID)
 	if err!=nil { return result,err }
 	if len(gallery)==0 { return result,fmt.Errorf("reference gallery empty after bootstrap") }
+
+	manager:=nativecore.FromEnv()
+	imageRefEmbeddings,refFailures:=embedReferences(ctx,manager,gallery,galleryPaths)
+	if len(imageRefEmbeddings)==0 {
+		detail:="no reference embedding succeeded"
+		if len(refFailures)>0 { detail=strings.Join(refFailures," | ") }
+		return result,fmt.Errorf("cache autonomous reference embeddings: %s",detail)
+	}
+	identityEmbeddings:=append([]referenceEmbedding(nil),imageRefEmbeddings...)
+	if len(bankVec)>0 {
+		identityEmbeddings=append(identityEmbeddings,referenceEmbedding{index:-1,vec:bankVec})
+	}
+	identityCentroid,_:=referenceCentroid(identityEmbeddings)
+	emitAuto(req,76,"identity anchors cached",map[string]any{
+		"image_references":len(imageRefEmbeddings),
+		"persona_bank_dimensions":len(bankVec),
+		"centroid_dimensions":len(identityCentroid),
+	})
+
 	sourcePath:=filepath.Join(req.ReferenceRoot,req.PersonaID,"00_front.png")
 	sourceRaw,err:=os.ReadFile(sourcePath)
 	if err!=nil { return result,fmt.Errorf("read canonical source face: %w",err) }
 	sourceImg,_,err:=image.Decode(bytes.NewReader(sourceRaw))
 	if err!=nil { return result,fmt.Errorf("decode canonical source face: %w",err) }
 
-	manager:=nativecore.FromEnv()
 	swapCfg:=faceswap.ConfigFromEnv()
 	result.SwapAvailable=faceswap.Available(swapCfg)
 	var swapper *faceswap.Swapper
@@ -196,11 +251,11 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 		reason:=""
 		identity:=IdentityResult{Passed:true,Reason:"rear_pose_no_face_gate",Metric:"not_applicable_rear_view"}
 		if asset.PoseID!="rear_standing" {
-			identity=scoreIdentityImage(ctx,manager,targetImg,gallery,req.IdentityThreshold,req.IdentityMeanThreshold)
+			identity=scoreIdentityImageCached(ctx,manager,targetImg,identityEmbeddings,req.IdentityThreshold,req.IdentityMeanThreshold)
 			if !(identity.Scored && identity.Passed) && swapper!=nil {
 				swapped,_,swapErr:=swapper.SwapImage(ctx,sourceImg,targetImg)
 				if swapErr==nil {
-					swappedIdentity:=scoreIdentityImage(ctx,manager,swapped,gallery,req.IdentityThreshold,req.IdentityMeanThreshold)
+					swappedIdentity:=scoreIdentityImageCached(ctx,manager,swapped,identityEmbeddings,req.IdentityThreshold,req.IdentityMeanThreshold)
 					if swappedIdentity.Scored && swappedIdentity.Passed {
 						finalImg=swapped
 						identity=swappedIdentity
@@ -257,6 +312,8 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 		"portfolio_complete":result.PortfolioComplete,"swap_available":result.SwapAvailable,
 		"run_id":result.RunID,"run_root":result.RunRoot,"documents":result.DocumentsPath,
 		"manifest":result.ManifestPath,
+		"persona_bank":result.PersonaBankPath,
+		"persona_bank_dimensions":result.PersonaBankDimensions,
 	})
 	return result,nil
 }
