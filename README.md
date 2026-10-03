@@ -2,7 +2,7 @@
 
 > Canonical implementation map: [docs/architecture.md](docs/architecture.md). Older Local Dream/textual-inversion notes are benchmark or legacy paths unless that architecture document says otherwise.
 
-Runnable experiment loop for a portfolio of **fictional adult** AI influencers. The repo now includes an append-only SQLite evidence ledger, versioned personas, a human approval gate, RAG project memory, a true mixture-of-agents (MoA) deliberation path, a gated Deep-Q learner for later-stage allocation, OpenAI-compatible MoA text inference, and a local-dream/S24 image adapter.
+Runnable experiment loop for a portfolio of **fictional adult** AI influencers. The repo includes an append-only SQLite evidence ledger, versioned personas, a human approval gate, RAG project memory, a true mixture-of-agents (MoA) deliberation path, a gated Deep-Q learner for later-stage allocation, OpenAI-compatible MoA text inference, and a native S24 Go/QNN media-and-identity runtime.
 
 The operating objective follows [project.md](project.md): optimize attributable net revenue while accounting for production/distribution cost, refunds, repeat purchase, retention, platform constraints, and evidence quality. Generated recommendations remain proposals until approved.
 
@@ -70,7 +70,7 @@ MoA v1 runs four independent experts in parallel—revenue, creative, growth, an
 
 The canonical production media lane is the native S24 Go/QNN runtime described below. Generated images are persisted under ignored `data/assets/`, receive sidecar metadata and identity/quality scores, become review candidates, and append auditable generation events. The older Python `LocalDreamProvider` remains a benchmark-compatible adapter, not the production default.
 
-Single asset:
+The following Python CLI example exercises the compatibility/benchmark adapter, not the canonical native media path:
 
 ```bash
 export LOCAL_DREAM_URL='http://127.0.0.1:8081'
@@ -84,7 +84,7 @@ python3 -m spicecore.cli generate \
   --seed 42
 ```
 
-Batch across all five personas:
+Compatibility-adapter batch across all five personas:
 
 ```bash
 python3 -m spicecore.cli generate-batch \
