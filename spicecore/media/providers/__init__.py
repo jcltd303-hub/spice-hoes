@@ -1,4 +1,4 @@
-"""Provider adapters for compute lanes: Azure text, local-dream, video, voice, and lipsync."""
+"""Provider adapters for compute lanes: local-dream, video, voice, and lipsync."""
 
 from __future__ import annotations
 
@@ -34,36 +34,6 @@ def _post_json(url: str, payload: dict, headers: dict[str, str], timeout: int = 
 def _validate_b64(value: str) -> None:
     raw = value.split(",", 1)[1] if value.startswith("data:") and "," in value else value
     base64.b64decode(raw, validate=True)
-
-
-class AzureChatProvider:
-    """OpenAI-compatible Azure chat adapter using only stdlib HTTP."""
-
-    def __init__(self, endpoint: str | None = None, api_key: str | None = None,
-                 deployment: str | None = None, api_version: str | None = None):
-        self.endpoint = (endpoint or os.getenv("AZURE_OPENAI_ENDPOINT", "")).rstrip("/")
-        self.api_key = api_key or os.getenv("AZURE_OPENAI_API_KEY", "")
-        self.deployment = deployment or os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
-        self.api_version = api_version or os.getenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
-        if not all((self.endpoint, self.api_key, self.deployment)):
-            raise ProviderError("Azure provider requires endpoint, API key and deployment")
-
-    @property
-    def model_name(self) -> str:
-        return f"azure:{self.deployment}"
-
-    def chat(self, system: str, user: str, temperature: float = 0.4) -> str:
-        url = (f"{self.endpoint}/openai/deployments/{self.deployment}/chat/completions"
-               f"?api-version={self.api_version}")
-        data = _post_json(url, {
-            "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": user}],
-            "temperature": temperature,
-        }, {"api-key": self.api_key})
-        try:
-            return data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise ProviderError("Unexpected Azure response") from exc
 
 
 class LocalDreamProvider:
@@ -134,7 +104,6 @@ class LocalDreamProvider:
 
 __all__ = [
     "ProviderError",
-    "AzureChatProvider",
     "LocalDreamProvider",
     "VideoProvider",
     "MockVideoProvider",
