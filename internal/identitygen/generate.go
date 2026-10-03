@@ -361,6 +361,62 @@ func embedReferences(ctx context.Context, m *nativecore.Manager, refs [][]byte, 
 	return out, failures
 }
 
+type PersonaBankBuildResult struct {
+	PersonaID  string   `json:"persona_id"`
+	Output     string   `json:"output"`
+	Dimensions int      `json:"dimensions"`
+	References int      `json:"references"`
+	Failures   []string `json:"failures,omitempty"`
+	Model      string   `json:"model"`
+	Alignment  string   `json:"alignment"`
+}
+
+func BuildPersonaBankFromReferences(ctx context.Context, personaID, referenceRoot, outputPath string) (PersonaBankBuildResult, error) {
+	personaID = strings.TrimSpace(personaID)
+	if personaID == "" { return PersonaBankBuildResult{}, fmt.Errorf("persona_id is required") }
+	if strings.TrimSpace(referenceRoot) == "" { referenceRoot = filepath.Join("data", "references") }
+	if strings.TrimSpace(outputPath) == "" { outputPath = filepath.Join("personas", personaID+".safetensors") }
+
+	refs, paths, err := loadReferences(referenceRoot, personaID)
+	if err != nil { return PersonaBankBuildResult{}, fmt.Errorf("load references: %w", err) }
+	if len(refs) == 0 { return PersonaBankBuildResult{}, fmt.Errorf("no identity references found for %s under %s", personaID, referenceRoot) }
+
+	m := nativecore.FromEnv()
+	embedded, failures := embedReferences(ctx, m, refs, paths)
+	if len(embedded) == 0 {
+		detail := "no reference embedding succeeded"
+		if len(failures) > 0 { detail = strings.Join(failures, " | ") }
+		return PersonaBankBuildResult{}, fmt.Errorf("%s", detail)
+	}
+	centroid, err := referenceCentroid(embedded)
+	if err != nil { return PersonaBankBuildResult{}, err }
+
+	bank := ident.NewPersonaBank("arcface-r50")
+	vec32 := make([]float32, len(centroid))
+	for i, v := range centroid { vec32[i] = float32(v) }
+	if err := bank.AddPersona(ident.PersonaEmbedding{
+		ID: personaID,
+		Name: personaID,
+		Embedding: vec32,
+		Metadata: map[string]any{
+			"source": "reference-centroid",
+			"references": len(embedded),
+			"alignment": "scrfd-5pt-112",
+		},
+	}); err != nil { return PersonaBankBuildResult{}, err }
+	if err := bank.WriteFile(outputPath); err != nil { return PersonaBankBuildResult{}, err }
+
+	return PersonaBankBuildResult{
+		PersonaID: personaID,
+		Output: outputPath,
+		Dimensions: len(centroid),
+		References: len(embedded),
+		Failures: failures,
+		Model: "arcface-r50",
+		Alignment: "scrfd-5pt-112",
+	}, nil
+}
+
 func loadPersonaBankEmbedding(req Request, personaID string) ([]float64, string, error) {
 	path := strings.TrimSpace(req.PersonaBank)
 	if path == "" {
