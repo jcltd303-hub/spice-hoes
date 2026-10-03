@@ -1,0 +1,47 @@
+name: deploy-hf-static
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "index.html"
+      - "package.json"
+      - "vite.config.ts"
+      - "deploy/huggingface/**"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ secrets.HF_TOKEN != '' && vars.HF_SPACE_REPO != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build static dashboard
+        run: npm install --no-audit --no-fund && npm run build
+
+      - name: Push Hugging Face static Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
+        run: |
+          rm -rf /tmp/hf-space
+          mkdir -p /tmp/hf-space
+          cp -r dist/* /tmp/hf-space/
+          cp deploy/huggingface/README.md /tmp/hf-space/README.md
+          cd /tmp/hf-space
+          git init
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+          git add .
+          git commit -m "deploy ${GITHUB_SHA}"
+          git remote add origin "https://oauth2:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_REPO}"
+          git push --force origin HEAD:main
