@@ -49,14 +49,16 @@ experiment proposal + offer + channel + content brief
 human/runtime policy gate
         |
         v
-S24 media lane
-persona YAML -> prompt -> QNN generate
+hybrid media lane
+persona YAML -> prompt -> QNN image generate
              -> SCRFD face detect
              -> 5-point align
              -> ArcFace embed
              -> reference comparison
              -> quality score
              -> save image + metadata
+        |
+        +--> optional approved image -> ComfyUI (Colab/Kaggle) -> Wan/LTX video
         |
         v
 review -> approved publishing queue -> permitted platform adapter
@@ -80,7 +82,8 @@ SQLite evidence ledger + RAG summary
 | RAG/evidence | Approved knowledge, source provenance, experiment summaries, retrieval references. |
 | MoA | Independent revenue, creative, growth, and risk proposals; aggregator produces a recommendation. |
 | Policy | Immutable/versioned limits for budget, queue size, learning thresholds, identity, quality, and reference strength. |
-| S24 media runtime | Native Go orchestration plus QNN/HTP generation and face inference. |
+| S24 media runtime | Native Go orchestration plus QNN/HTP image generation and face inference. |
+| ComfyUI video worker | Ephemeral GPU worker for open-source I2V/T2V workflows; pipeline talks only to the standard ComfyUI HTTP API. |
 | Identity verification | SCRFD -> five-point alignment -> ArcFace -> calibrated similarity gates. |
 | Review | Human approve/revise/reject before release. |
 | Distribution | Platform-permitted publish/send adapters; separated from generation and review. |
@@ -107,6 +110,14 @@ SCRFD detection -> five landmarks -> aligned crop -> ArcFace embedding -> calibr
 ```
 
 No Python runtime is required on the phone. Python is permitted in CI/model-conversion and offline analysis workflows.
+
+### Cloud-accelerated open-source video
+
+Video generation can be offloaded to an ephemeral ComfyUI worker (for example Google Colab or Kaggle) while identity scoring and the durable evidence ledger remain local/private. The application submits an API-format ComfyUI workflow through the replaceable `VideoProvider` interface.
+
+The recommended low-cost profile is a quantized Wan workflow on limited-VRAM sessions. LTX workflows remain optional and should only be selected when the allocated GPU has enough VRAM/disk for the specific checkpoint. The workflow file, checkpoint hashes, seed, prompt, and output metadata are provenance inputs.
+
+A temporary public tunnel is transport, not authentication. Treat the URL as a short-lived secret, terminate the runtime when finished, and add an authenticated reverse proxy for unattended use.
 
 ### Durable control-plane capacity
 

@@ -211,3 +211,16 @@ class LumaVideoProvider(VideoProvider):
 
     def download(self, job_id: str, destination_path: str) -> str:
         self._unavailable()
+
+
+def video_provider_from_env() -> VideoProvider:
+    """Build the configured video provider without coupling the media pipeline to a model vendor."""
+    provider = os.getenv("SPICE_VIDEO_PROVIDER", "mock").strip().lower()
+    if provider in ("", "mock"):
+        return MockVideoProvider()
+    if provider == "comfyui":
+        from .comfyui import ComfyUIVideoProvider
+        return ComfyUIVideoProvider()
+    if provider == "luma":
+        return LumaVideoProvider()
+    raise RuntimeError(f"Unknown SPICE_VIDEO_PROVIDER: {provider}")

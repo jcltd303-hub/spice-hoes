@@ -8,7 +8,8 @@ import os
 import urllib.error
 import urllib.request
 
-from .video import VideoProvider, MockVideoProvider, LumaVideoProvider
+from .video import VideoProvider, MockVideoProvider, LumaVideoProvider, video_provider_from_env
+from .comfyui import ComfyUIVideoProvider
 from .voice import VoiceProvider, VoiceProfile, MockVoiceProvider, ElevenLabsVoiceProvider, CANONICAL_VOICE_PROFILES
 from .lipsync import LipSyncProvider, MockLipSyncProvider, SyncLabsLipSyncProvider
 
@@ -108,6 +109,8 @@ __all__ = [
     "VideoProvider",
     "MockVideoProvider",
     "LumaVideoProvider",
+    "ComfyUIVideoProvider",
+    "video_provider_from_env",
     "VoiceProvider",
     "VoiceProfile",
     "MockVoiceProvider",

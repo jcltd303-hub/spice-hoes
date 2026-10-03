@@ -20,7 +20,7 @@ from .models import (
 from .qa import VideoQA
 from .scene_builder import SceneBuilder
 from .providers.lipsync import LipSyncProvider, MockLipSyncProvider
-from .providers.video import MockVideoProvider, VideoProvider
+from .providers.video import VideoProvider, video_provider_from_env
 from .providers.voice import (
     CANONICAL_VOICE_PROFILES,
     MockVoiceProvider,
@@ -41,7 +41,7 @@ class MediaPipeline:
         output_dir: str = "/tmp/spice_rendered_media",
     ):
         self.store = store
-        self.video_provider = video_provider or MockVideoProvider()
+        self.video_provider = video_provider or video_provider_from_env()
         self.voice_provider = voice_provider or MockVoiceProvider()
         self.lipsync_provider = lipsync_provider or MockLipSyncProvider()
         self.output_dir = output_dir
@@ -161,7 +161,8 @@ class MediaPipeline:
                 )
                 self.video_provider.download(v_res["job_id"], clip_path)
                 scene_clips.append(clip_path)
-                video_gen_cost += int(v_res.get("cost_cents", 10))
+                video_gen_cost += int(v_res.get("cost_cents", 0))
+                job.video_provider = str(v_res.get("provider", job.video_provider))
 
             job.costs.video_generation_cents = video_gen_cost
             self._record_audit_event("video_generation_completed", {
