@@ -2,12 +2,14 @@ package main
 
 import (
     "context"
+    "flag"
     "encoding/base64"
     "encoding/json"
     "fmt"
     "io"
     "os"
     "path/filepath"
+    "strconv"
     "strings"
     "time"
 
@@ -300,12 +302,17 @@ func commandPersonaEmbed() {
     outPath := filepath.Join("personas", personaID+".safetensors")
     if v, ok := payload["output_path"].(string); ok && strings.TrimSpace(v) != "" { outPath = v }
 
+    name := personaID
+    if v, ok := payload["name"].(string); ok && strings.TrimSpace(v) != "" {
+        name = strings.TrimSpace(v)
+    }
+
     bank := ident.NewPersonaBank("arcface-r50")
     emb32 := make([]float32, len(vec))
     for i := range vec { emb32[i] = float32(vec[i]) }
     if err := bank.AddPersona(ident.PersonaEmbedding{
         ID:        personaID,
-        Name:      payload["name"].(string),
+        Name:      name,
         Embedding: emb32,
         Metadata: map[string]any{
             "alignment": alignment,
