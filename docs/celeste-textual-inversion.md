@@ -1,6 +1,8 @@
-# Celeste Vale textual inversion
+# Celeste Vale textual inversion (legacy/benchmark path)
 
-The Local Dream integration expects the identity token `cvceleste`. The imported file must therefore be named:
+> This workflow is retained for reproducibility and benchmarking. It is **not** the canonical production identity path. Production uses native `spicemedia` -> QNN generation -> SCRFD -> five-point alignment -> ArcFace verification. See [architecture.md](architecture.md) and [master-references.md](master-references.md).
+
+The optional Local Dream benchmark integration expects the identity token `cvceleste`. The imported file must therefore be named:
 
 ```text
 cvceleste.safetensors
