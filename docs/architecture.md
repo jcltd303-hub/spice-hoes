@@ -86,7 +86,7 @@ SQLite evidence ledger + RAG summary
 | Distribution | Platform-permitted publish/send adapters; separated from generation and review. |
 | Commerce/outcomes | Idempotent attribution for clicks, purchases, costs, refunds, repeat behavior. |
 | Learning | Contextual bandit first; DQN-style DeepRL only after the configured evidence threshold. |
-| Cloud | Azure-backed durable/private services where local execution is insufficient; adapters remain portable. |
+| Infrastructure | Durable/private services where local execution is insufficient; adapters remain portable. |
 
 ## Device vs cloud
 
@@ -108,9 +108,9 @@ SCRFD detection -> five landmarks -> aligned crop -> ArcFace embedding -> calibr
 
 No Python runtime is required on the phone. Python is permitted in CI/model-conversion and offline analysis workflows.
 
-### Azure: durable control-plane capacity
+### Durable control-plane capacity
 
-Azure is the preferred paid cloud boundary when durable/private infrastructure is needed: authenticated APIs, queues/functions, private object storage, scheduled jobs, and model endpoints. The application should continue using replaceable interfaces so credits or provider terms do not become architectural lock-in.
+When durable/private infrastructure is needed, use authenticated APIs, queues/workers, private object storage, scheduled jobs, and explicitly adopted model endpoints behind replaceable interfaces. No single cloud provider is part of the canonical architecture.
 
 GitHub remains source control/CI. Vercel/Pages-style hosting may be used only where its current plan and terms fit the workload; it is not the system of record.
 
