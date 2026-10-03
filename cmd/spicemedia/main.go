@@ -528,6 +528,9 @@ func commandIdentityAutonomous() {
         "portfolio_complete": out.PortfolioComplete,
         "portfolio_sheet": out.PortfolioSheet,
         "manifest": out.ManifestPath,
+        "persona_bank": out.PersonaBankPath,
+        "persona_bank_snapshot": out.PersonaBankSnapshot,
+        "persona_bank_dimensions": out.PersonaBankDimensions,
         "swap_available": out.SwapAvailable,
         "swap_mode": out.SwapMode,
     })
