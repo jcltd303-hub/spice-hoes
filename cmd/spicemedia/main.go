@@ -16,7 +16,6 @@ import (
     ident "github.com/jcltd303-hub/spice-hoes/internal/identity"
     "github.com/jcltd303-hub/spice-hoes/internal/identitygen"
     "github.com/jcltd303-hub/spice-hoes/internal/imagemetrics"
-    "github.com/jcltd303-hub/spice-hoes/internal/localdream"
     "github.com/jcltd303-hub/spice-hoes/internal/nativecore"
     "github.com/jcltd303-hub/spice-hoes/internal/termui"
 )
