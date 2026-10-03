@@ -1,0 +1,17 @@
+{
+  "persona_id": "zara_voss",
+  "name": "Zara Voss",
+  "height_cm": 169,
+  "age": 29,
+  "bio": "High-energy percussionist and night-market organizer; learned to command a room after her first music collective dissolved.",
+  "embedding_model": "arcface-w600k-r50",
+  "embedding_dim": 512,
+  "embedding": [],
+  "notes": [
+    "Placeholder vector — to be generated from reference images using spicemedia embed",
+    "Expected identity use cases: mirror selfies, night scene content, urban fashion",
+    "Reference strength: 0.82 (high consistency required)"
+  ],
+  "content_pillars": ["night-market lifestyle", "music production", "event organization", "urban fashion"],
+  "offer_hypotheses": ["affiliate-music-gear", "event-ticketing", "fashion-collab"]
+}

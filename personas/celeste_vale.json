@@ -1,0 +1,17 @@
+{
+  "persona_id": "celeste_vale",
+  "name": "Celeste Vale",
+  "height_cm": 166,
+  "age": 32,
+  "bio": "Exacting boutique hotel designer and jazz collector; chose an independent practice over a prestigious but controlling employer.",
+  "embedding_model": "arcface-w600k-r50",
+  "embedding_dim": 512,
+  "embedding": [],
+  "notes": [
+    "Placeholder vector — to be generated from reference images using spicemedia embed",
+    "Expected identity use cases: luxury design, interior styling, music curation",
+    "Reference strength: 0.84 (very high consistency)"
+  ],
+  "content_pillars": ["boutique hotel design", "interior styling", "jazz & music curation", "luxury brand partnerships"],
+  "offer_hypotheses": ["affiliate-design-tools", "luxury-hospitality", "music-subscription"]
+}

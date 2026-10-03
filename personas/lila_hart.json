@@ -1,0 +1,17 @@
+{
+  "persona_id": "lila_hart",
+  "name": "Lila Hart",
+  "height_cm": 160,
+  "age": 28,
+  "bio": "Warm ceramic artist who hosts dinner parties and grows herbs; moved on from a partner who wanted her to abandon her studio.",
+  "embedding_model": "arcface-w600k-r50",
+  "embedding_dim": 512,
+  "embedding": [],
+  "notes": [
+    "Placeholder vector — to be generated from reference images using spicemedia embed",
+    "Expected identity use cases: pastel lifestyle, home decor, wellness",
+    "Reference strength: 0.78 (moderate consistency)"
+  ],
+  "content_pillars": ["ceramic & pottery", "gardening & herbs", "dinner hosting", "craft lifestyle"],
+  "offer_hypotheses": ["affiliate-ceramics", "home-garden-products", "lifestyle-subscription"]
+}

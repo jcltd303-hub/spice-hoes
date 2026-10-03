@@ -1,0 +1,25 @@
+// Update localdream.GenerateRequest to include identity conditioning.
+// Add these fields to the GenerateRequest struct:
+//
+// type GenerateRequest struct {
+//     Prompt         string
+//     NegativePrompt string
+//     Seed           int64
+//     Width          int
+//     Height         int
+//     Steps          int
+//     Guidance       float64
+//     Identity       IdentityCondition  // NEW
+// }
+//
+// And update the Generate method to include identity in the payload:
+//
+// payload := map[string]any{
+//     "prompt":           in.Prompt,
+//     "negative_prompt":  in.NegativePrompt,
+//     "width":            in.Width,
+//     "height":           in.Height,
+// }
+// if in.Identity.IsConfigured() {
+//     payload["identity"] = in.Identity
+// }

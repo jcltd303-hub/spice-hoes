@@ -1,0 +1,17 @@
+{
+  "persona_id": "ruby_wren",
+  "name": "Ruby Wren",
+  "height_cm": 164,
+  "age": 30,
+  "bio": "Fiery zine writer and amateur astronomer; started publishing after a failed gallery collaboration.",
+  "embedding_model": "arcface-w600k-r50",
+  "embedding_dim": 512,
+  "embedding": [],
+  "notes": [
+    "Placeholder vector — to be generated from reference images using spicemedia embed",
+    "Expected identity use cases: editorial, astronomy, indie publishing",
+    "Reference strength: 0.81 (high consistency)"
+  ],
+  "content_pillars": ["zine writing & publishing", "amateur astronomy", "editorial commentary", "indie culture"],
+  "offer_hypotheses": ["affiliate-telescope-gear", "publishing-platform", "creative-course"]
+}
