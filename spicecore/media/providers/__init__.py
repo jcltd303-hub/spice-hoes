@@ -10,8 +10,8 @@ import urllib.request
 
 from .video import VideoProvider, MockVideoProvider, LumaVideoProvider, video_provider_from_env
 from .comfyui import ComfyUIVideoProvider
-from .voice import VoiceProvider, VoiceProfile, MockVoiceProvider, ElevenLabsVoiceProvider, CANONICAL_VOICE_PROFILES
-from .lipsync import LipSyncProvider, MockLipSyncProvider, SyncLabsLipSyncProvider
+from .voice import VoiceProvider, VoiceProfile, MockVoiceProvider, ElevenLabsVoiceProvider, PiperVoiceProvider, voice_provider_from_env, CANONICAL_VOICE_PROFILES
+from .lipsync import LipSyncProvider, MockLipSyncProvider, SyncLabsLipSyncProvider, MuseTalkLipSyncProvider, Wav2LipLocalProvider, lipsync_provider_from_env
 
 
 class ProviderError(RuntimeError):
@@ -115,8 +115,13 @@ __all__ = [
     "VoiceProfile",
     "MockVoiceProvider",
     "ElevenLabsVoiceProvider",
+    "PiperVoiceProvider",
+    "voice_provider_from_env",
     "CANONICAL_VOICE_PROFILES",
     "LipSyncProvider",
     "MockLipSyncProvider",
     "SyncLabsLipSyncProvider",
+    "MuseTalkLipSyncProvider",
+    "Wav2LipLocalProvider",
+    "lipsync_provider_from_env",
 ]
