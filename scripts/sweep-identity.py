@@ -6,8 +6,9 @@ def parse_nums(s, cast=float):
     return [cast(x.strip()) for x in s.split(",") if x.strip()]
 
 def score_row(r):
-    # Diagnostic only. Ranking is lexicographic via rank_key() so quality
-    # can never compensate for a weaker identity.
+    # A run without a valid ArcFace result is never rankable.
+    if not r.get("identity_scored"):
+        return float("-inf")
     ident=float(r.get("identity_score") or 0)
     mean=float(r.get("identity_mean") or 0)
     qual=float(r.get("quality_score") or 0)
@@ -15,6 +16,7 @@ def score_row(r):
 
 def rank_key(r):
     return (
+        1 if r.get("identity_scored") else 0,
         1 if r.get("accepted") else 0,
         1 if r.get("identity_pass") else 0,
         float(r.get("identity_score") or 0),
@@ -115,13 +117,42 @@ def main():
         req.update({"guidance":g,"steps":20,"identity_embedding_weight":w,"best_of_n":args.stage1_best_of_n,"swap_top_k":1})
         print(f"[stage1 {run_no}] cfg={g} weight={w}",file=sys.stderr,flush=True)
         result=run_one(args.bin,req,args.timeout)
+        if not result.get("ok"):
+            print(f"[stage1 {run_no}] ERROR: {result.get('error','unknown error')}",file=sys.stderr,flush=True)
+        elif not result.get("identity_scored"):
+            print(f"[stage1 {run_no}] IDENTITY ERROR: {result.get('identity_reason') or result.get('status')}",file=sys.stderr,flush=True)
         row={"stage":1,"run":run_no,"guidance":g,"steps":20,"embedding_weight":w,"swap_top_k":1,"best_of_n":args.stage1_best_of_n,**result}
         row["sweep_score"]=score_row(row)
         rows.append(row); stage1.append(row)
         (root/f"run-{run_no:03d}.json").write_text(json.dumps({"request":req,"result":result},indent=2)+"\n")
 
-    stage1_ok=[r for r in stage1 if r.get("ok")]
+    stage1_ok=[r for r in stage1 if r.get("ok") and r.get("identity_scored")]
     stage1_ok.sort(key=rank_key,reverse=True)
+    if not stage1_ok:
+        reasons={}
+        for r in stage1:
+            reason=r.get("error") or r.get("identity_reason") or r.get("status") or "unknown"
+            reasons[reason]=reasons.get(reason,0)+1
+        summary={
+            "schema":"spice.identity-sweep.v1",
+            "run_id":run_id,
+            "persona_id":args.persona,
+            "seed":args.seed,
+            "total_runs":len(rows),
+            "successful_runs":sum(1 for r in rows if r.get("ok")),
+            "identity_scored_runs":0,
+            "failure_reasons":reasons,
+            "winner":None,
+            "all":rows,
+        }
+        (root/"summary.json").write_text(json.dumps(summary,indent=2)+"\n")
+        print(json.dumps({
+            "ok":False,
+            "root":str(root),
+            "error":"no stage-1 run produced a valid identity score",
+            "failure_reasons":reasons
+        },indent=2))
+        raise SystemExit(2)
     finalists=stage1_ok[:args.stage1_keep]
 
     # Stage 2: refine the best guidance/embedding pairs across steps and swap budget.
@@ -140,12 +171,16 @@ def main():
             })
             print(f"[stage2 {run_no}] cfg={f['guidance']} steps={st} weight={f['embedding_weight']} swapK={sk}",file=sys.stderr,flush=True)
             result=run_one(args.bin,req,args.timeout)
+            if not result.get("ok"):
+                print(f"[stage2 {run_no}] ERROR: {result.get('error','unknown error')}",file=sys.stderr,flush=True)
+            elif not result.get("identity_scored"):
+                print(f"[stage2 {run_no}] IDENTITY ERROR: {result.get('identity_reason') or result.get('status')}",file=sys.stderr,flush=True)
             row={"stage":2,"run":run_no,"guidance":f["guidance"],"steps":st,"embedding_weight":f["embedding_weight"],"swap_top_k":sk,"best_of_n":args.stage2_best_of_n,**result}
             row["sweep_score"]=score_row(row)
             rows.append(row); stage2.append(row)
             (root/f"run-{run_no:03d}.json").write_text(json.dumps({"request":req,"result":result},indent=2)+"\n")
 
-    ranked=[r for r in rows if r.get("ok")]
+    ranked=[r for r in rows if r.get("ok") and r.get("identity_scored")]
     ranked.sort(key=rank_key,reverse=True)
 
     fields=["rank","stage","run","guidance","steps","embedding_weight","swap_top_k","best_of_n","identity_scored","identity_reason","identity_score","identity_mean","quality_score","accepted","runtime_sec","sweep_score","status","selected_seed","swap_source","swap_trials","asset_path","metadata_path","error"]
