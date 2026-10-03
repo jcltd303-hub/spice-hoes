@@ -1159,7 +1159,7 @@ export default function App() {
             <div className="bg-[#1b1526] p-6 rounded-2xl border border-[#362a4a] space-y-4">
               <div>
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">Guarded Autopilot Launch</h3>
-                <p className="text-xs text-gray-400 mt-1">Uses the active budget and review-queue limits. External Azure/local-dream calls occur only when you run it.</p>
+                <p className="text-xs text-gray-400 mt-1">Uses the active budget and review-queue limits. External provider calls occur only when you run it.</p>
               </div>
               <textarea
                 rows={3}
