@@ -46,6 +46,8 @@ def run_one(bin_path, req, timeout):
         "status":out.get("status"),
         "asset_path":out.get("asset_path"),
         "metadata_path":out.get("metadata_path"),
+        "identity_scored":bool((out.get("identity") or {}).get("scored")),
+        "identity_reason":((out.get("identity") or {}).get("reason") or ""),
         "identity_score":((out.get("identity") or {}).get("score") or 0),
         "identity_mean":((out.get("identity") or {}).get("mean_score") or 0),
         "identity_pass":bool((out.get("identity") or {}).get("passed")),
@@ -146,7 +148,7 @@ def main():
     ranked=[r for r in rows if r.get("ok")]
     ranked.sort(key=rank_key,reverse=True)
 
-    fields=["rank","stage","run","guidance","steps","embedding_weight","swap_top_k","best_of_n","identity_score","identity_mean","quality_score","accepted","runtime_sec","sweep_score","status","selected_seed","swap_source","swap_trials","asset_path","metadata_path","error"]
+    fields=["rank","stage","run","guidance","steps","embedding_weight","swap_top_k","best_of_n","identity_scored","identity_reason","identity_score","identity_mean","quality_score","accepted","runtime_sec","sweep_score","status","selected_seed","swap_source","swap_trials","asset_path","metadata_path","error"]
     with (root/"leaderboard.csv").open("w",newline="") as f:
         w=csv.DictWriter(f,fieldnames=fields,extrasaction="ignore"); w.writeheader()
         for i,row in enumerate(ranked,1):
@@ -158,7 +160,8 @@ def main():
         "persona_id":args.persona,
         "seed":args.seed,
         "total_runs":len(rows),
-        "successful_runs":len(ranked),
+        "successful_runs":sum(1 for r in rows if r.get("ok")),
+        "identity_scored_runs":len(ranked),
         "stage1_keep":args.stage1_keep,
         "winner":ranked[0] if ranked else None,
         "top":ranked[:args.stage2_keep],
