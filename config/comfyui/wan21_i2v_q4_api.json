@@ -1,0 +1,211 @@
+{
+  "3": {
+    "inputs": {
+      "seed": "__SPICE_SEED__",
+      "steps": 20,
+      "cfg": 6,
+      "sampler_name": "uni_pc",
+      "scheduler": "simple",
+      "positive": [
+        "50",
+        0
+      ],
+      "negative": [
+        "50",
+        1
+      ],
+      "latent_image": [
+        "50",
+        2
+      ],
+      "denoise": 1,
+      "model": [
+        "54",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sampler"
+    }
+  },
+  "6": {
+    "inputs": {
+      "text": "__SPICE_PROMPT__",
+      "clip": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive prompt"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "oversaturated, overexposed, static frame, blurry details, subtitles, text, watermark, worst quality, low quality, jpeg artifacts, malformed anatomy, duplicated limbs, fused fingers, distorted face, cluttered background, excessive camera shake",
+      "clip": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative prompt"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode frames"
+    }
+  },
+  "37": {
+    "inputs": {
+      "unet_name": "wan2.1-i2v-14b-480p-Q4_K_M.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Wan2.1 I2V GGUF"
+    }
+  },
+  "38": {
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Wan text encoder"
+    }
+  },
+  "39": {
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Wan VAE"
+    }
+  },
+  "49": {
+    "inputs": {
+      "clip_name": "clip_vision_h.safetensors"
+    },
+    "class_type": "CLIPVisionLoader",
+    "_meta": {
+      "title": "CLIP Vision"
+    }
+  },
+  "50": {
+    "inputs": {
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ],
+      "width": "__SPICE_WIDTH__",
+      "height": "__SPICE_HEIGHT__",
+      "length": "__SPICE_FRAMES__",
+      "batch_size": 1,
+      "clip_vision_output": [
+        "51",
+        0
+      ],
+      "start_image": [
+        "52",
+        0
+      ]
+    },
+    "class_type": "WanImageToVideo",
+    "_meta": {
+      "title": "Wan image-to-video conditioning"
+    }
+  },
+  "51": {
+    "inputs": {
+      "clip_vision": [
+        "49",
+        0
+      ],
+      "image": [
+        "52",
+        0
+      ],
+      "crop": "none"
+    },
+    "class_type": "CLIPVisionEncode",
+    "_meta": {
+      "title": "Vision conditioning"
+    }
+  },
+  "52": {
+    "inputs": {
+      "image": "__SPICE_IMAGE__",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Start image"
+    }
+  },
+  "54": {
+    "inputs": {
+      "model": [
+        "37",
+        0
+      ],
+      "shift": 8
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "Wan sampling shift"
+    }
+  },
+  "55": {
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "fps": "__SPICE_FPS__"
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "Create video"
+    }
+  },
+  "56": {
+    "inputs": {
+      "video": [
+        "55",
+        0
+      ],
+      "filename_prefix": "spice/wan21",
+      "format": "mp4"
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "Save MP4"
+    }
+  }
+}
