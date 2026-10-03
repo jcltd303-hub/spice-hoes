@@ -1,5 +1,7 @@
 # Spice Hoes experiment core
 
+> Canonical implementation map: [docs/architecture.md](docs/architecture.md). Older Local Dream/textual-inversion notes are benchmark or legacy paths unless that architecture document says otherwise.
+
 Runnable experiment loop for a portfolio of **fictional adult** AI influencers. The repo now includes an append-only SQLite evidence ledger, versioned personas, a human approval gate, RAG project memory, a true mixture-of-agents (MoA) deliberation path, a gated Deep-Q learner for later-stage allocation, OpenAI-compatible MoA text inference, and a local-dream/S24 image adapter.
 
 The operating objective follows [project.md](project.md): optimize attributable net revenue while accounting for production/distribution cost, refunds, repeat purchase, retention, platform constraints, and evidence quality. Generated recommendations remain proposals until approved.
@@ -66,7 +68,7 @@ MoA v1 runs four independent experts in parallel—revenue, creative, growth, an
 
 ## Asset generation
 
-The repo can now call the S24/local-dream endpoint directly, persist the returned image under ignored `data/assets/`, write a sidecar JSON record, create a review candidate, and append an `asset_generated` event.
+The canonical production media lane is the native S24 Go/QNN runtime described below. Generated images are persisted under ignored `data/assets/`, receive sidecar metadata and identity/quality scores, become review candidates, and append auditable generation events. The older Python `LocalDreamProvider` remains a benchmark-compatible adapter, not the production default.
 
 Single asset:
 
@@ -95,11 +97,11 @@ python3 -m spicecore.cli generate-batch \
 
 Every generated file remains `proposed` until a human approves it. The prompt builder carries forward the persona's adult status and visual identity anchors, adds realism/identity-consistency instructions, and rejects non-adult/non-fictional persona records.
 
-## Local-dream / S24 media lane
+## Media-provider compatibility
 
-`spicecore.providers.LocalDreamProvider` is the only image-generation adapter in this branch. It defaults to `http://127.0.0.1:8081/generate` and accepts `LOCAL_DREAM_URL` and optional `LOCAL_DREAM_TOKEN`. Generated assets should be persisted to private storage and then registered with `propose`; do not commit identity references or private generated assets.
+The native Go/QNN S24 path is the production media lane. `spicecore.providers.LocalDreamProvider` may still be used as an optional comparison/legacy adapter where useful, but documentation and acceptance tests should not treat it as authoritative. Generated assets and identity packs stay in private/ignored storage.
 
-The OpenAI-compatible MoA provider is the text-reasoning lane; local-dream on the S24 is the image lane. Provider interfaces remain small so deployments can change without rewriting experiment logic.
+The OpenAI-compatible MoA provider is the text-reasoning lane; the native S24 runtime is the image/identity lane. Provider interfaces remain small so deployments can change without rewriting experiment logic.
 
 ## DeepRL
 
@@ -322,5 +324,5 @@ Check the runtime:
 echo '{}' | ./bin/spicemedia health
 ```
 
-Local Dream may remain installed only as an optional benchmark baseline; it is not required by the Go/QNN runtime.
+Local Dream may remain installed as an optional benchmark/legacy baseline; it is not required by the Go/QNN runtime and is not the canonical production path. See `docs/architecture.md`.
 
