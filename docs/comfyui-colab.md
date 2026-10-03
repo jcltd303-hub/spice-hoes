@@ -1,45 +1,42 @@
 # ComfyUI Google Colab video worker
 
-The Spice pipeline can use any ComfyUI **API-format** image-to-video workflow over the standard HTTP API. This keeps model choice outside the application: Wan, LTX, GGUF, FP8, and later workflows are selected by changing `COMFYUI_WORKFLOW`.
+The production Spice video lane is pinned to **Wan2.1 I2V 14B GGUF** through ComfyUI-GGUF.
 
-## 1. Start the Colab worker
+- Quality default: `config/comfyui/wan21_i2v_q4_api.json` using Q4_K_M.
+- Low-VRAM fallback: `config/comfyui/wan21_i2v_q3_api.json` using Q3_K_M.
+- Both are ComfyUI API-format graphs and accept the Spice runtime placeholders.
+- The official ComfyUI Wan graph structure is retained: Wan image conditioning, CLIP Vision, ModelSamplingSD3, KSampler, VAE decode, CreateVideo, SaveVideo.
 
-Open `notebooks/spice_comfyui_colab.ipynb` in Google Colab, choose a GPU runtime, and run the cells. The notebook installs current ComfyUI plus `ComfyUI-GGUF`, starts port 8188, and creates a temporary Cloudflare Quick Tunnel without a generation API token.
+## Colab
 
-Colab/Kaggle availability, GPU type, session duration, and acceptable-use rules are controlled by those services and can change. Open-source software does not exempt use from their terms or from model licenses.
+Open `notebooks/spice_comfyui_colab.ipynb`, choose a GPU runtime, and run all cells. It:
 
-## 2. Choose a workflow
+1. installs current ComfyUI and ComfyUI-GGUF;
+2. downloads the selected public Wan GGUF plus official text encoder, CLIP Vision encoder and VAE;
+3. starts ComfyUI in low-VRAM mode;
+4. checks `/object_info` for every required node before accepting traffic;
+5. exposes the attended session through a temporary Cloudflare Quick Tunnel.
 
-For limited VRAM, start with a Wan image-to-video workflow using a quantized diffusion model. For LTX, use a workflow/checkpoint matched to the GPU memory available in the session.
+The default model set is approximately 19 GB of downloads with Q4_K_M. Set `WAN_QUANT=Q3_K_M` before the model-download cell for the smaller diffusion model.
 
-In ComfyUI, load the desired workflow, verify it runs once, then export **Save (API Format)**. Store that JSON locally (not secrets or model weights) and set:
+## Runtime
 
 ```bash
 export SPICE_VIDEO_PROVIDER=comfyui
 export COMFYUI_BASE_URL='https://YOUR-RANDOM.trycloudflare.com'
-export COMFYUI_WORKFLOW='config/comfyui/wan_i2v_api.json'
+export COMFYUI_WORKFLOW='config/comfyui/wan21_i2v_q4_api.json'
 ```
 
-The provider recognizes these optional literal placeholders inside node inputs:
+For the lower-memory profile:
 
-```text
-__SPICE_PROMPT__
-__SPICE_IMAGE__
-__SPICE_SEED__
-__SPICE_WIDTH__
-__SPICE_HEIGHT__
-__SPICE_FRAMES__
-__SPICE_FPS__
+```bash
+export COMFYUI_WORKFLOW='config/comfyui/wan21_i2v_q3_api.json'
 ```
 
-It also automatically fills common `LoadImage`, seed, width, height, frame-count, and fps inputs.
-
-## 3. Pipeline behavior
-
-`MediaPipeline` now resolves the video backend from `SPICE_VIDEO_PROVIDER`. For each scene it uploads the source image, injects runtime values, POSTs the graph to `/prompt`, polls `/history/{prompt_id}`, downloads the output with `/view`, and then continues through captions, FFmpeg assembly, technical QA, and human review.
-
-ComfyUI jobs report zero API-token cost. GPU/session costs, if any, still belong in experiment accounting.
+The provider uploads the approved source image, injects prompt/image/seed/dimensions/frame count/fps, POSTs the graph to `/prompt`, polls `/history/{prompt_id}`, downloads the MP4 from `/view`, and continues into Piper speech, MuseTalk lip sync, FFmpeg/QA, and human review.
 
 ## Security
 
-A Quick Tunnel gives a temporary URL but native ComfyUI does not provide bearer authentication. Use it only for an attended ephemeral session, do not commit the tunnel URL, terminate the Colab runtime afterward, and place an authenticated reverse proxy in front of ComfyUI before unattended operation.
+Cloudflare Quick Tunnel is transport, not authentication. Use it only for attended ephemeral Colab sessions. For unattended production put an authenticated reverse proxy in front of ComfyUI and set `COMFYUI_BEARER_TOKEN` to the proxy credential.
+
+Colab availability and model/service terms remain external constraints; the repository does not assume unlimited free GPU availability.
