@@ -27,6 +27,17 @@ type PersonaBank struct {
 	Tensors map[string][]float32
 }
 
+type personaTensorHeader struct {
+	DType       string   `json:"dtype"`
+	Shape       []int    `json:"shape"`
+	DataOffsets []uint64 `json:"data_offsets"`
+}
+
+type personaSafeTensorsHeader struct {
+	Metadata map[string]any                  `json:"__metadata__"`
+	Tensors  map[string]personaTensorHeader `json:"__tensors__"`
+}
+
 func NewPersonaBank(model string) *PersonaBank {
 	if strings.TrimSpace(model) == "" {
 		model = "arcface-r50"
@@ -83,17 +94,6 @@ func (b *PersonaBank) WriteFile(path string) error {
 		return fmt.Errorf("create parent dir: %w", err)
 	}
 
-	type tensorHeader struct {
-		DType       string   `json:"dtype"`
-		Shape       []int    `json:"shape"`
-		DataOffsets []uint64 `json:"data_offsets"`
-	}
-
-	type safetensorsHeader struct {
-		Metadata map[string]any          `json:"__metadata__"`
-		Tensors  map[string]tensorHeader `json:"__tensors__"`
-	}
-
 	names := make([]string, 0, len(b.Tensors))
 	for name := range b.Tensors {
 		names = append(names, name)
@@ -117,11 +117,11 @@ func (b *PersonaBank) WriteFile(path string) error {
 		metadata["names"] = append([]string(nil), b.Names...)
 	}
 
-	tensorMap := map[string]tensorHeader{}
+	tensorMap := map[string]personaTensorHeader{}
 	offset := uint64(0)
 	for _, name := range names {
 		shape := []int{len(entries[name])}
-		tensorMap[name] = tensorHeader{
+		tensorMap[name] = personaTensorHeader{
 			DType:       "F32",
 			Shape:       shape,
 			DataOffsets: []uint64{offset, offset + uint64(len(entries[name])*4)},
@@ -132,7 +132,7 @@ func (b *PersonaBank) WriteFile(path string) error {
 		return fmt.Errorf("tensor byte accounting mismatch: wrote %d bytes, expected %d", offset, totalBytes)
 	}
 
-	headerJSON, err := json.Marshal(safetensorsHeader{
+	headerJSON, err := json.Marshal(personaSafeTensorsHeader{
 		Metadata: metadata,
 		Tensors:  tensorMap,
 	})
@@ -158,7 +158,7 @@ func (b *PersonaBank) WriteFile(path string) error {
 		return fmt.Errorf("write safetensors header: %w", err)
 	}
 	for i := len(headerJSON); i < int(paddedHeaderLen); i++ {
-		if err := file.WriteByte(0); err != nil {
+		if _, err := file.Write([]byte{0}); err != nil {
 			return fmt.Errorf("pad safetensors header: %w", err)
 		}
 	}
@@ -195,7 +195,7 @@ func LoadFile(path string) (*PersonaBank, error) {
 		return nil, fmt.Errorf("read header payload: %w", err)
 	}
 
-	var header safetensorsHeader
+	var header personaSafeTensorsHeader
 	if err := json.Unmarshal(headerBytes, &header); err != nil {
 		return nil, fmt.Errorf("decode safetensors header: %w", err)
 	}
