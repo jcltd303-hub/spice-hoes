@@ -469,11 +469,17 @@ func commandPersonaBankBuild(args []string) {
 func commandIdentityGenerate(args []string) {
     fs := flag.NewFlagSet("identity-generate", flag.ContinueOnError)
     fs.SetOutput(io.Discard)
+    persona := fs.String("persona", "", "persona ID; automatically loads personas/<id>.yaml and personas/<id>.safetensors")
+    theme := fs.String("theme", "", "generation theme")
+    scene := fs.String("scene", "", "optional scene description")
     personaBank := fs.String("persona-bank", "", "path to persona .safetensors bank")
     requirePersonaBank := fs.Bool("require-persona-bank", false, "fail if persona bank cannot be loaded")
     if err := fs.Parse(args); err != nil { fail(err) }
 
     payload := readObject()
+    if *persona != "" { payload["persona_id"] = *persona }
+    if *theme != "" { payload["theme"] = *theme }
+    if *scene != "" { payload["scene"] = *scene }
     if *personaBank != "" { payload["persona_bank"] = *personaBank }
     if *requirePersonaBank { payload["require_persona_bank"] = true }
 
