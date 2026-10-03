@@ -40,12 +40,10 @@ if [[ "$SWAP_MODE" != "disabled" ]]; then
   fi
 fi
 
-if [[ ! -x "$ROOT/bin/spicemedia" ]] || [[ "$ROOT/cmd/spicemedia/main.go" -nt "$ROOT/bin/spicemedia" ]]; then
-  echo "Building Go-only spicemedia..."
-  go mod tidy
-  mkdir -p "$ROOT/bin"
-  go build -trimpath -o "$ROOT/bin/spicemedia" ./cmd/spicemedia
-fi
+echo "Building Go-only spicemedia..."
+go mod tidy
+mkdir -p "$ROOT/bin"
+go build -trimpath -o "$ROOT/bin/spicemedia" ./cmd/spicemedia
 
 cat <<JSON | "$ROOT/bin/spicemedia" identity-autonomous
 {
