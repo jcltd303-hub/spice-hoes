@@ -2,6 +2,7 @@ package identity
 
 import (
     "bytes"
+    "errors"
     "fmt"
     "image"
     _ "image/jpeg"
@@ -110,6 +111,24 @@ func SCRFDThreshold(defaultValue float64) float64 {
     return v
 }
 
+func SCRFDFallbackThreshold(defaultValue float64) float64 {
+    raw := strings.TrimSpace(os.Getenv("SPICE_SCRFD_FALLBACK_THRESHOLD"))
+    if raw == "" { return defaultValue }
+    v, err := strconv.ParseFloat(raw, 64)
+    if err != nil || v <= 0 || v >= 1 { return defaultValue }
+    return v
+}
+
+type NoFaceAboveThresholdError struct {
+    Threshold float64
+    MaxScore  float64
+}
+
+func (e *NoFaceAboveThresholdError) Error() string {
+    return fmt.Sprintf("SCRFD found no face above threshold %.2f (max score %.6f)", e.Threshold, e.MaxScore)
+}
+
+
 func DecodeSCRFD(outputs []nativecore.TensorOutput, prep DetectorInput, threshold,nmsThreshold float64) ([]FaceDetection,error) {
     type grouped struct {
         score,bbox,kps []float64
@@ -185,9 +204,33 @@ func DecodeSCRFD(outputs []nativecore.TensorOutput, prep DetectorInput, threshol
         if math.IsInf(maxScore, -1) {
             return nil,fmt.Errorf("SCRFD found no usable score tensor")
         }
-        return nil,fmt.Errorf("SCRFD found no face above threshold %.2f (max score %.6f)",threshold,maxScore)
+        return nil,&NoFaceAboveThresholdError{Threshold:threshold,MaxScore:maxScore}
     }
     return nms(detections,nmsThreshold),nil
+}
+
+
+func DecodeSCRFDWithFallback(outputs []nativecore.TensorOutput, prep DetectorInput, threshold, nmsThreshold float64) ([]FaceDetection, float64, error) {
+    faces, err := DecodeSCRFD(outputs, prep, threshold, nmsThreshold)
+    if err == nil {
+        return faces, threshold, nil
+    }
+
+    var noFace *NoFaceAboveThresholdError
+    if !errors.As(err, &noFace) {
+        return nil, threshold, err
+    }
+
+    fallback := SCRFDFallbackThreshold(0.10)
+    if fallback >= threshold || noFace.MaxScore < fallback {
+        return nil, threshold, err
+    }
+
+    faces, fallbackErr := DecodeSCRFD(outputs, prep, fallback, nmsThreshold)
+    if fallbackErr != nil {
+        return nil, fallback, fallbackErr
+    }
+    return faces, fallback, nil
 }
 
 func iou(a,b FaceDetection) float64 {
