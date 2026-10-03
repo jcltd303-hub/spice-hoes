@@ -19,6 +19,7 @@ from .core import Store, load_personas
 from .deeprl import DeepRLPolicy
 from .experiments import ExperimentPlanner
 from .media.repository import MediaJobRepository
+from .media.pipeline import MediaPipeline
 from .memory import KnowledgeBase
 from .moa import MixtureOfAgents
 from .operations import Operations
@@ -266,6 +267,11 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
             },
             "media": {
                 "ffmpeg": bool(__import__("shutil").which("ffmpeg")),
+                "video_provider": env.get("SPICE_VIDEO_PROVIDER", "mock"),
+                "voice_provider": env.get("SPICE_VOICE_PROVIDER", "mock"),
+                "lipsync_provider": env.get("SPICE_LIPSYNC_PROVIDER", "mock"),
+                "piper": bool(__import__("shutil").which(env.get("PIPER_BIN", "piper"))) and bool(env.get("PIPER_MODEL") or env.get("PIPER_VOICE_MAP")),
+                "musetalk": bool(env.get("MUSETALK_DIR") and os.path.isdir(env.get("MUSETALK_DIR", ""))),
                 "luma": False,
                 "elevenlabs": False,
                 "synclabs": False,
@@ -318,6 +324,12 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
             offer=payload.get("offer") or candidate.get("offer"),
             product_id=payload.get("product_id"),
         )
+
+    if action == "media_render":
+        repo = MediaJobRepository(store)
+        job = repo.get(str(payload.get("media_job_id", "")))
+        rendered = MediaPipeline(store=store).render(job)
+        return repo.save(rendered)
 
     if action == "media_review":
         return MediaJobRepository(store).review(
