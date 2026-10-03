@@ -111,7 +111,7 @@ func detectPrimaryImage(ctx context.Context, m *nativecore.Manager, img image.Im
 	if err != nil { return ident.FaceDetection{}, err }
 	outputs, _, err := m.Detect(ctx, prep.Tensor)
 	if err != nil { return ident.FaceDetection{}, err }
-	faces, err := ident.DecodeSCRFD(outputs, prep, ident.SCRFDThreshold(0.5), 0.4)
+	faces, _, err := ident.DecodeSCRFDWithFallback(outputs, prep, ident.SCRFDThreshold(0.5), 0.4)
 	if err != nil { return ident.FaceDetection{}, err }
 	if len(faces) == 0 { return ident.FaceDetection{}, fmt.Errorf("no face detected") }
 	return faces[0], nil
