@@ -1,9 +1,12 @@
 package identity
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -191,9 +194,10 @@ func LoadFile(path string) (*PersonaBank, error) {
 	}
 
 	headerBytes := make([]byte, int(headerLen))
-	if _, err := file.Read(headerBytes); err != nil {
+	if _, err := io.ReadFull(file, headerBytes); err != nil {
 		return nil, fmt.Errorf("read header payload: %w", err)
 	}
+	headerBytes = bytes.TrimRight(headerBytes, "\x00 \t\r\n")
 
 	var header personaSafeTensorsHeader
 	if err := json.Unmarshal(headerBytes, &header); err != nil {
@@ -230,11 +234,7 @@ func LoadFile(path string) (*PersonaBank, error) {
 		if len(t.DataOffsets) != 2 {
 			return nil, fmt.Errorf("tensor %s has invalid data_offsets", name)
 		}
-		count := len(t.Shape)
-		if count == 0 {
-			continue
-		}
-		if t.Shape[0] <= 0 {
+		if len(t.Shape) == 0 {
 			continue
 		}
 		payloadLen := int(t.DataOffsets[1] - t.DataOffsets[0])
@@ -244,12 +244,18 @@ func LoadFile(path string) (*PersonaBank, error) {
 		if payloadLen%4 != 0 {
 			return nil, fmt.Errorf("tensor %s payload is not aligned to float32", name)
 		}
+		if _, err := file.Seek(dataStart+int64(t.DataOffsets[0]), 0); err != nil {
+			return nil, fmt.Errorf("seek tensor %s: %w", name, err)
+		}
+		raw := make([]byte, payloadLen)
+		if _, err := io.ReadFull(file, raw); err != nil {
+			return nil, fmt.Errorf("read tensor %s: %w", name, err)
+		}
 		vectorLen := payloadLen / 4
 		values := make([]float32, vectorLen)
 		for i := range values {
-			if err := binary.Read(file, binary.LittleEndian, &values[i]); err != nil {
-				return nil, fmt.Errorf("read tensor %s: %w", name, err)
-			}
+			bits := binary.LittleEndian.Uint32(raw[i*4 : i*4+4])
+			values[i] = math.Float32frombits(bits)
 		}
 		bank.Tensors[name] = values
 		if !contains(bank.Names, name) {
