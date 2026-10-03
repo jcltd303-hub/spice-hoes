@@ -343,14 +343,20 @@ type referenceEmbedding struct {
 	vec   []float64
 }
 
-func embedReferences(ctx context.Context, m *nativecore.Manager, refs [][]byte) []referenceEmbedding {
+func embedReferences(ctx context.Context, m *nativecore.Manager, refs [][]byte, paths []string) ([]referenceEmbedding, []string) {
 	out := make([]referenceEmbedding, 0, len(refs))
+	failures := make([]string, 0)
 	for i, ref := range refs {
 		vec, _, err := arcEmbedding(ctx, m, ref)
-		if err != nil { continue }
+		if err != nil {
+			label := fmt.Sprintf("reference[%d]", i)
+			if i < len(paths) && strings.TrimSpace(paths[i]) != "" { label = paths[i] }
+			failures = append(failures, fmt.Sprintf("%s: %v", label, err))
+			continue
+		}
 		out = append(out, referenceEmbedding{index:i, vec:vec})
 	}
-	return out
+	return out, failures
 }
 
 func referenceCentroid(refs []referenceEmbedding) ([]float64, error) {
@@ -1155,7 +1161,12 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if err != nil { return Result{}, fmt.Errorf("load references: %w", err) }
 
 	m := nativecore.FromEnv()
-	refEmbeddings := embedReferences(ctx, m, refs)
+	refEmbeddings, refEmbeddingFailures := embedReferences(ctx, m, refs, refPaths)
+	if len(refs) > 0 && len(refEmbeddings) == 0 {
+		detail := "unknown reference embedding failure"
+		if len(refEmbeddingFailures) > 0 { detail = strings.Join(refEmbeddingFailures, " | ") }
+		return Result{}, fmt.Errorf("all identity reference embeddings failed: %s", detail)
+	}
 	rankedSources := rankedReferenceEmbeddings(refEmbeddings)
 	centroidEmbedding, _ := referenceCentroid(refEmbeddings)
 	var canonicalRef []byte
@@ -1282,6 +1293,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	best.Generation["selected_seed"] = attempts[bestIndex].Seed
 	best.Generation["stop_on_accept"] = stopOnAccept
 	best.Generation["reference_embeddings_cached"] = len(refEmbeddings)
+	best.Generation["reference_embedding_failures"] = refEmbeddingFailures
 	best.Generation["reference_centroid_dimensions"] = len(centroidEmbedding)
 	best.Generation["swap_source_candidates"] = len(rankedSources)+1
 	best.Generation["swap_top_k"] = req.SwapTopK
