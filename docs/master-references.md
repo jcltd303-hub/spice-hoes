@@ -1,64 +1,77 @@
 # Master reference packs
 
-Master references are built in two stages so the generator never silently replaces a persona's canonical identity.
+Master references serve two different jobs and must not be conflated:
 
-## 1. Build a staged pack
+1. **Visual conditioning** — preserve hair, face, body proportions, styling, and outfit continuity across generation.
+2. **Identity gating** — provide reliable face embeddings for SCRFD + ArcFace numerical verification.
 
-```bash
-export LOCAL_DREAM_URL='http://127.0.0.1:7860'
+The uploaded influencer guide recommends a multi-angle master character board. This project keeps that idea, but the production gate only uses images that produce stable face detections and embeddings.
 
-python3 -m spicecore.reference_cli build \
-  --persona zara_voss \
-  --seed 1000
-```
+## Canonical six-view visual board
 
-The builder:
+Maintain these visual references for each persona:
 
-1. Generates three front-facing candidates.
-2. Scores each candidate against the other two and selects the identity-consensus medoid.
-3. Uses that selected front portrait as the conditioning anchor.
-4. Generates two attempts for each remaining reference view.
-5. Keeps the highest identity-scored attempt per view.
-6. Requires every selected view to meet the identity threshold before the pack is eligible for promotion.
+- front portrait
+- left profile
+- right profile
+- hair/back view
+- eye/detail close-up
+- full body / outfit
 
-The six canonical views are front, left profile, right profile, hair/back view, eye close-up, and full body.
+These images may all condition generation, but they are **not automatically all ArcFace gate references**. Back views, extreme profiles, and detail crops commonly fail face detection or distort similarity.
 
-Staged files and `manifest.json` are written below:
-
-```text
-data/reference_candidates/<persona_id>/<run_id>/
-```
-
-The event ledger receives `master_reference_pack_proposed`.
-
-## 2. Promote an approved pack
-
-Review the staged images, then promote the manifest:
-
-```bash
-python3 -m spicecore.reference_cli promote \
-  data/reference_candidates/zara_voss/RUN_ID/manifest.json
-```
-
-Promotion installs the selected six-view pack under:
+Store promoted references under:
 
 ```text
 data/references/<persona_id>/
 ```
 
-Future asset generation automatically loads that directory for reference conditioning and identity gating.
+Do not commit private identity packs to the public repository.
 
-Promotion is refused if any selected view is below the configured identity threshold. The event ledger receives `master_reference_pack_promoted`.
+## Production identity path
 
-## Tuning
-
-The defaults are conservative:
+The canonical media/identity path is native S24 Go/QNN:
 
 ```text
-identity threshold: 0.84
-reference strength: 0.90
-front anchor candidates: 3
-attempts per remaining view: 2
+persona YAML
+  -> prompt + reference conditioning
+  -> QNN generate
+  -> SCRFD face detect
+  -> 5-point align
+  -> ArcFace embed
+  -> reference comparison
+  -> quality score
+  -> accept/retry/reject
+  -> save image + metadata
 ```
 
-Increase candidate/attempt counts for difficult identities at the cost of more local generation time.
+Use face-detectable, stable references for the ArcFace gate pack. Keep non-face visual references available for conditioning only.
+
+## Build and review workflow
+
+1. Generate several front-facing candidates.
+2. Select a visually correct adult fictional identity.
+3. Generate the remaining canonical views from that anchor.
+4. Run every face-detectable candidate through the production SCRFD + ArcFace path.
+5. Separate conditioning-only images from identity-gate images.
+6. Calibrate thresholds with `spicecalibrate`.
+7. Human-review the board and promote it to `data/references/<persona_id>/`.
+8. Record the promoted pack/version in the evidence ledger.
+
+A reference pack is not considered locked merely because all images look similar to a human reviewer; the numerical gate must also be calibrated against same-person and impostor distributions.
+
+## Calibration
+
+Run:
+
+```bash
+go run ./cmd/spicecalibrate -root data/references -out calibration.json
+```
+
+See [identity-calibration.md](identity-calibration.md).
+
+Do not use the old hard-coded `0.84` identity threshold as a universal default. Thresholds are model-, crop-, and reference-pack-specific.
+
+## Legacy builder
+
+The historical Python `spicecore.reference_cli` / Local Dream reference builder may still be useful for comparison or migration. It is not the canonical production path. New documentation and acceptance criteria should target the native `spicemedia` + QNN + SCRFD + ArcFace pipeline described in [architecture.md](architecture.md).
