@@ -649,22 +649,28 @@ type generatedFrame struct {
 }
 
 func encodeFramePNG(frame generatedFrame) ([]byte,error) {
+	// Always canonicalize from decoded pixels when available. Local Dream can
+	// return raw RGB24 in its base64 payload; preserving transport bytes risks
+	// writing non-PNG data under a .png extension. The decoded image is the
+	// source of truth.
+	if frame.Image != nil {
+		var buf bytes.Buffer
+		if err:=png.Encode(&buf,frame.Image);err!=nil{return nil,err}
+		out:=buf.Bytes()
+		if _,format,err:=image.DecodeConfig(bytes.NewReader(out)); err!=nil || format!="png" {
+			if err!=nil { return nil,fmt.Errorf("verify encoded PNG: %w",err) }
+			return nil,fmt.Errorf("verify encoded PNG: unexpected format %q",format)
+		}
+		return out,nil
+	}
+
 	pngMagic:=[]byte{0x89,'P','N','G',0x0d,0x0a,0x1a,0x0a}
 	if len(frame.Encoded)>=len(pngMagic) && bytes.Equal(frame.Encoded[:len(pngMagic)],pngMagic) {
 		if _,format,err:=image.DecodeConfig(bytes.NewReader(frame.Encoded)); err==nil && format=="png" {
 			return frame.Encoded,nil
 		}
 	}
-	if frame.Image==nil {
-		return nil,fmt.Errorf("cannot encode PNG: generated frame has no image")
-	}
-	var buf bytes.Buffer
-	if err:=png.Encode(&buf,frame.Image);err!=nil{return nil,err}
-	out:=buf.Bytes()
-	if len(out)<len(pngMagic) || !bytes.Equal(out[:len(pngMagic)],pngMagic) {
-		return nil,fmt.Errorf("PNG encoder returned invalid signature")
-	}
-	return out,nil
+	return nil,fmt.Errorf("cannot encode PNG: generated frame has no decoded image")
 }
 
 func documentsMirrorRoot() string {
