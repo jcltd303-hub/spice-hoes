@@ -1,6 +1,6 @@
 # Spice Hoes — Project Proposal
 
-**Status:** design proposal · **Date:** 2026-09-25
+**Status:** living project charter · **Updated:** 2026-10-02
 
 ## Aim
 
@@ -12,7 +12,7 @@ The five starting characters are hypotheses. Their biographies are invented crea
 
 1. **Observe:** Collect permitted public signals and first-party results. Keep the raw source, collection date, provenance, and usage rights.
 2. **Propose:** Generate candidate persona changes, content themes, formats, channels, schedules, and offers.
-3. **Produce:** Generate assets and copy with versioned prompts, seeds, models, and reference material. Use the S24 Ultra only if a measured quality and throughput trial supports it; route other jobs to metered compute.
+3. **Produce:** Generate assets and copy with versioned prompts, seeds, models, and reference material. The canonical image/identity lane is the S24 Ultra native Go/QNN runtime; Azure-backed compute remains available for durable control-plane work and explicitly adopted model services.
 4. **Review:** Email a preview and approval link. Revisions return to production; approved assets enter a publishing queue.
 5. **Publish and engage:** Use each platform's permitted publishing and messaging methods. Keep AI identity clear. Initially review replies and custom requests with a human.
 6. **Measure:** Join exposure, engagement, paid conversions, repeat purchases, refunds, costs, and approvals to the originating experiment.
@@ -69,7 +69,7 @@ Each new persona gets a versioned YAML dossier for type, appearance, voice, hobb
 
 ## Infrastructure and budget
 
-**Free tiers first, Azure credits for the gaps.** Keep the orchestration interfaces portable so a free quota ending or a provider changing terms requires an adapter swap, not a rewrite. Use GitHub for source control and Actions for tests, packaging, and scheduled low-volume jobs. Public-repository Actions have free standard runner usage; private repositories have account-specific quotas. Keep identity references, private prompts, customer data, tokens, and generated adult assets out of the repository and build logs. Codespaces' personal monthly allowance is for development sessions, not an always-on production worker.
+**Local media first, Azure for durable cloud capacity.** The S24 Ultra is the canonical image/identity worker; Azure is the preferred paid boundary for durable/private APIs, queues, storage, scheduled jobs, and adopted model endpoints. Keep orchestration interfaces portable so credits ending or provider terms changing requires an adapter swap, not a rewrite. Use GitHub for source control and Actions for tests, packaging, and scheduled low-volume jobs. Public-repository Actions have free standard runner usage; private repositories have account-specific quotas. Keep identity references, private prompts, customer data, tokens, and generated adult assets out of the repository and build logs. Codespaces' personal monthly allowance is for development sessions, not an always-on production worker.
 
 Host the operator dashboard and small approval API on Cloudflare Pages and Workers Free when its current terms fit the content and workload. Put authenticated approval, signed links, throttling, and idempotent writes in the API. Use Azure Functions and Storage for jobs, private assets, and event records that exceed practical free-host limits, funded by eligible startup credits. GitHub Actions can trigger bounded scheduled batches, but cannot serve as a durable queue, database, private asset store, or interactive API. Keep generation behind a replaceable queue/provider interface.
 
@@ -79,7 +79,7 @@ Avoid an always-on GPU or large managed database while the budget is $200. Set p
 
 **Initial $200 allocation ceiling:** up to $25 for control plane and storage after free quotas; $90 image generation or phone-versus-cloud trials; $20 text/model calls; $25 one bounded video test; $40 reserve. Unused hosting allocation returns to the reserve. These are planning caps, not provider price quotes. Startup credits, if awarded, extend the experiment but do not justify fixed costs that become unaffordable when credits expire.
 
-The S24 Ultra earns a production role only after a varied, identity-consistency test measures usable outputs, turnaround, thermal behavior, and real cost. It can always serve as an operator review device. There is no assumption that on-device generation meets a photorealistic, identity-locked production spec.
+The S24 Ultra now has the production media role. Its acceptance criterion is not assumed quality: every asset still passes the native SCRFD -> five-point alignment -> ArcFace comparison -> quality gate, and device throughput/thermal behavior remains measurable. If the device lane fails those gates, the run fails or is explicitly routed through a separately approved adapter rather than silently changing architecture.
 
 ## Delivery sequence
 
@@ -90,3 +90,8 @@ The S24 Ultra earns a production role only after a varied, identity-consistency 
 5. Add more autonomous decisions and deeper RL only when offline evaluation and controlled live tests justify them.
 
 **First acceptance milestone:** The system completes a round for all five personas and recommends the next batch from recorded outcomes, while the operator can inspect the action ledger and approve every release. No revenue or model-quality result is presumed before the experiment runs.
+
+
+## Canonical implementation map
+
+The current technical architecture is maintained in [docs/architecture.md](docs/architecture.md). It separates guide-derived research hypotheses from implemented production dependencies and defines the canonical native S24 identity pipeline, Azure responsibility boundary, MoA/RAG flow, reviewed engagement, attribution loop, and gated DeepRL policy.
