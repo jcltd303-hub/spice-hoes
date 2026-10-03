@@ -53,6 +53,23 @@ class ComfyUIProviderTests(unittest.TestCase):
             with mock.patch.dict(os.environ, env, clear=False):
                 self.assertIsInstance(video_provider_from_env(), ComfyUIVideoProvider)
 
+    def test_pinned_wan_q4_workflow_is_api_ready(self):
+        path = Path("config/comfyui/wan21_i2v_q4_api.json")
+        workflow = __import__("json").loads(path.read_text(encoding="utf-8"))
+        out = self._provider(str(path))._inject(
+            workflow, prompt="walk toward camera", image="input.png", seed=77,
+            width=576, height=1024, frames=81, fps=16,
+        )
+        self.assertEqual(out["37"]["class_type"], "UnetLoaderGGUF")
+        self.assertEqual(out["37"]["inputs"]["unet_name"], "wan2.1-i2v-14b-480p-Q4_K_M.gguf")
+        self.assertEqual(out["6"]["inputs"]["text"], "walk toward camera")
+        self.assertEqual(out["52"]["inputs"]["image"], "input.png")
+        self.assertEqual(out["50"]["inputs"]["width"], 576)
+        self.assertEqual(out["50"]["inputs"]["height"], 1024)
+        self.assertEqual(out["50"]["inputs"]["length"], 81)
+        self.assertEqual(out["55"]["inputs"]["fps"], 16)
+        self.assertEqual(out["3"]["inputs"]["seed"], 77)
+
 
 if __name__ == "__main__":
     unittest.main()
