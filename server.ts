@@ -305,10 +305,14 @@ app.post('/api/media-jobs/create', async (req, res) => {
   }
 });
 
-app.post('/api/media-jobs/:id/render', async (_req, res) => {
-  res.status(501).json({
-    error: 'No production media renderer is configured. The persisted job remains planned.',
-  });
+app.post('/api/media-jobs/:id/render', async (req, res) => {
+  try {
+    res.json(await runCore('media_render', {
+      media_job_id: String(req.params.id),
+    }));
+  } catch (err) {
+    sendCoreError(res, err);
+  }
 });
 
 app.post('/api/media-jobs/:id/review', async (req, res) => {
