@@ -83,12 +83,25 @@ def main():
     ap.add_argument("--timeout",type=int,default=1800)
     ap.add_argument("--require-embedding",action="store_true")
     ap.add_argument("--output-root",default="data/sweeps")
+    ap.add_argument("--quick",action="store_true",help="Fast coarse-to-fine sweep for phone runs")
     args=ap.parse_args()
 
     guidance=parse_nums(args.guidance,float)
     steps=parse_nums(args.steps,int)
     weights=parse_nums(args.embedding_weight,float)
     swapks=parse_nums(args.swap_top_k,int)
+
+    if args.quick:
+        # Phone-friendly tournament: cheap coarse pass, then refine only two
+        # finalists. This avoids the combinatorial stage-2 explosion.
+        args.stage1_best_of_n = 1
+        args.stage1_keep = min(2, len(guidance) * len(weights))
+        args.stage2_best_of_n = 2
+        args.stage2_keep = 2
+        swapks = [1]
+        # Keep only a compact center/edge subset of step values.
+        if len(steps) > 3:
+            steps = [steps[0], steps[len(steps)//2], steps[-1]]
 
     run_id=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     root=pathlib.Path(args.output_root)/f"{args.persona}-{run_id}"
@@ -108,6 +121,10 @@ def main():
 
     rows=[]
     run_no=0
+    stage1_runs=len(guidance)*len(weights)
+    stage2_runs=min(args.stage1_keep,stage1_runs)*len(steps)*len(swapks)
+    est_generations=stage1_runs*args.stage1_best_of_n + stage2_runs*args.stage2_best_of_n
+    print(f"[plan] stage1_runs={stage1_runs} stage2_runs<={stage2_runs} estimated_generations<={est_generations} quick={args.quick}",file=sys.stderr,flush=True)
 
     # Stage 1: broad sweep guidance x embedding weight at fixed 20 steps.
     stage1=[]
@@ -198,6 +215,8 @@ def main():
         "successful_runs":sum(1 for r in rows if r.get("ok")),
         "identity_scored_runs":len(ranked),
         "stage1_keep":args.stage1_keep,
+        "quick":args.quick,
+        "estimated_generations":est_generations,
         "winner":ranked[0] if ranked else None,
         "top":ranked[:args.stage2_keep],
         "all":rows,
