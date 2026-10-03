@@ -1292,7 +1292,11 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if len(bankVec) > 0 {
 		refEmbeddings = append(refEmbeddings, referenceEmbedding{index:-1, vec:bankVec})
 	}
-	if len(refEmbeddings) == 0 {
+	// Bootstrap mode is valid when a persona has no references yet. In that
+	// case generation proceeds without identity scoring so the caller can
+	// create the initial reference pack. Requiring a persona bank remains
+	// strict when explicitly requested.
+	if len(refEmbeddings) == 0 && req.RequirePersonaBank {
 		return Result{}, fmt.Errorf("no usable identity references or persona bank for %s", p.ID)
 	}
 
