@@ -11,7 +11,7 @@ if [[ -f "$ROOT/.env.spicemedia" ]]; then
   set +a
 fi
 
-ANCHOR_ROOT="$ROOT/assets/persona-anchors"
+ANCHOR_ROOT="${SPICE_ANCHOR_ROOT:-$ROOT/assets/persona-anchors}"
 REF_ROOT="$ROOT/data/references"
 CAL_OUT="${1:-calibration-final-anchors.json}"
 
@@ -32,15 +32,32 @@ ANCHOR_PERSONAS=(
 
 mkdir -p "$ROOT/bin" "$REF_ROOT"
 
-echo "Installing canonical anchors..."
+echo "Installing canonical anchors from: $ANCHOR_ROOT"
 for persona in "${ANCHOR_PERSONAS[@]}"; do
-  src="$ANCHOR_ROOT/$persona/anchor-01.jpg"
+  src=""
+  for candidate in     "$ANCHOR_ROOT/$persona/anchor-01.jpg"     "$ANCHOR_ROOT/$persona/anchor-01.jpeg"     "$ANCHOR_ROOT/$persona/anchor-01.png"     "$ANCHOR_ROOT/$persona.jpg"     "$ANCHOR_ROOT/$persona.jpeg"     "$ANCHOR_ROOT/$persona.png"; do
+    if [[ -s "$candidate" ]]; then
+      src="$candidate"
+      break
+    fi
+  done
+
+  [[ -n "$src" ]] || {
+    echo "Missing anchor for $persona under $ANCHOR_ROOT" >&2
+    exit 2
+  }
+
+  ext="${src##*.}"
+  ext="${ext,,}"
   dst_dir="$REF_ROOT/$persona"
-  dst="$dst_dir/anchor-01.jpg"
-  [[ -s "$src" ]] || { echo "Missing repo anchor: $src" >&2; exit 2; }
   mkdir -p "$dst_dir"
+
+  rm -f "$dst_dir/anchor-01.jpg" "$dst_dir/anchor-01.jpeg" "$dst_dir/anchor-01.png"
+  dst="$dst_dir/anchor-01.$ext"
   cp -f "$src" "$dst"
+
   echo "  $persona <- $src"
+  echo "    sha256=$(sha256sum "$dst" | awk '{print $1}')"
 done
 
 echo "Building spicemedia..."
