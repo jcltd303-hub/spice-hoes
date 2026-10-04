@@ -19,6 +19,17 @@ TRAIN_ROOT="${TRAIN_ROOT:-data/lora-training/$PERSONA}"
 TRAIN_DIR="${TRAIN_DIR:-$TRAIN_ROOT/images}"
 OUT_DIR="${OUT_DIR:-$TRAIN_ROOT/output}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-artifacts/loras}"
+case "$PERSONA" in
+  ruby_wren)
+    INSTANCE_PROMPT="${INSTANCE_PROMPT:-photo of $TOKEN woman, fictional adult woman, age 30, vivid copper-auburn short textured bob with deep side part, fair neutral skin with light freckles, green-hazel upturned almond eyes}"
+    ;;
+  tess_wilder)
+    INSTANCE_PROMPT="${INSTANCE_PROMPT:-photo of $TOKEN woman, fictional adult woman, age 27, dark brown hair tied back cleanly, neutral light-medium freckled skin, gray-green slightly hooded almond eyes, athletic adult facial structure}"
+    ;;
+  *)
+    INSTANCE_PROMPT="${INSTANCE_PROMPT:-photo of $TOKEN woman, fictional adult woman}"
+    ;;
+esac
 DIFFUSERS_REF="${DIFFUSERS_REF:-v0.35.1}"
 STEPS="${STEPS:-600}"
 LR="${LR:-1e-4}"
@@ -108,7 +119,7 @@ accelerate launch "$TRAINER" \
   --pretrained_model_name_or_path="$BASE_MODEL" \
   --instance_data_dir="$TRAIN_DIR" \
   --output_dir="$OUT_DIR" \
-  --instance_prompt="photo of $TOKEN woman, fictional adult woman" \
+  --instance_prompt="$INSTANCE_PROMPT" \
   --resolution="$RESOLUTION" \
   --train_batch_size=1 \
   --gradient_accumulation_steps="$ACCUM_STEPS" \
