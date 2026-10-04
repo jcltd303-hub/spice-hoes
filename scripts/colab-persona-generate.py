@@ -1,6 +1,25 @@
 #!/usr/bin/env python3
 import argparse
+import importlib.metadata
+import subprocess
+import sys
 from pathlib import Path
+
+# Colab images can ship an old torchao that PEFT detects and rejects.
+# Remove it before importing diffusers/peft; torchao is not required for this LoRA path.
+try:
+    torchao_version = importlib.metadata.version("torchao")
+except importlib.metadata.PackageNotFoundError:
+    torchao_version = None
+
+if torchao_version:
+    from packaging.version import Version
+    if Version(torchao_version) < Version("0.16.0"):
+        print(f"Removing incompatible torchao {torchao_version}...")
+        subprocess.run(
+            [sys.executable, "-m", "pip", "uninstall", "-y", "torchao"],
+            check=True,
+        )
 
 import torch
 from diffusers import StableDiffusionXLPipeline
@@ -54,7 +73,7 @@ def main():
 
     pipe = StableDiffusionXLPipeline.from_pretrained(
         args.base_model,
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
         variant="fp16",
         use_safetensors=True,
     )
