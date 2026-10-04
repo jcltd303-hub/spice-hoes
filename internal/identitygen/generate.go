@@ -98,6 +98,7 @@ type Request struct {
 	ReferenceRoot    string  `json:"reference_root,omitempty"`
 	IdentityThreshold float64 `json:"identity_threshold,omitempty"`
 	IdentityMeanThreshold float64 `json:"identity_mean_threshold,omitempty"`
+	IdentityMarginThreshold float64 `json:"identity_margin_threshold,omitempty"`
 	QualityThreshold float64  `json:"quality_threshold,omitempty"`
 	Generator         string   `json:"generator,omitempty"`
 	IdentityEmbeddingToken string `json:"identity_embedding_token,omitempty"`
@@ -117,6 +118,13 @@ type IdentityResult struct {
 	Passed         bool    `json:"passed"`
 	Score          float64 `json:"score,omitempty"`
 	MeanScore      float64 `json:"mean_score,omitempty"`
+	PrototypeScore float64 `json:"prototype_score,omitempty"`
+	NearestOtherScore float64 `json:"nearest_other_score,omitempty"`
+	IdentityMargin float64 `json:"identity_margin,omitempty"`
+	MarginThreshold float64 `json:"margin_threshold,omitempty"`
+	NearestOtherPersona string `json:"nearest_other_persona,omitempty"`
+	MarginScored bool `json:"margin_scored,omitempty"`
+	DecisionBasis string `json:"decision_basis,omitempty"`
 	Threshold      float64 `json:"threshold"`
 	MeanThreshold  float64 `json:"mean_threshold,omitempty"`
 	ReferenceCount int     `json:"reference_count"`
