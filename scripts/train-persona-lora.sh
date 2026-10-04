@@ -113,7 +113,6 @@ accelerate launch "$TRAINER" \
   --train_batch_size=1 \
   --gradient_accumulation_steps="$ACCUM_STEPS" \
   --gradient_checkpointing \
-  --cache_latents \
   --use_8bit_adam \
   --learning_rate="$LR" \
   --lr_scheduler=constant \
