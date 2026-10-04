@@ -327,15 +327,24 @@ func loadReferences(root, personaID string) ([][]byte, []string, error) {
 		name := strings.ToLower(entry.Name())
 		ext := strings.ToLower(filepath.Ext(name))
 		if ext != ".png" && ext != ".jpg" && ext != ".jpeg" { continue }
-		if strings.HasPrefix(name, "master_") || strings.HasPrefix(name, "contact_") || strings.Contains(name, "_rear") {
+
+		// Canon is authoritative for identity. Old anchors, bootstrap generations,
+		// support images, contact sheets, and prior candidates must never enter
+		// the production identity bank or generation-time identity scoring.
+		base := strings.TrimSuffix(name, ext)
+		isCanon := base == "canon" || strings.HasPrefix(base, "canon-") || strings.HasPrefix(base, "canon_")
+		if !isCanon {
 			continue
 		}
+
 		path := filepath.Join(dir, entry.Name())
 		b, err := os.ReadFile(path)
 		if err != nil { continue }
 		candidates = append(candidates, candidate{path:path, data:b})
 	}
-	if len(candidates) == 0 { return nil, nil, nil }
+	if len(candidates) == 0 {
+		return nil, nil, fmt.Errorf("no Canon identity references found for %s; expected canon.png or canon-* / canon_* image files", personaID)
+	}
 
 	const maxRefs = 8
 	selected := candidates
