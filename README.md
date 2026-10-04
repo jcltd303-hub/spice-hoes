@@ -157,6 +157,30 @@ python3 -m spicecore.cli engagement-outbox
 
 The draft policy keeps the fictional persona transparent: it must not claim to be a real human, pressure users to spend, imply spending proves affection, or request card/banking details. The approved outbox is intentionally separate from any platform send adapter.
 
+## Nextdoor campaign adapter
+
+`spicecore.distribution.NextdoorPublisher` is a manual-handoff adapter: Nextdoor exposes no public posting API for neighborhood accounts, so the adapter
+never auto-publishes. `publish()`/`schedule()` validate the copy against the engagement policy and fail closed with a staged handoff (copy + posting
+checklist); the operator posts by hand from the verified account and records the URL with `publish`, then logs outcomes with `outcome`.
+
+Generate a seeded, deterministic campaign (story / offer / event variants) and propose each variant as a review candidate:
+
+```bash
+
+python3 -m spicecore.cli campaign \
+ --persona zara_voss \
+ --goal "raise funds for the community fridge" \
+ --cause "the Maple Street community fridge" \
+ --neighborhood Maplewood \
+ --offer https://example.org/fridge-fund \
+ --seed 42
+
+```
+
+Every variant carries the persona disclosure and is policy-checked before it is proposed; any violation aborts the run. Generated copy never claims to be a
+real neighbor, never makes guaranteed-earnings claims, never pressures readers, and never requests payment details. Candidates remain `proposed` until a
+human approves them in the review desk.
+
 ## Offer economics and commerce attribution
 
 Offers are first-class records with explicit type, expected payout, variable commerce cost, active state, and USD-denominated unit economics. Candidates can be linked to an offer with a unique tracking token.
