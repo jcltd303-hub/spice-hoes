@@ -608,6 +608,10 @@ func betterIdentityQuality(a IdentityResult, aq imagemetrics.Metrics, b Identity
 	bAccepted := b.Passed && bQualityPass
 	if aAccepted != bAccepted { return aAccepted }
 	if a.Passed != b.Passed { return a.Passed }
+	if a.MarginScored && b.MarginScored {
+		if a.IdentityMargin != b.IdentityMargin { return a.IdentityMargin > b.IdentityMargin }
+		if a.PrototypeScore != b.PrototypeScore { return a.PrototypeScore > b.PrototypeScore }
+	}
 	if a.Score != b.Score { return a.Score > b.Score }
 	if a.MeanScore != b.MeanScore { return a.MeanScore > b.MeanScore }
 	if aQualityPass != bQualityPass { return aQualityPass }
@@ -860,15 +864,25 @@ func boolOption(v *bool, fallback bool) bool {
 
 func candidateSelectionScore(r Result) float64 {
 	if !r.Identity.Scored { return -1 }
+	qualityNorm := r.Quality.LocalScore
+	if r.QualityThreshold > 0 { qualityNorm /= r.QualityThreshold }
+
+	if r.Identity.MarginScored {
+		ownNorm := r.Identity.PrototypeScore
+		if r.Identity.MeanThreshold > 0 { ownNorm /= r.Identity.MeanThreshold }
+		marginNorm := r.Identity.IdentityMargin
+		if r.Identity.MarginThreshold > 0 { marginNorm /= r.Identity.MarginThreshold }
+		// Discriminative identity is the hard objective: optimize the weaker
+		// of own-prototype similarity and foreign separation first.
+		floor := math.Min(ownNorm, marginNorm)
+		ceil := math.Max(ownNorm, marginNorm)
+		return 0.65*floor + 0.20*ceil + 0.15*qualityNorm
+	}
+
 	maxNorm := r.Identity.Score
 	if r.Identity.Threshold > 0 { maxNorm /= r.Identity.Threshold }
 	meanNorm := r.Identity.MeanScore
 	if r.Identity.MeanThreshold > 0 { meanNorm /= r.Identity.MeanThreshold }
-	qualityNorm := r.Quality.LocalScore
-	if r.QualityThreshold > 0 { qualityNorm /= r.QualityThreshold }
-
-	// Optimize the weakest identity gate first. Once both identity gates are
-	// healthy, quality and excess identity provide the tie-break.
 	identityFloor := math.Min(maxNorm, meanNorm)
 	identityCeil := math.Max(maxNorm, meanNorm)
 	return 0.60*identityFloor + 0.20*identityCeil + 0.20*qualityNorm
@@ -880,16 +894,27 @@ func betterResult(a, b Result) bool {
 	if aAccepted != bAccepted { return aAccepted }
 	if a.Identity.Passed != b.Identity.Passed { return a.Identity.Passed }
 
-	// For rejected identity candidates, prefer the one closest to satisfying
-	// BOTH gates instead of over-rewarding resemblance to a single reference.
-	aMaxNorm, bMaxNorm := a.Identity.Score, b.Identity.Score
-	if a.Identity.Threshold > 0 { aMaxNorm /= a.Identity.Threshold }
-	if b.Identity.Threshold > 0 { bMaxNorm /= b.Identity.Threshold }
-	aMeanNorm, bMeanNorm := a.Identity.MeanScore, b.Identity.MeanScore
-	if a.Identity.MeanThreshold > 0 { aMeanNorm /= a.Identity.MeanThreshold }
-	if b.Identity.MeanThreshold > 0 { bMeanNorm /= b.Identity.MeanThreshold }
-	aFloor, bFloor := math.Min(aMaxNorm, aMeanNorm), math.Min(bMaxNorm, bMeanNorm)
-	if aFloor != bFloor { return aFloor > bFloor }
+	if a.Identity.MarginScored && b.Identity.MarginScored {
+		aOwn, bOwn := a.Identity.PrototypeScore, b.Identity.PrototypeScore
+		if a.Identity.MeanThreshold > 0 { aOwn /= a.Identity.MeanThreshold }
+		if b.Identity.MeanThreshold > 0 { bOwn /= b.Identity.MeanThreshold }
+		aMargin, bMargin := a.Identity.IdentityMargin, b.Identity.IdentityMargin
+		if a.Identity.MarginThreshold > 0 { aMargin /= a.Identity.MarginThreshold }
+		if b.Identity.MarginThreshold > 0 { bMargin /= b.Identity.MarginThreshold }
+		aFloor, bFloor := math.Min(aOwn, aMargin), math.Min(bOwn, bMargin)
+		if aFloor != bFloor { return aFloor > bFloor }
+		if a.Identity.IdentityMargin != b.Identity.IdentityMargin { return a.Identity.IdentityMargin > b.Identity.IdentityMargin }
+		if a.Identity.PrototypeScore != b.Identity.PrototypeScore { return a.Identity.PrototypeScore > b.Identity.PrototypeScore }
+	} else {
+		aMaxNorm, bMaxNorm := a.Identity.Score, b.Identity.Score
+		if a.Identity.Threshold > 0 { aMaxNorm /= a.Identity.Threshold }
+		if b.Identity.Threshold > 0 { bMaxNorm /= b.Identity.Threshold }
+		aMeanNorm, bMeanNorm := a.Identity.MeanScore, b.Identity.MeanScore
+		if a.Identity.MeanThreshold > 0 { aMeanNorm /= a.Identity.MeanThreshold }
+		if b.Identity.MeanThreshold > 0 { bMeanNorm /= b.Identity.MeanThreshold }
+		aFloor, bFloor := math.Min(aMaxNorm, aMeanNorm), math.Min(bMaxNorm, bMeanNorm)
+		if aFloor != bFloor { return aFloor > bFloor }
+	}
 
 	if a.QualityPassed != b.QualityPassed { return a.QualityPassed }
 	if a.Identity.MeanScore != b.Identity.MeanScore { return a.Identity.MeanScore > b.Identity.MeanScore }
