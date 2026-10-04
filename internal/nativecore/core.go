@@ -47,6 +47,18 @@ func FromEnv() *Manager {
 
 func (m *Manager) baseURL() string { return fmt.Sprintf("http://%s:%d", m.Host, m.Port) }
 
+func startupTimeout() time.Duration {
+    // SDXL/QNN initialization on mobile can take well over 45 seconds,
+    // especially on a cold start. Keep this configurable for slower devices.
+    seconds := 180
+    if raw := strings.TrimSpace(os.Getenv("SPICE_QNN_STARTUP_TIMEOUT_SECONDS")); raw != "" {
+        if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+            seconds = n
+        }
+    }
+    return time.Duration(seconds) * time.Second
+}
+
 func (m *Manager) Health(ctx context.Context) bool {
     req, _ := http.NewRequestWithContext(ctx, http.MethodGet, m.baseURL()+"/health", nil)
     resp, err := http.DefaultClient.Do(req); if err != nil { return false }
@@ -110,7 +122,7 @@ func (m *Manager) Ensure(ctx context.Context) error {
     cmd.Env = append(os.Environ(),"LD_LIBRARY_PATH="+ld,"DSP_LIBRARY_PATH="+dsp,"ADSP_LIBRARY_PATH="+dsp)
     if err := cmd.Start(); err != nil { logFile.Close(); return fmt.Errorf("start QNN core: %w", err) }
     _ = cmd.Process.Release(); _ = logFile.Close()
-    deadline := time.Now().Add(45*time.Second)
+    deadline := time.Now().Add(startupTimeout())
     for time.Now().Before(deadline) {
         select { case <-ctx.Done(): return ctx.Err(); default: }
         probe, cancel := context.WithTimeout(ctx, 800*time.Millisecond); ok := m.Health(probe); cancel()
