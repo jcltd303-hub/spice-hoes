@@ -23,6 +23,7 @@ from .policy import recommend
 from .providers import OpenAICompatibleChatProvider, OpenAICompatibleEmbeddingProvider, ProviderError, media_provider
 from .web import make_handler
 from .workflow import build_briefs
+from .distribution.nextdoor import generate_campaign
 from .ui import SpiceUI
 from .media_benchmark import benchmark_media
 
@@ -84,6 +85,16 @@ def main(argv=None):
     briefs.add_argument("--theme", required=True)
     briefs.add_argument("--channel", required=True)
     briefs.add_argument("--seed", type=int)
+
+    camp = sub.add_parser("campaign")
+    camp.add_argument("--channel", default="nextdoor", choices=("nextdoor",))
+    camp.add_argument("--persona", required=True)
+    camp.add_argument("--goal", required=True, help="what the campaign should achieve")
+    camp.add_argument("--cause", required=True, help="the cause, offer, or event being promoted")
+    camp.add_argument("--neighborhood", required=True)
+    camp.add_argument("--offer", default="none", help="offer name or URL; 'none' for no link")
+    camp.add_argument("--seed", type=int)
+    camp.add_argument("--variants", type=int, default=3, choices=(1, 2, 3))
 
     serve = sub.add_parser("serve")
     serve.add_argument("--port", type=int, default=8765)
@@ -290,6 +301,36 @@ def main(argv=None):
             output = store.events()
         elif args.command == "briefs":
             output = build_briefs(personas, args.theme, args.channel, args.seed)
+        elif args.command == "campaign":
+            persona = next((p for p in personas if p["id"] == args.persona), None)
+            if persona is None:
+                parser.error("Unknown persona")
+            variants = generate_campaign(
+                persona=persona,
+                goal=args.goal,
+                cause=args.cause,
+                neighborhood=args.neighborhood,
+                offer=args.offer,
+                seed=args.seed,
+                count=args.variants,
+            )
+            proposed = []
+            for v in variants:
+                if v.violations:
+                    raise ValueError(f"generated copy failed policy check: {v.violations}")
+                cid = store.propose(
+                    persona,
+                    theme=f"{args.goal} [{v.kind}]",
+                    format="post",
+                    channel="nextdoor",
+                    offer=args.offer,
+                    prompt=v.body,
+                    model="campaign-generator",
+                    seed=str(args.seed) if args.seed is not None else None,
+                    cost_cents=0,
+                )
+                proposed.append({"candidate_id": cid, **v.to_dict()})
+            output = {"channel": "nextdoor", "goal": args.goal, "variants": proposed}
         elif args.command == "serve":
             token = secrets.token_urlsafe(24)
             server = HTTPServer(("127.0.0.1", args.port), make_handler(store, personas, token))
