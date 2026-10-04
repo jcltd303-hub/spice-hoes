@@ -72,6 +72,14 @@ go run ./cmd/spicediscrim \
   -out "$ROOT/discriminative-banks.json"
 
 echo
+echo "Calibrating discriminative prototype margins..."
+go run ./cmd/spicediscrimcheck \
+  -root "$REF_ROOT" \
+  -bank-dir "$ROOT/personas" \
+  -margin "${SPICE_IDENTITY_MARGIN_THRESHOLD:-0.05}" \
+  -out "$ROOT/discriminative-calibration.json"
+
+echo
 echo "Recalibrating raw reference diagnostics..."
 go run ./cmd/spicecalibrate \
   -root "$REF_ROOT" \
