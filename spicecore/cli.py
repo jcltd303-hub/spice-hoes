@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import secrets
 from http.server import HTTPServer
 from pathlib import Path
@@ -24,6 +25,15 @@ from .providers import OpenAICompatibleChatProvider, OpenAICompatibleEmbeddingPr
 from .web import make_handler
 from .workflow import build_briefs
 from .distribution.nextdoor import generate_campaign
+from .campaign_moa import engineer_campaign
+from .gold_digger import dig_report
+from .autoresponder import AutoResponder
+from .knowledge_audit import audit_knowledge
+from .identity_master import (
+    PORTRAIT_VIEWS, CENTER_VIEW, ROTATION_VIEWS,
+    generate_master_views,
+    composite_portrait_board, promote_master,
+)
 from .ui import SpiceUI
 from .media_benchmark import benchmark_media
 
@@ -95,6 +105,49 @@ def main(argv=None):
     camp.add_argument("--offer", default="none", help="offer name or URL; 'none' for no link")
     camp.add_argument("--seed", type=int)
     camp.add_argument("--variants", type=int, default=3, choices=(1, 2, 3))
+
+    cmoa = sub.add_parser("campaign-moa")
+    cmoa.add_argument("--persona", required=True)
+    cmoa.add_argument("--goal", required=True, help="what the campaign should achieve")
+    cmoa.add_argument("--cause", required=True, help="the cause, offer, or event being promoted")
+    cmoa.add_argument("--neighborhood", required=True)
+    cmoa.add_argument("--offer", default="none", help="offer name or URL; 'none' for no link")
+    cmoa.add_argument("--seed", type=int)
+    cmoa.add_argument("--variants", type=int, default=3, choices=(1, 2, 3))
+
+    gd = sub.add_parser("gold-digger")
+    gd.add_argument("--goal", default=None, help="campaign goal prefix to filter candidates")
+    gd.add_argument("--channel", default="nextdoor", choices=("nextdoor",))
+    gd.add_argument("--seed", type=int)
+    gd.add_argument("--min-impressions", type=int, default=100)
+
+    ar = sub.add_parser("auto-respond")
+    ar.add_argument("--persona", required=True)
+    ar.add_argument("--channel", default=None)
+    ar.add_argument("--conversation-id", default=None)
+    ar.add_argument("--message-id", default=None)
+    ar.add_argument("--body", default=None)
+    ar.add_argument("--poll", action="store_true",
+                    help="process all inbound messages with no draft yet")
+    ar.add_argument("--limit", type=int, default=50)
+    ar.add_argument("--max-per-day", type=int, default=10)
+
+    ka = sub.add_parser("knowledge-audit")
+    ka.add_argument("--stale-days", type=int, default=180)
+    ka.add_argument("--probes", default="",
+                    help="semicolon-separated probe queries; default: most common tags")
+    ka.add_argument("--max-probes", type=int, default=5)
+
+    im = sub.add_parser("identity-master")
+    im.add_argument("--persona", required=True)
+    im.add_argument("--seed", type=int)
+    im.add_argument("--size", type=int, default=1024)
+    im.add_argument("--out", default=None,
+                    help="output dir for views+board; default data/identity-masters/<persona_id>")
+    im.add_argument("--reference-root", default="data/references")
+    im.add_argument("--no-promote", action="store_true",
+                    help="generate and composite only; skip identity gating and promotion")
+    im.add_argument("--identity-threshold", type=float, default=0.82)
 
     serve = sub.add_parser("serve")
     serve.add_argument("--port", type=int, default=8765)
@@ -331,6 +384,88 @@ def main(argv=None):
                 )
                 proposed.append({"candidate_id": cid, **v.to_dict()})
             output = {"channel": "nextdoor", "goal": args.goal, "variants": proposed}
+        elif args.command == "campaign-moa":
+            persona = next((p for p in personas if p["id"] == args.persona), None)
+            if persona is None:
+                parser.error("Unknown persona")
+            if not os.getenv("MOA_API_KEY"):
+                parser.error("MoA provider not configured: set MOA_API_KEY (and MOA_BASE_URL); see README")
+            output = engineer_campaign(
+                store,
+                OpenAICompatibleChatProvider(),
+                persona,
+                args.goal,
+                args.cause,
+                args.neighborhood,
+                offer=args.offer,
+                seed=args.seed,
+                count=args.variants,
+                embedder=_optional_embedder(),
+            )
+        elif args.command == "gold-digger":
+            output = dig_report(
+                store,
+                goal=args.goal,
+                channel=args.channel,
+                seed=args.seed,
+                min_impressions=args.min_impressions,
+            )
+        elif args.command == "auto-respond":
+            persona = next((p for p in personas if p["id"] == args.persona), None)
+            if persona is None:
+                parser.error("Unknown persona")
+            if not os.getenv("MOA_API_KEY"):
+                parser.error("Chat provider not configured: set MOA_API_KEY (and MOA_BASE_URL); see README")
+            agent = EngagementAgent(
+                OpenAICompatibleChatProvider(),
+                store,
+                KnowledgeBase(store, embedder=_optional_embedder()),
+            )
+            responder = AutoResponder(agent, max_auto_per_day=args.max_per_day)
+            if args.poll:
+                output = {"processed": responder.poll(persona, channel=args.channel, limit=args.limit)}
+            else:
+                if not all((args.channel, args.conversation_id, args.message_id, args.body)):
+                    parser.error("--poll or --channel/--conversation-id/--message-id/--body is required")
+                output = responder.process_inbound(
+                    persona, args.channel, args.conversation_id, args.message_id, args.body
+                )
+        elif args.command == "knowledge-audit":
+            probes = [p.strip() for p in args.probes.split(";") if p.strip()] or None
+            output = audit_knowledge(
+                store,
+                probe_queries=probes,
+                stale_days=args.stale_days,
+                max_probes=args.max_probes,
+                embedder=_optional_embedder(),
+            )
+        elif args.command == "identity-master":
+            persona = next((p for p in personas if p["id"] == args.persona), None)
+            if persona is None:
+                parser.error("Unknown persona")
+            provider = media_provider()
+            views = generate_master_views(provider, persona, seed=args.seed, size=args.size)
+            board = composite_portrait_board(views)
+            out_dir = Path(args.out) if args.out else Path("data/identity-masters") / persona["id"]
+            out_dir.mkdir(parents=True, exist_ok=True)
+            for view_id, raw in views.items():
+                (out_dir / f"{view_id}.png").write_bytes(raw)
+            board_path = out_dir / "portrait_board.png"
+            board.save(board_path)
+            view_list = [v for v, _ in PORTRAIT_VIEWS] + [CENTER_VIEW[0]] + [v for v, _ in ROTATION_VIEWS]
+            output = {
+                "persona_id": persona["id"],
+                "views": view_list,
+                "out_dir": str(out_dir),
+                "board": str(board_path),
+                "model": provider.model_name,
+            }
+            if not args.no_promote:
+                output["promotion"] = promote_master(
+                    store, provider, persona, views, board,
+                    reference_root=args.reference_root,
+                    identity_threshold=args.identity_threshold,
+                )
         elif args.command == "serve":
             token = secrets.token_urlsafe(24)
             server = HTTPServer(("127.0.0.1", args.port), make_handler(store, personas, token))

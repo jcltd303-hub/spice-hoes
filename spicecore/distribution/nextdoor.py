@@ -18,7 +18,6 @@ from __future__ import annotations
 import random
 import re
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import PlatformMetrics, Publisher, PublishResult
@@ -348,7 +347,3 @@ class NextdoorPublisher(Publisher):
         raise RuntimeError(
             "Nextdoor exposes no metrics API; record impressions/clicks manually via the `outcome` command."
         )
-
-
-def staged_at_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
