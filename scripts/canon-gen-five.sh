@@ -117,8 +117,8 @@ validate_qnn_model() {
 
 if [[ -z "${SPICE_QNN_MODEL_DIR:-}" ||
       -z "${SPICE_QNN_TYPE:-}" ||
-      ! -d "${SPICE_QNN_MODEL_DIR:-}" ||
-      ! validate_qnn_model "$SPICE_QNN_MODEL_DIR" "$SPICE_QNN_TYPE" ]]; then
+      ! -d "${SPICE_QNN_MODEL_DIR:-}" ]] ||
+   ! validate_qnn_model "${SPICE_QNN_MODEL_DIR:-}" "${SPICE_QNN_TYPE:-}"; then
   detected="$(detect_qnn_model "$HOME/spice-models" || true)"
   if [[ -n "$detected" ]]; then
     export SPICE_QNN_MODEL_DIR="${detected%%|*}"
