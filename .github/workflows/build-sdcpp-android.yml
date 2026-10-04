@@ -39,8 +39,10 @@ jobs:
       - name: Install Vulkan shader compiler and SPIR-V headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y glslc spirv-tools libvulkan-dev
+          sudo apt-get install -y glslc spirv-tools
           command -v glslc
+          git clone --depth 1 https://github.com/KhronosGroup/Vulkan-Headers.git /tmp/Vulkan-Headers
+          test -f /tmp/Vulkan-Headers/include/vulkan/vulkan.hpp
           git clone --depth 1 https://github.com/KhronosGroup/SPIRV-Headers.git /tmp/SPIRV-Headers
           cmake -S /tmp/SPIRV-Headers -B /tmp/SPIRV-Headers/build \
             -DCMAKE_BUILD_TYPE=Release \
@@ -51,7 +53,7 @@ jobs:
 
       - name: Configure arm64 Vulkan build
         run: |
-          cmake -S sdcpp -B sdcpp/build-android             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-28             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH             -DSPIRV-Headers_DIR="$SPIRV_HEADERS_PREFIX/share/cmake/SPIRV-Headers"             -DVulkan_INCLUDE_DIR=/usr/include             -DSD_BUILD_EXAMPLES=ON             -DSD_VULKAN=ON             -DSD_OPENCL=OFF             -DSD_WEBP=OFF             -DSD_WEBM=OFF
+          cmake -S sdcpp -B sdcpp/build-android             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-28             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH             -DSPIRV-Headers_DIR="$SPIRV_HEADERS_PREFIX/share/cmake/SPIRV-Headers"             -DCMAKE_CXX_FLAGS="-I/tmp/Vulkan-Headers/include"             -DSD_BUILD_EXAMPLES=ON             -DSD_VULKAN=ON             -DSD_OPENCL=OFF             -DSD_WEBP=OFF             -DSD_WEBM=OFF
 
       - name: Build sd-cli
         run: cmake --build sdcpp/build-android --target sd-cli -j2
