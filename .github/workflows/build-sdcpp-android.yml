@@ -66,8 +66,22 @@ jobs:
           cp "$CLI" runtime/bin/sd-cli
           chmod +x runtime/bin/sd-cli
           find sdcpp/build-android -type f \( -name 'libggml*.so' -o -name 'libstable-diffusion*.so' \) -exec cp -f {} runtime/lib/ \;
+
+          OMP="$(find "$ANDROID_NDK_ROOT" -type f -name libomp.so -path '*aarch64*' -print -quit)"
+          if [ -z "$OMP" ]; then
+            OMP="$(find "$ANDROID_NDK_ROOT" -type f -name libomp.so -print -quit)"
+          fi
+          test -n "$OMP"
+          cp -f "$OMP" runtime/lib/libomp.so
+
+          CXX="$(find "$ANDROID_NDK_ROOT" -type f -name libc++_shared.so -path '*aarch64*' -print -quit)"
+          if [ -n "$CXX" ]; then
+            cp -f "$CXX" runtime/lib/libc++_shared.so
+          fi
+
           printf "%s\n" "$SDCPP_COMMIT" > runtime/SDCPP_COMMIT
           file runtime/bin/sd-cli
+          "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -d runtime/bin/sd-cli | grep NEEDED || true
           ls -lh runtime/bin runtime/lib
 
       - uses: actions/upload-artifact@v4
