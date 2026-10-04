@@ -33,8 +33,12 @@ if not torch.cuda.is_available():
 print("CUDA:", torch.cuda.get_device_name(0))
 PY
 
+if [[ ! -d "data/canon-face-crops/$PERSONA" ]] || ! find "data/canon-face-crops/$PERSONA" -type f -name 'canon-face-*.png' -print -quit | grep -q .; then
+  PERSONA="$PERSONA" bash scripts/extract-canon-faces.sh
+fi
+
 if [[ ! -d "$TRAIN_DIR" ]] || ! find "$TRAIN_DIR" -type f -name '*.jpg' -print -quit | grep -q .; then
-  python3 scripts/prepare-lora.py --persona "$PERSONA"
+  python3 scripts/prepare-lora.py --persona "$PERSONA" --face-crops "data/canon-face-crops/$PERSONA"
 fi
 
 COUNT="$(find "$TRAIN_DIR" -maxdepth 1 -type f -name '*.jpg' | wc -l | tr -d ' ')"
