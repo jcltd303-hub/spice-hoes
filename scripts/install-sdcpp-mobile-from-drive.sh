@@ -45,6 +45,8 @@ set_env SPICE_LORA_DIR "$DEST/loras"
 set_env SPICE_IDENTITY_GENERATOR "sdcpp"
 set_env SPICE_SDCPP_THREADS "4"
 set_env SPICE_SDCPP_FLASH_ATTN "1"
+set_env SPICE_SDCPP_BACKEND "diffusion=vulkan0,te=cpu,vae=cpu"
+set_env SPICE_SDCPP_PARAMS_BACKEND "diffusion=disk,te=cpu,vae=cpu"
 
 echo
 echo "Installed:"
