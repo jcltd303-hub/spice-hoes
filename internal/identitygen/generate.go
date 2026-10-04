@@ -878,7 +878,7 @@ func generateFrame(ctx context.Context, req Request, prompt string) (generatedFr
 		return generatedFrame{Image:out.Frame,Encoded:out.Encoded}, meta, backend, nil
 	}
 
-	m := nativecore.FromEnv()
+	m := nativecore.FromEnvForPersona(req.PersonaID)
 	if m.ModelDir == "" {
 		return generatedFrame{}, nil, backend, fmt.Errorf("QNN identity generation requires SPICE_QNN_MODEL_DIR")
 	}
@@ -902,6 +902,11 @@ func generateFrame(ctx context.Context, req Request, prompt string) (generatedFr
 	if err!=nil { return generatedFrame{},nil,backend,fmt.Errorf("decode generated image pixels: %w",err) }
 	out["generator"] = "qnn"
 	out["pipeline_image_mode"] = "decoded-memory"
+	if m.RequireModelMatch {
+		out["lora_persona"] = req.PersonaID
+		out["lora_mode"] = "prefused-sdxl-mnn"
+		out["lora_model_dir"] = m.ModelDir
+	}
 	return generatedFrame{Image:img,Encoded:imageBytes}, out, backend, nil
 }
 
