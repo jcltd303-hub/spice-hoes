@@ -99,6 +99,7 @@ def main():
         pipe.set_adapters([persona], adapter_weights=[args.strength])
 
         prompt = args.prompt.strip() or DEFAULT_SCENE.format(token=token)
+        prompt = prompt.replace("TOKEN", token)
         if token not in prompt:
             prompt = f"{token}, {prompt}"
 
