@@ -51,15 +51,32 @@ fi
 
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/spice-diffusers"
 SRC="$CACHE/diffusers-$DIFFUSERS_REF"
-if [[ ! -f "$SRC/examples/advanced_diffusion_training/train_dreambooth_lora_sdxl.py" ]]; then
+TRAINER="$SRC/examples/dreambooth/train_dreambooth_lora_sdxl.py"
+ADVANCED_TRAINER="$SRC/examples/advanced_diffusion_training/train_dreambooth_lora_sdxl_advanced.py"
+
+if [[ ! -f "$TRAINER" && ! -f "$ADVANCED_TRAINER" ]]; then
   rm -rf "$SRC"
   mkdir -p "$CACHE"
   git clone --depth 1 --branch "$DIFFUSERS_REF" https://github.com/huggingface/diffusers.git "$SRC"
 fi
 
+# Diffusers v0.35.x keeps the standard SDXL DreamBooth LoRA trainer under
+# examples/dreambooth/. Older code incorrectly looked for a non-existent
+# advanced_diffusion_training/train_dreambooth_lora_sdxl.py.
+if [[ -f "$TRAINER" ]]; then
+  :
+elif [[ -f "$ADVANCED_TRAINER" ]]; then
+  TRAINER="$ADVANCED_TRAINER"
+else
+  echo "Could not find an SDXL DreamBooth LoRA trainer under $SRC/examples" >&2
+  find "$SRC/examples" -maxdepth 2 -type f -name '*dreambooth*lora*sdxl*.py' -print >&2 || true
+  exit 5
+fi
+
+echo "==> diffusers trainer: $TRAINER"
 mkdir -p "$OUT_DIR" "$ARTIFACT_DIR"
 
-accelerate launch "$SRC/examples/advanced_diffusion_training/train_dreambooth_lora_sdxl.py" \
+accelerate launch "$TRAINER" \
   --pretrained_model_name_or_path="$BASE_MODEL" \
   --instance_data_dir="$TRAIN_DIR" \
   --output_dir="$OUT_DIR" \
