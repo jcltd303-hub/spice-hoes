@@ -5,6 +5,11 @@ REFERENCE_ROOT="${SPICE_REFERENCE_ROOT:-data/references}"
 OUT_ROOT="${SPICE_CANON_OUT_ROOT:-data/runs/canon-scenes}"
 mkdir -p "$OUT_ROOT" personas
 
+# Self-heal Go module checksums before compiling spicemedia. This is required
+# on fresh Termux clones when go.mod contains a dependency that is not yet in go.sum.
+echo "==> syncing Go module checksums"
+go mod tidy
+
 PERSONAS=(
   zara_voss
   ruby_wren
