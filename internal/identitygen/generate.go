@@ -161,10 +161,16 @@ type AttemptSummary struct {
 	MetadataPath  string  `json:"metadata_path,omitempty"`
 	IdentityScore float64 `json:"identity_score,omitempty"`
 	IdentityMean  float64 `json:"identity_mean,omitempty"`
+	PrototypeScore float64 `json:"prototype_score,omitempty"`
+	NearestOtherScore float64 `json:"nearest_other_score,omitempty"`
+	NearestOtherPersona string `json:"nearest_other_persona,omitempty"`
+	IdentityMargin float64 `json:"identity_margin,omitempty"`
+	MarginThreshold float64 `json:"margin_threshold,omitempty"`
 	IdentityPass  bool    `json:"identity_pass"`
 	QualityScore  float64 `json:"quality_score,omitempty"`
 	QualityPass   bool    `json:"quality_pass"`
 	SelectionScore float64 `json:"selection_score,omitempty"`
+	RejectReason string `json:"reject_reason,omitempty"`
 	Error         string  `json:"error,omitempty"`
 }
 
@@ -1148,6 +1154,21 @@ func runSingleAttempt(
 }
 
 func summarizeAttempt(index int, seed int64, result Result) AttemptSummary {
+	reason := ""
+	if !(result.Identity.Passed && result.QualityPassed) {
+		switch {
+		case !result.Identity.Passed && !result.QualityPassed:
+			reason = "identity_and_quality_failed"
+		case !result.Identity.Passed:
+			if result.Identity.MarginScored && result.Identity.IdentityMargin < result.Identity.MarginThreshold {
+				reason = "identity_margin_failed"
+			} else {
+				reason = "identity_failed"
+			}
+		case !result.QualityPassed:
+			reason = "quality_failed"
+		}
+	}
 	return AttemptSummary{
 		Index:index,
 		Seed:seed,
@@ -1156,10 +1177,16 @@ func summarizeAttempt(index int, seed int64, result Result) AttemptSummary {
 		MetadataPath:result.MetadataPath,
 		IdentityScore:result.Identity.Score,
 		IdentityMean:result.Identity.MeanScore,
+		PrototypeScore:result.Identity.PrototypeScore,
+		NearestOtherScore:result.Identity.NearestOtherScore,
+		NearestOtherPersona:result.Identity.NearestOtherPersona,
+		IdentityMargin:result.Identity.IdentityMargin,
+		MarginThreshold:result.Identity.MarginThreshold,
 		IdentityPass:result.Identity.Passed,
 		QualityScore:result.Quality.LocalScore,
 		QualityPass:result.QualityPassed,
 		SelectionScore:candidateSelectionScore(result),
+		RejectReason:reason,
 	}
 }
 

@@ -510,6 +510,81 @@ func commandIdentityGenerate(args []string) {
     write(out)
 }
 
+
+func commandIdentityLoop(args []string) {
+    fs := flag.NewFlagSet("identity-loop", flag.ContinueOnError)
+    fs.SetOutput(io.Discard)
+    persona := fs.String("persona", "", "persona ID")
+    theme := fs.String("theme", "identity reference portrait", "generation theme")
+    scene := fs.String("scene", "clean frontal portrait, face unobscured, realistic lighting", "scene description")
+    maxAttempts := fs.Int("max-attempts", 12, "maximum generate/inspect attempts before giving up")
+    margin := fs.Float64("margin-threshold", identitygen.DefaultIdentityMargin, "minimum own-vs-foreign prototype margin")
+    quality := fs.Float64("quality-threshold", 0.78, "minimum local image quality score")
+    own := fs.Float64("own-threshold", 0.70, "minimum own-prototype similarity")
+    personaBank := fs.String("persona-bank", "", "path to persona .safetensors bank")
+    saveRejected := fs.Bool("save-rejected", true, "keep rejected attempt assets/metadata")
+    if err := fs.Parse(args); err != nil { fail(err) }
+    if strings.TrimSpace(*persona) == "" { fail(fmt.Errorf("--persona is required")) }
+    if *maxAttempts < 1 { *maxAttempts = 1 }
+    if *maxAttempts > 64 { *maxAttempts = 64 }
+
+    stop := true
+    saveAll := *saveRejected
+    req := identitygen.Request{
+        PersonaID: *persona,
+        Theme: *theme,
+        Scene: *scene,
+        BestOfN: *maxAttempts,
+        IdentityMeanThreshold: *own,
+        IdentityMarginThreshold: *margin,
+        QualityThreshold: *quality,
+        RequirePersonaBank: true,
+        StopOnAccept: &stop,
+        SaveAllAttempts: &saveAll,
+        Progress: progressEvent,
+    }
+    if strings.TrimSpace(*personaBank) != "" { req.PersonaBank = *personaBank }
+
+    ctx, cancel := context.WithTimeout(context.Background(), 4*time.Hour)
+    defer cancel()
+    out, err := identitygen.Run(ctx, req)
+    if err != nil { fail(err) }
+
+    accepted := out.Identity.Passed && out.QualityPassed
+    reason := "accepted"
+    if !accepted {
+        reason = out.Identity.Reason
+        if reason == "" {
+            switch {
+            case !out.Identity.Passed && !out.QualityPassed:
+                reason = "identity_and_quality_failed"
+            case !out.Identity.Passed:
+                reason = "identity_failed"
+            case !out.QualityPassed:
+                reason = "quality_failed"
+            }
+        }
+    }
+
+    finish("identity loop complete", map[string]any{
+        "persona": out.PersonaID,
+        "accepted": accepted,
+        "reason": reason,
+        "attempts_requested": *maxAttempts,
+        "attempts_completed": func() int { if out.Batch != nil { return out.Batch.Completed }; return 1 }(),
+        "selected_attempt": func() int { if out.Batch != nil { return out.Batch.Selected }; return 1 }(),
+        "prototype_score": out.Identity.PrototypeScore,
+        "nearest_other": out.Identity.NearestOtherPersona,
+        "nearest_other_score": out.Identity.NearestOtherScore,
+        "identity_margin": out.Identity.IdentityMargin,
+        "margin_threshold": out.Identity.MarginThreshold,
+        "quality": out.Quality.LocalScore,
+        "quality_threshold": out.QualityThreshold,
+        "asset": out.AssetPath,
+    })
+    write(out)
+}
+
 func commandIdentityAutonomous() {
     payload := readObject()
     raw, err := json.Marshal(payload)
@@ -560,7 +635,7 @@ func commandHealth() {
 
 func main() {
     if len(os.Args) < 2 {
-        fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|persona-embed|persona-bank-build|identity|identity-generate|identity-autonomous|health"))
+        fail(fmt.Errorf("usage: spicemedia generate|quality|detect|embed|persona-embed|persona-bank-build|identity|identity-generate|identity-loop|identity-autonomous|health"))
     }
     command := os.Args[1]
     progress = termui.Start(termui.Label("spicemedia", command))
@@ -583,6 +658,8 @@ func main() {
         commandIdentity()
     case "identity-generate":
         commandIdentityGenerate(os.Args[2:])
+    case "identity-loop":
+        commandIdentityLoop(os.Args[2:])
     case "identity-autonomous":
         commandIdentityAutonomous()
     case "health":
