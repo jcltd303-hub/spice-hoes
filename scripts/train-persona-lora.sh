@@ -33,6 +33,23 @@ if not torch.cuda.is_available():
 print("CUDA:", torch.cuda.get_device_name(0))
 PY
 
+# Colab may preload an old torchao that newer PEFT rejects even though this
+# trainer does not use torchao. Remove only incompatible pre-0.16 installs.
+if python3 - <<'PY'
+import sys
+try:
+    import importlib.metadata as m
+    from packaging.version import Version
+    v = m.version("torchao")
+except Exception:
+    sys.exit(1)
+sys.exit(0 if Version(v) < Version("0.16.0") else 1)
+PY
+then
+  echo "==> removing incompatible preinstalled torchao (<0.16)"
+  python3 -m pip uninstall -y torchao
+fi
+
 if [[ -d "$TRAIN_DIR" ]] && find "$TRAIN_DIR" -type f -name '*.jpg' -print -quit | grep -q .; then
   echo "==> using prebuilt LoRA dataset: $TRAIN_DIR"
 else
