@@ -1154,6 +1154,21 @@ func runSingleAttempt(
 }
 
 func summarizeAttempt(index int, seed int64, result Result) AttemptSummary {
+	reason := ""
+	if !(result.Identity.Passed && result.QualityPassed) {
+		switch {
+		case !result.Identity.Passed && !result.QualityPassed:
+			reason = "identity_and_quality_failed"
+		case !result.Identity.Passed:
+			if result.Identity.MarginScored && result.Identity.IdentityMargin < result.Identity.MarginThreshold {
+				reason = "identity_margin_failed"
+			} else {
+				reason = "identity_failed"
+			}
+		case !result.QualityPassed:
+			reason = "quality_failed"
+		}
+	}
 	return AttemptSummary{
 		Index:index,
 		Seed:seed,
@@ -1162,10 +1177,16 @@ func summarizeAttempt(index int, seed int64, result Result) AttemptSummary {
 		MetadataPath:result.MetadataPath,
 		IdentityScore:result.Identity.Score,
 		IdentityMean:result.Identity.MeanScore,
+		PrototypeScore:result.Identity.PrototypeScore,
+		NearestOtherScore:result.Identity.NearestOtherScore,
+		NearestOtherPersona:result.Identity.NearestOtherPersona,
+		IdentityMargin:result.Identity.IdentityMargin,
+		MarginThreshold:result.Identity.MarginThreshold,
 		IdentityPass:result.Identity.Passed,
 		QualityScore:result.Quality.LocalScore,
 		QualityPass:result.QualityPassed,
 		SelectionScore:candidateSelectionScore(result),
+		RejectReason:reason,
 	}
 }
 
