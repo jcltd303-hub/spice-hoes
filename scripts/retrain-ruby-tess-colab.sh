@@ -16,7 +16,7 @@ for PERSONA in ruby_wren tess_wilder; do
 
   rm -rf "data/lora-training/$PERSONA"
 
-  python3 scripts/prepare-lora.py     --persona "$PERSONA"     --reference-root "$DATA_ROOT/references"     --face-crops "$DATA_ROOT/canon-face-crops/$PERSONA"     --include-canon
+  python3 scripts/prepare-lora.py     --persona "$PERSONA"     --reference-root "$DATA_ROOT/references"     --face-crops "$DATA_ROOT/canon-face-crops/$PERSONA"     --include-canon     --expand-single-canon
 
   echo
   echo "=== TRAIN $PERSONA ==="
