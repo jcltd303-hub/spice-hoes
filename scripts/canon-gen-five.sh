@@ -1,6 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="${SPICE_HOES_DIR:-$HOME/spice-hoes}"
+cd "$ROOT"
+
+# Load the native media/QNN environment used by the working spicemedia setup.
+# Prefer the Termux-specific file when present, then fall back to .env.
+if [[ -f "$ROOT/.env.spicemedia" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env.spicemedia"
+  set +a
+elif [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+
+# Self-heal the two face-model paths when the files are installed in the
+# repository-standard Termux location but the env file did not export them.
+if [[ -z "${SPICE_FACE_DETECT_MODEL:-}" && -s "$ROOT/models/face/scrfd_10g.bin" ]]; then
+  export SPICE_FACE_DETECT_MODEL="$ROOT/models/face/scrfd_10g.bin"
+fi
+if [[ -z "${SPICE_FACE_EMBED_MODEL:-}" && -s "$ROOT/models/face/arcface_w600k_r50.bin" ]]; then
+  export SPICE_FACE_EMBED_MODEL="$ROOT/models/face/arcface_w600k_r50.bin"
+fi
+
+if [[ -z "${SPICE_FACE_DETECT_MODEL:-}" || ! -s "${SPICE_FACE_DETECT_MODEL:-}" ]]; then
+  echo "SCRFD model is not configured/found." >&2
+  echo "Expected: $ROOT/models/face/scrfd_10g.bin" >&2
+  echo "Run: bash scripts/install-face-embedding-termux.sh" >&2
+  exit 4
+fi
+if [[ -z "${SPICE_FACE_EMBED_MODEL:-}" || ! -s "${SPICE_FACE_EMBED_MODEL:-}" ]]; then
+  echo "ArcFace model is not configured/found." >&2
+  echo "Expected: $ROOT/models/face/arcface_w600k_r50.bin" >&2
+  echo "Run: bash scripts/install-face-embedding-termux.sh" >&2
+  exit 5
+fi
+
+echo "==> face detector: $SPICE_FACE_DETECT_MODEL"
+echo "==> face embedder: $SPICE_FACE_EMBED_MODEL"
+
 REFERENCE_ROOT="${SPICE_REFERENCE_ROOT:-data/references}"
 OUT_ROOT="${SPICE_CANON_OUT_ROOT:-data/runs/canon-scenes}"
 mkdir -p "$OUT_ROOT" personas
