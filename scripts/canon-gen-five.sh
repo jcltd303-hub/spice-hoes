@@ -45,6 +45,7 @@ echo "==> face embedder: $SPICE_FACE_EMBED_MODEL"
 
 REFERENCE_ROOT="${SPICE_REFERENCE_ROOT:-data/references}"
 OUT_ROOT="${SPICE_CANON_OUT_ROOT:-data/runs/canon-scenes}"
+GENERATOR="${SPICE_CANON_GENERATOR:-qnn}"
 mkdir -p "$OUT_ROOT" personas
 
 # Self-heal Go module checksums before compiling spicemedia. This is required
@@ -59,6 +60,16 @@ PERSONAS=(
   celeste_vale
   lila_hart
 )
+
+echo "==> generation backend: $GENERATOR"
+if [[ "$GENERATOR" == "qnn" ]]; then
+  if [[ -z "${SPICE_QNN_MODEL_DIR:-}" || ! -d "${SPICE_QNN_MODEL_DIR:-}" ]]; then
+    echo "QNN generation requested but SPICE_QNN_MODEL_DIR is missing or invalid: ${SPICE_QNN_MODEL_DIR:-<unset>}" >&2
+    echo "Install/select a photoreal SDXL QNN model before running this script." >&2
+    exit 6
+  fi
+  echo "==> QNN model: $SPICE_QNN_MODEL_DIR"
+fi
 
 echo "==> rebuilding Canon persona safetensors"
 for persona in "${PERSONAS[@]}"; do
@@ -104,7 +115,18 @@ generate_scene() {
   # an output gate. The generated asset + metadata are emitted regardless of
   # pass/fail score. --require-persona-bank guarantees the freshly rebuilt
   # Canon safetensors is actually used.
-  printf '%s' '{}' | go run ./cmd/spicemedia identity-generate     --persona "$persona"     --persona-bank "personas/${persona}.safetensors"     --require-persona-bank     --theme "$theme"     --scene "$scene"     > "$out_json"
+  payload=$(jq -cn --arg generator "$GENERATOR" '{
+    generator: $generator,
+    negative_prompt: "illustration, cartoon, comic, anime, manga, cel shading, line art, vector art, digital painting, painterly, stylized render, graphic novel, flat colors, thick outlines, posterized skin, public figure likeness, child, teen, underage, youth-coded sexual styling, extra fingers, malformed hands, duplicate limbs, distorted face, waxy skin, plastic skin, 3d render, watermark, logo, text artifacts, soft focus, blurry face, smeared skin texture, motion blur, low facial contrast, excessive denoise"
+  }')
+
+  printf '%s' "$payload" | go run ./cmd/spicemedia identity-generate \
+    --persona "$persona" \
+    --persona-bank "personas/${persona}.safetensors" \
+    --require-persona-bank \
+    --theme "$theme" \
+    --scene "$scene" \
+    > "$out_json"
 
   cat "$out_json"
   printf '\n'
