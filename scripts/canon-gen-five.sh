@@ -46,6 +46,28 @@ echo "==> face embedder: $SPICE_FACE_EMBED_MODEL"
 REFERENCE_ROOT="${SPICE_REFERENCE_ROOT:-data/references}"
 OUT_ROOT="${SPICE_CANON_OUT_ROOT:-data/runs/canon-scenes}"
 GENERATOR="${SPICE_CANON_GENERATOR:-qnn}"
+
+# auto-detect a locally installed QNN generation model if the env file has not
+# been populated yet. Prefer the known CyberRealistic XL pack, then any model
+# directory containing the required unet.bin + vae_decoder.bin + tokenizer.json.
+if [[ -z "${SPICE_QNN_MODEL_DIR:-}" ]]; then
+  if [[ -s "$HOME/spice-models/cyber_realistic_v10/unet.bin" ]]; then
+    export SPICE_QNN_MODEL_DIR="$HOME/spice-models/cyber_realistic_v10"
+    export SPICE_QNN_TYPE="${SPICE_QNN_TYPE:-sdxl}"
+  else
+    candidate="$(find "$HOME/spice-models" -type f -name unet.bin -print 2>/dev/null | while read -r unet; do
+      d="$(dirname "$unet")"
+      if [[ -s "$d/vae_decoder.bin" && -s "$d/tokenizer.json" ]]; then
+        printf '%s\n' "$d"
+        break
+      fi
+    done)"
+    if [[ -n "$candidate" ]]; then
+      export SPICE_QNN_MODEL_DIR="$candidate"
+      export SPICE_QNN_TYPE="${SPICE_QNN_TYPE:-sdxl}"
+    fi
+  fi
+fi
 mkdir -p "$OUT_ROOT" personas
 
 # Self-heal Go module checksums before compiling spicemedia. This is required
@@ -66,6 +88,7 @@ if [[ "$GENERATOR" == "qnn" ]]; then
   if [[ -z "${SPICE_QNN_MODEL_DIR:-}" || ! -d "${SPICE_QNN_MODEL_DIR:-}" ]]; then
     echo "QNN generation requested but SPICE_QNN_MODEL_DIR is missing or invalid: ${SPICE_QNN_MODEL_DIR:-<unset>}" >&2
     echo "Install/select a photoreal SDXL QNN model before running this script." >&2
+    echo "Recommended: bash scripts/download-cyberrealistic-xl-desire.sh" >&2
     exit 6
   fi
   echo "==> QNN model: $SPICE_QNN_MODEL_DIR"
