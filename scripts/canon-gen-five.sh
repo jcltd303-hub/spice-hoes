@@ -48,26 +48,86 @@ OUT_ROOT="${SPICE_CANON_OUT_ROOT:-data/runs/canon-scenes}"
 GENERATOR="${SPICE_CANON_GENERATOR:-qnn}"
 
 # auto-detect a locally installed QNN generation model if the env file has not
-# been populated yet. Prefer the known CyberRealistic XL pack, then any model
-# directory containing the required unet.bin + vae_decoder.bin + tokenizer.json.
-if [[ -z "${SPICE_QNN_MODEL_DIR:-}" ]]; then
-  if [[ -s "$HOME/spice-models/cyber_realistic_v10/unet.bin" ]]; then
-    export SPICE_QNN_MODEL_DIR="$HOME/spice-models/cyber_realistic_v10"
-    export SPICE_QNN_TYPE="${SPICE_QNN_TYPE:-sdxl}"
-  else
-    candidate="$(find "$HOME/spice-models" -type f -name unet.bin -print 2>/dev/null | while read -r unet; do
-      d="$(dirname "$unet")"
-      if [[ -s "$d/vae_decoder.bin" && -s "$d/tokenizer.json" ]]; then
-        printf '%s\n' "$d"
-        break
-      fi
-    done)"
-    if [[ -n "$candidate" ]]; then
-      export SPICE_QNN_MODEL_DIR="$candidate"
-      export SPICE_QNN_TYPE="${SPICE_QNN_TYPE:-sdxl}"
+# been populated yet. Validate the model layout before selecting it so the
+# native core is never launched with an incompatible --type.
+detect_qnn_model() {
+  local root="${1:-$HOME/spice-models}"
+  local d
+
+  # Prefer a complete SDXL/QNN package.
+  while IFS= read -r unet; do
+    d="$(dirname "$unet")"
+    if [[ -s "$d/tokenizer.json" &&
+          -s "$d/clip.mnn" &&
+          -s "$d/clip_2.mnn" &&
+          -s "$d/pos_emb.bin" &&
+          -s "$d/pos_emb_2.bin" &&
+          -s "$d/token_emb.bin" &&
+          -s "$d/token_emb_2.bin" &&
+          -s "$d/vae_decoder.bin" ]]; then
+      printf '%s|sdxl\n' "$d"
+      return 0
     fi
+  done < <(find "$root" -type f -name unet.bin -print 2>/dev/null)
+
+  # Fall back to a complete SD15/QNN package.
+  while IFS= read -r unet; do
+    d="$(dirname "$unet")"
+    if [[ -s "$d/tokenizer.json" &&
+          -s "$d/clip_v2.mnn" &&
+          -s "$d/pos_emb.bin" &&
+          -s "$d/token_emb.bin" &&
+          -s "$d/vae_decoder.bin" ]]; then
+      printf '%s|sd15npu\n' "$d"
+      return 0
+    fi
+  done < <(find "$root" -type f -name unet.bin -print 2>/dev/null)
+
+  return 1
+}
+
+validate_qnn_model() {
+  local d="$1"
+  local t="$2"
+  case "$t" in
+    sdxl)
+      [[ -s "$d/tokenizer.json" &&
+         -s "$d/clip.mnn" &&
+         -s "$d/clip_2.mnn" &&
+         -s "$d/pos_emb.bin" &&
+         -s "$d/pos_emb_2.bin" &&
+         -s "$d/token_emb.bin" &&
+         -s "$d/token_emb_2.bin" &&
+         -s "$d/unet.bin" &&
+         -s "$d/vae_decoder.bin" ]]
+      ;;
+    sd15npu)
+      [[ -s "$d/tokenizer.json" &&
+         -s "$d/clip_v2.mnn" &&
+         -s "$d/pos_emb.bin" &&
+         -s "$d/token_emb.bin" &&
+         -s "$d/unet.bin" &&
+         -s "$d/vae_decoder.bin" ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+if [[ -z "${SPICE_QNN_MODEL_DIR:-}" ||
+      -z "${SPICE_QNN_TYPE:-}" ||
+      ! -d "${SPICE_QNN_MODEL_DIR:-}" ||
+      ! validate_qnn_model "$SPICE_QNN_MODEL_DIR" "$SPICE_QNN_TYPE" ]]; then
+  detected="$(detect_qnn_model "$HOME/spice-models" || true)"
+  if [[ -n "$detected" ]]; then
+    export SPICE_QNN_MODEL_DIR="${detected%%|*}"
+    export SPICE_QNN_TYPE="${detected##*|}"
+  else
+    unset SPICE_QNN_MODEL_DIR
   fi
 fi
+
 mkdir -p "$OUT_ROOT" personas
 
 # Self-heal Go module checksums before compiling spicemedia. This is required
