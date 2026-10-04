@@ -32,7 +32,7 @@ var Personas = map[string]PersonaMetadata{
 	"tess_wilder": {
 		ID:           "tess_wilder",
 		Name:         "Tess Wilder",
-		HeightCm:     171,
+		HeightCm:     174,
 		Age:          27,
 		BioShort:     "Climber, rec-league keeper, retro-game competitor; rebuilt confidence after team fallout.",
 		EmbeddingDim: 512,
@@ -40,7 +40,7 @@ var Personas = map[string]PersonaMetadata{
 	"lila_hart": {
 		ID:           "lila_hart",
 		Name:         "Lila Hart",
-		HeightCm:     160,
+		HeightCm:     167,
 		Age:          28,
 		BioShort:     "Warm ceramic artist who hosts dinner parties and grows herbs; chosen independence over compromise.",
 		EmbeddingDim: 512,
@@ -48,7 +48,7 @@ var Personas = map[string]PersonaMetadata{
 	"ruby_wren": {
 		ID:           "ruby_wren",
 		Name:         "Ruby Wren",
-		HeightCm:     164,
+		HeightCm:     170,
 		Age:          30,
 		BioShort:     "Fiery zine writer and amateur astronomer; started publishing after failed gallery collaboration.",
 		EmbeddingDim: 512,
@@ -56,7 +56,7 @@ var Personas = map[string]PersonaMetadata{
 	"celeste_vale": {
 		ID:           "celeste_vale",
 		Name:         "Celeste Vale",
-		HeightCm:     166,
+		HeightCm:     176,
 		Age:          32,
 		BioShort:     "Exacting boutique hotel designer and jazz collector; chose independent practice over prestigious control.",
 		EmbeddingDim: 512,
