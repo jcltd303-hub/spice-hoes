@@ -1,16 +1,16 @@
 {
   "persona_id": "ruby_wren",
   "name": "Ruby Wren",
-  "height_cm": 164,
+  "height_cm": 170,
   "age": 30,
   "bio": "Fiery zine writer and amateur astronomer; started publishing after a failed gallery collaboration.",
   "embedding_model": "arcface-w600k-r50",
   "embedding_dim": 512,
   "embedding": [],
   "notes": [
-    "Placeholder vector — to be generated from reference images using spicemedia embed",
-    "Expected identity use cases: editorial, astronomy, indie publishing",
-    "Reference strength: 0.81 (high consistency)"
+    "Canonical visual identity: copper-auburn short textured bob with a deep side part, green-hazel eyes, fair neutral skin with light freckles.",
+    "Persona safetensors should be rebuilt from the promoted Canon reference pack using spicemedia persona-bank-build.",
+    "Scene generation must use the rebuilt persona bank; identity and quality scores are recorded but do not suppress output."
   ],
   "content_pillars": ["zine writing & publishing", "amateur astronomy", "editorial commentary", "indie culture"],
   "offer_hypotheses": ["affiliate-telescope-gear", "publishing-platform", "creative-course"]
