@@ -94,6 +94,14 @@ if [[ "$GENERATOR" == "qnn" ]]; then
   echo "==> QNN model: $SPICE_QNN_MODEL_DIR"
 fi
 
+# Build identity banks with the lightweight face-only QNN core. Starting the
+# full SDXL core just to run SCRFD/ArcFace can exceed the nativecore startup
+# timeout and is unnecessary.
+BANK_BUILD_QNN_MODEL_DIR="${SPICE_QNN_MODEL_DIR:-}"
+BANK_BUILD_QNN_TYPE="${SPICE_QNN_TYPE:-}"
+unset SPICE_QNN_MODEL_DIR
+echo "==> bank-build QNN mode: face-only"
+
 echo "==> rebuilding Canon persona safetensors"
 for persona in "${PERSONAS[@]}"; do
   ref_dir="$REFERENCE_ROOT/$persona"
@@ -125,6 +133,14 @@ for persona in "${PERSONAS[@]}"; do
     --reference-root "$REFERENCE_ROOT" \
     --out "personas/${persona}.safetensors"
 done
+
+# Restore the full generation model after the face-only bank build.
+if [[ -n "$BANK_BUILD_QNN_MODEL_DIR" ]]; then
+  export SPICE_QNN_MODEL_DIR="$BANK_BUILD_QNN_MODEL_DIR"
+fi
+if [[ -n "$BANK_BUILD_QNN_TYPE" ]]; then
+  export SPICE_QNN_TYPE="$BANK_BUILD_QNN_TYPE"
+fi
 
 # persona-bank-build may leave the shared QNN core running in face-only mode.
 # A healthy face-only core has /health, /face/detect, and /identity/embed but
