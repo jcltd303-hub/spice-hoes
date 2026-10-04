@@ -66,6 +66,16 @@ if (( COUNT < 4 )); then
   exit 3
 fi
 
+# Diffusers DreamBooth treats every file in instance_data_dir as an image.
+# Our prepared dataset includes .txt caption sidecars, so stage an image-only
+# directory before launching training.
+RUNTIME_TRAIN_DIR="$TRAIN_ROOT/runtime-images"
+rm -rf "$RUNTIME_TRAIN_DIR"
+mkdir -p "$RUNTIME_TRAIN_DIR"
+find "$TRAIN_DIR" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) -exec cp {} "$RUNTIME_TRAIN_DIR/" \;
+TRAIN_DIR="$RUNTIME_TRAIN_DIR"
+echo "==> staged $COUNT image-only training files: $TRAIN_DIR"
+
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/spice-diffusers"
 SRC="$CACHE/diffusers-$DIFFUSERS_REF"
 TRAINER="$SRC/examples/dreambooth/train_dreambooth_lora_sdxl.py"
