@@ -45,6 +45,21 @@ if not torch.cuda.is_available():
 print("CUDA:", torch.cuda.get_device_name(0))
 PY
 
+# SDXL LoRA on a 16 GB T4 benefits substantially from 8-bit Adam. Fresh
+# Colab runtimes do not always ship bitsandbytes, so bootstrap it here.
+if ! python3 - <<'PY'
+import bitsandbytes
+print("bitsandbytes:", bitsandbytes.__version__)
+PY
+then
+  echo "==> installing bitsandbytes for 8-bit Adam"
+  python3 -m pip install -q --upgrade "bitsandbytes>=0.48.0"
+  python3 - <<'PY'
+import bitsandbytes
+print("bitsandbytes:", bitsandbytes.__version__)
+PY
+fi
+
 # Colab may preload an old torchao that newer PEFT rejects even though this
 # trainer does not use torchao. Remove only incompatible pre-0.16 installs.
 if python3 - <<'PY'
