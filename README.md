@@ -46,26 +46,6 @@ python3 -m spicecore.cli knowledge-search "fashion garment performance"
 
 If the embedding deployment is not configured, the same commands continue using deterministic lexical retrieval.
 
-### Auditing the knowledge base
-
-`knowledge-audit` runs a read-only audit over the live `knowledge` table: inventory by
-source/approval/embedding model, `knowledge_added` provenance cross-checks, a
-prompt-injection scan (bodies are injected verbatim into MoA expert prompts, so
-instruction-like text is flagged high severity), staleness, near-duplicate detection,
-truncation risk against the context budget, and retrieval probes against the top tags:
-
-```bash
-
-python3 -m spicecore.cli knowledge-audit --stale-days 180
-
-python3 -m spicecore.cli knowledge-audit --probes "conversion;donations"
-
-```
-
-Findings carry severities (high/medium/low/info); the audit never modifies the ledger.
-Note: `knowledge-add` approves items on insert — there is currently no separate review
-step, so treat the audit's unapproved-item and injection findings as the review loop.
-
 ## Mixture of Agents
 
 Set the OpenAI-compatible MoA provider outside the repository:
@@ -116,26 +96,6 @@ python3 -m spicecore.cli generate-batch \
 ```
 
 Every generated file remains `proposed` until a human approves it. The prompt builder carries forward the persona's adult status and visual identity anchors, adds realism/identity-consistency instructions, and rejects non-adult/non-fictional persona records.
-
-### Identity master builder
-
-`identity-master` builds the character identity master through the configured media lane
-(LocalDream over HTTP, or native Go/QNN backed by the `cyber_realistic_v10` safetensors —
-see `scripts/download-cyberrealistic-xl-desire.sh` and `SPICE_QNN_MODEL_DIR`):
-
-```bash
-
-python3 -m spicecore.cli identity-master --persona zara_voss --seed 42
-
-```
-
-It generates 9 views from the persona's `identity_reference` spec (4 portrait closeups +
-eye closeup, 4 full-body rotations: front/left/right/back), composites the portrait board
-(2x2 grid with the eye closeup dead center), scores every face-detectable view with the
-IdentityGate, and promotes the pack to `data/references/<persona_id>/` split into `gate/`
-(ArcFace-stable) and `conditioning/` (visual continuity only). Every view score and the
-promotion are recorded in the ledger. Personas must be fictional adults or generation is
-refused; use `--no-promote` to generate and composite without gating.
 
 ## Media-provider compatibility
 
@@ -197,30 +157,6 @@ python3 -m spicecore.cli engagement-outbox
 
 The draft policy keeps the fictional persona transparent: it must not claim to be a real human, pressure users to spend, imply spending proves affection, or request card/banking details. The approved outbox is intentionally separate from any platform send adapter.
 
-### Guarded auto-responder
-
-`auto-respond` wires the pipeline end to end (ingest → draft → validate → approve → outbox) with the guards enforced in code:
-
-```bash
-
-python3 -m spicecore.cli auto-respond \
- --persona zara_voss \
- --channel Instagram \
- --conversation-id conv-123 \
- --message-id msg-456 \
- --body "What product is that?"
-
-# or process every inbound message with no draft yet:
-python3 -m spicecore.cli auto-respond --persona zara_voss --poll
-
-```
-
-Every draft is policy-validated before approval: identity deception, pressure tactics, payment-detail requests, guaranteed claims, shouting, and spam all
-hold the draft for human review instead of sending. The persona disclosure is mandatory — appended automatically if the draft lacks it. The model's own
-`handoff_reason` is respected, auto-approvals are rate-limited per conversation (default 10/day, `--max-per-day`), and every approval and hold is
-audit-logged (`auto_reply_approved` / `auto_reply_held`). The auto path is text only: generated images stay on the human-reviewed generate → review →
-approve path, and nothing failing validation ever reaches the outbox.
-
 ## Nextdoor campaign adapter
 
 `spicecore.distribution.NextdoorPublisher` is a manual-handoff adapter: Nextdoor exposes no public posting API for neighborhood accounts, so the adapter
@@ -244,48 +180,6 @@ python3 -m spicecore.cli campaign \
 Every variant carries the persona disclosure and is policy-checked before it is proposed; any violation aborts the run. Generated copy never claims to be a
 real neighbor, never makes guaranteed-earnings claims, never pressures readers, and never requests payment details. Candidates remain `proposed` until a
 human approves them in the review desk.
-
-### MoA-engineered donation campaigns
-
-`campaign-moa` runs the deterministic generator above, then puts the variants through the Mixture-of-Agents deliberation (revenue, creative, growth, and
-risk experts plus the aggregator). The MoA returns an engineered plan: variant ranking, concrete copy refinements, risk flags, one engineered post, and a
-measurement design (test plan, success metrics, reversal condition).
-
-```bash
-
-export MOA_BASE_URL='https://openrouter.ai/api/v1'
-
-export MOA_API_KEY=<redacted>
-
-python3 -m spicecore.cli campaign-moa \
- --persona zara_voss \
- --goal "raise funds for the community fridge" \
- --cause "the Maple Street community fridge" \
- --neighborhood Maplewood \
- --offer https://example.org/fridge-fund \
- --seed 42
-
-```
-
-MoA output is advisory, never authoritative: the engineered post is re-validated against the copy policy and is only proposed when clean (dirty copy is
-reported, not proposed). The deliberation is recorded as a `moa_deliberation` event and the plan as `campaign_engineered`. The MoA is instructed that no
-outcome may be promised or guaranteed — everything is a hypothesis to be measured via the `outcome` loop.
-
-### GoldDigger optimizer
-
-`gold-digger` administers live donation campaigns. It reads published candidates and their recorded outcomes from the ledger, scores each variant as a
-"vein" (impressions, clicks, donations, net), and runs Thompson sampling over donation-cents per impression to recommend the next move:
-
-```bash
-
-python3 -m spicecore.cli gold-digger --goal "fridge drive" --seed 11
-
-```
-
-Each vein gets a transparent verdict — `scale` (proven leader, double down), `explore` (not enough evidence yet), or `retire` (dry at real exposure) —
-plus selection probabilities with 95% credible intervals and a concrete `next_action` ("post the story variant next; retire the event variant"). Every
-report is recorded as a `gold_digger_report` event. A `purchase` outcome on a published candidate counts as a donation; the optimizer only reallocates
-effort toward what measurably works. It never fabricates outcomes, never pressures donors, and never auto-posts.
 
 ## Offer economics and commerce attribution
 

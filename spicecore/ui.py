@@ -6,24 +6,17 @@ import sys
 import time
 from contextlib import contextmanager
 
-try:
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
-    from rich.table import Table
-    _HAS_RICH = True
-except ImportError:  # pragma: no cover - plain-text fallback
-    _HAS_RICH = False
-    Console = Panel = Progress = Table = None
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
+from rich.table import Table
 
 
 class SpiceUI:
     def __init__(self, force_json=False, no_color=False):
         self.force_json = force_json
-        self.pretty = _HAS_RICH and (not force_json) and sys.stdout.isatty()
-        self.console = None
-        if self.pretty:
-            self.console = Console(color_system=None if no_color else "auto", force_terminal=self.pretty)
+        self.pretty = (not force_json) and sys.stdout.isatty()
+        self.console = Console(color_system=None if no_color else "auto", force_terminal=self.pretty)
         self._progress = None
         self._task = None
 
