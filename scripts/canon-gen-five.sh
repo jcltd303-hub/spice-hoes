@@ -126,6 +126,17 @@ for persona in "${PERSONAS[@]}"; do
     --out "personas/${persona}.safetensors"
 done
 
+# persona-bank-build may leave the shared QNN core running in face-only mode.
+# A healthy face-only core has /health, /face/detect, and /identity/embed but
+# no /generate, which produces HTTP 404. Restart it now so the first scene
+# generation launches the core with the selected SDXL model directory.
+if [[ "$GENERATOR" == "qnn" ]]; then
+  echo "==> restarting QNN core in generation mode"
+  pkill -f 'spice-qnn-core' >/dev/null 2>&1 || true
+  pkill -f 'stable_diffusion_core' >/dev/null 2>&1 || true
+  sleep 1
+fi
+
 generate_scene() {
   local persona="$1"
   local theme="$2"
