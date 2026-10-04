@@ -98,6 +98,7 @@ type Request struct {
 	ReferenceRoot    string  `json:"reference_root,omitempty"`
 	IdentityThreshold float64 `json:"identity_threshold,omitempty"`
 	IdentityMeanThreshold float64 `json:"identity_mean_threshold,omitempty"`
+	IdentityMarginThreshold float64 `json:"identity_margin_threshold,omitempty"`
 	QualityThreshold float64  `json:"quality_threshold,omitempty"`
 	Generator         string   `json:"generator,omitempty"`
 	IdentityEmbeddingToken string `json:"identity_embedding_token,omitempty"`
@@ -117,6 +118,13 @@ type IdentityResult struct {
 	Passed         bool    `json:"passed"`
 	Score          float64 `json:"score,omitempty"`
 	MeanScore      float64 `json:"mean_score,omitempty"`
+	PrototypeScore float64 `json:"prototype_score,omitempty"`
+	NearestOtherScore float64 `json:"nearest_other_score,omitempty"`
+	IdentityMargin float64 `json:"identity_margin,omitempty"`
+	MarginThreshold float64 `json:"margin_threshold,omitempty"`
+	NearestOtherPersona string `json:"nearest_other_persona,omitempty"`
+	MarginScored bool `json:"margin_scored,omitempty"`
+	DecisionBasis string `json:"decision_basis,omitempty"`
 	Threshold      float64 `json:"threshold"`
 	MeanThreshold  float64 `json:"mean_threshold,omitempty"`
 	ReferenceCount int     `json:"reference_count"`
@@ -465,7 +473,7 @@ func referenceCentroid(refs []referenceEmbedding) ([]float64, error) {
 	return ident.Normalize(out), nil
 }
 
-func scoreIdentityImageCached(ctx context.Context, m *nativecore.Manager, generated image.Image, refs []referenceEmbedding, threshold, meanThreshold float64) IdentityResult {
+func scoreIdentityImageCached(ctx context.Context, m *nativecore.Manager, generated image.Image, refs []referenceEmbedding, threshold, meanThreshold float64, personaID string, marginThreshold float64) IdentityResult {
 	result := IdentityResult{
 		Threshold: threshold,
 		MeanThreshold: meanThreshold,
@@ -504,6 +512,27 @@ func scoreIdentityImageCached(ctx context.Context, m *nativecore.Manager, genera
 	result.MeanScore = sum / float64(len(scores))
 	result.ReferenceCount = len(scores)
 	result.Passed = result.Score >= threshold && result.MeanScore >= meanThreshold
+	result.DecisionBasis = "legacy_raw_reference_max_and_mean"
+
+	if strings.TrimSpace(personaID) != "" {
+		if marginThreshold <= 0 { marginThreshold = DefaultIdentityMargin }
+		if protos, err := LoadDiscriminativePrototypes("personas"); err == nil {
+			if own := protos[personaID]; len(own) > 0 {
+				if ps, err := ScorePrototypeMargin(genVec, personaID, own, protos, marginThreshold); err == nil {
+					result.PrototypeScore = ps.OwnScore
+					result.NearestOtherScore = ps.NearestOtherScore
+					result.IdentityMargin = ps.Margin
+					result.MarginThreshold = ps.MarginThreshold
+					result.NearestOtherPersona = ps.NearestOtherPersona
+					result.MarginScored = true
+					ownThreshold := meanThreshold
+					if ownThreshold <= 0 { ownThreshold = 0.70 }
+					result.Passed = ps.OwnScore >= ownThreshold && ps.Passed
+					result.DecisionBasis = "own_prototype_similarity_and_nearest_foreign_margin"
+				}
+			}
+		}
+	}
 	return result
 }
 
@@ -579,6 +608,10 @@ func betterIdentityQuality(a IdentityResult, aq imagemetrics.Metrics, b Identity
 	bAccepted := b.Passed && bQualityPass
 	if aAccepted != bAccepted { return aAccepted }
 	if a.Passed != b.Passed { return a.Passed }
+	if a.MarginScored && b.MarginScored {
+		if a.IdentityMargin != b.IdentityMargin { return a.IdentityMargin > b.IdentityMargin }
+		if a.PrototypeScore != b.PrototypeScore { return a.PrototypeScore > b.PrototypeScore }
+	}
 	if a.Score != b.Score { return a.Score > b.Score }
 	if a.MeanScore != b.MeanScore { return a.MeanScore > b.MeanScore }
 	if aQualityPass != bQualityPass { return aQualityPass }
@@ -831,15 +864,25 @@ func boolOption(v *bool, fallback bool) bool {
 
 func candidateSelectionScore(r Result) float64 {
 	if !r.Identity.Scored { return -1 }
+	qualityNorm := r.Quality.LocalScore
+	if r.QualityThreshold > 0 { qualityNorm /= r.QualityThreshold }
+
+	if r.Identity.MarginScored {
+		ownNorm := r.Identity.PrototypeScore
+		if r.Identity.MeanThreshold > 0 { ownNorm /= r.Identity.MeanThreshold }
+		marginNorm := r.Identity.IdentityMargin
+		if r.Identity.MarginThreshold > 0 { marginNorm /= r.Identity.MarginThreshold }
+		// Discriminative identity is the hard objective: optimize the weaker
+		// of own-prototype similarity and foreign separation first.
+		floor := math.Min(ownNorm, marginNorm)
+		ceil := math.Max(ownNorm, marginNorm)
+		return 0.65*floor + 0.20*ceil + 0.15*qualityNorm
+	}
+
 	maxNorm := r.Identity.Score
 	if r.Identity.Threshold > 0 { maxNorm /= r.Identity.Threshold }
 	meanNorm := r.Identity.MeanScore
 	if r.Identity.MeanThreshold > 0 { meanNorm /= r.Identity.MeanThreshold }
-	qualityNorm := r.Quality.LocalScore
-	if r.QualityThreshold > 0 { qualityNorm /= r.QualityThreshold }
-
-	// Optimize the weakest identity gate first. Once both identity gates are
-	// healthy, quality and excess identity provide the tie-break.
 	identityFloor := math.Min(maxNorm, meanNorm)
 	identityCeil := math.Max(maxNorm, meanNorm)
 	return 0.60*identityFloor + 0.20*identityCeil + 0.20*qualityNorm
@@ -851,16 +894,27 @@ func betterResult(a, b Result) bool {
 	if aAccepted != bAccepted { return aAccepted }
 	if a.Identity.Passed != b.Identity.Passed { return a.Identity.Passed }
 
-	// For rejected identity candidates, prefer the one closest to satisfying
-	// BOTH gates instead of over-rewarding resemblance to a single reference.
-	aMaxNorm, bMaxNorm := a.Identity.Score, b.Identity.Score
-	if a.Identity.Threshold > 0 { aMaxNorm /= a.Identity.Threshold }
-	if b.Identity.Threshold > 0 { bMaxNorm /= b.Identity.Threshold }
-	aMeanNorm, bMeanNorm := a.Identity.MeanScore, b.Identity.MeanScore
-	if a.Identity.MeanThreshold > 0 { aMeanNorm /= a.Identity.MeanThreshold }
-	if b.Identity.MeanThreshold > 0 { bMeanNorm /= b.Identity.MeanThreshold }
-	aFloor, bFloor := math.Min(aMaxNorm, aMeanNorm), math.Min(bMaxNorm, bMeanNorm)
-	if aFloor != bFloor { return aFloor > bFloor }
+	if a.Identity.MarginScored && b.Identity.MarginScored {
+		aOwn, bOwn := a.Identity.PrototypeScore, b.Identity.PrototypeScore
+		if a.Identity.MeanThreshold > 0 { aOwn /= a.Identity.MeanThreshold }
+		if b.Identity.MeanThreshold > 0 { bOwn /= b.Identity.MeanThreshold }
+		aMargin, bMargin := a.Identity.IdentityMargin, b.Identity.IdentityMargin
+		if a.Identity.MarginThreshold > 0 { aMargin /= a.Identity.MarginThreshold }
+		if b.Identity.MarginThreshold > 0 { bMargin /= b.Identity.MarginThreshold }
+		aFloor, bFloor := math.Min(aOwn, aMargin), math.Min(bOwn, bMargin)
+		if aFloor != bFloor { return aFloor > bFloor }
+		if a.Identity.IdentityMargin != b.Identity.IdentityMargin { return a.Identity.IdentityMargin > b.Identity.IdentityMargin }
+		if a.Identity.PrototypeScore != b.Identity.PrototypeScore { return a.Identity.PrototypeScore > b.Identity.PrototypeScore }
+	} else {
+		aMaxNorm, bMaxNorm := a.Identity.Score, b.Identity.Score
+		if a.Identity.Threshold > 0 { aMaxNorm /= a.Identity.Threshold }
+		if b.Identity.Threshold > 0 { bMaxNorm /= b.Identity.Threshold }
+		aMeanNorm, bMeanNorm := a.Identity.MeanScore, b.Identity.MeanScore
+		if a.Identity.MeanThreshold > 0 { aMeanNorm /= a.Identity.MeanThreshold }
+		if b.Identity.MeanThreshold > 0 { bMeanNorm /= b.Identity.MeanThreshold }
+		aFloor, bFloor := math.Min(aMaxNorm, aMeanNorm), math.Min(bMaxNorm, bMeanNorm)
+		if aFloor != bFloor { return aFloor > bFloor }
+	}
 
 	if a.QualityPassed != b.QualityPassed { return a.QualityPassed }
 	if a.Identity.MeanScore != b.Identity.MeanScore { return a.Identity.MeanScore > b.Identity.MeanScore }
@@ -925,7 +979,7 @@ func runSingleAttempt(
 	preSwapBytes := append([]byte(nil), imageBytes...)
 	preSwapIdentity := IdentityResult{}
 	if len(refs) > 0 {
-		preSwapIdentity = scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+		preSwapIdentity = scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold, p.ID, req.IdentityMarginThreshold)
 		out["identity_pre_swap_score"] = preSwapIdentity.Score
 		out["identity_pre_swap_mean"] = preSwapIdentity.MeanScore
 		out["identity_pre_swap_scored"] = preSwapIdentity.Scored
@@ -951,7 +1005,7 @@ func runSingleAttempt(
 				if len(vec) != 512 { return }
 				swappedImg, meta, swapErr := swapper.SwapImageWithEmbedding(ctx, vec, frame.Image)
 				if swapErr != nil || swappedImg == nil { return }
-				idResult := scoreIdentityImageCached(ctx, m, swappedImg, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+				idResult := scoreIdentityImageCached(ctx, m, swappedImg, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold, p.ID, req.IdentityMarginThreshold)
 				if !idResult.Scored { return }
 				q, qErr := imagemetrics.AnalyzeImage(swappedImg)
 				if qErr != nil || q.LocalScore < req.QualityThreshold { return }
@@ -1011,7 +1065,7 @@ func runSingleAttempt(
 		"attempt":attemptIndex, "best_of_n":attemptTotal,
 		"references":len(refs), "identity_threshold":req.IdentityThreshold,
 	})
-	identity := scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+	identity := scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold, p.ID, req.IdentityMarginThreshold)
 	if applied, _ := out["faceswap_applied"].(bool); applied && preSwapIdentity.Scored && identity.Scored && identity.Score < preSwapIdentity.Score {
 		out["faceswap_reverted"] = true
 		out["faceswap_revert_reason"] = fmt.Sprintf("post-swap identity %.6f below pre-swap %.6f", identity.Score, preSwapIdentity.Score)
@@ -1143,7 +1197,7 @@ func refineAttemptWithFaceSwap(
 		if len(vec) != 512 { return }
 		swapped, meta, swapErr := swapper.SwapImageWithEmbedding(ctx, vec, img)
 		if swapErr != nil || swapped == nil { return }
-		idResult := scoreIdentityImageCached(ctx, m, swapped, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+		idResult := scoreIdentityImageCached(ctx, m, swapped, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold, req.PersonaID, req.IdentityMarginThreshold)
 		if !idResult.Scored { return }
 		q, qErr := imagemetrics.AnalyzeImage(swapped)
 		if qErr != nil || q.LocalScore < req.QualityThreshold { return }
@@ -1252,6 +1306,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if req.ReferenceRoot == "" { req.ReferenceRoot = filepath.Join("data", "references") }
 	if req.IdentityThreshold == 0 { req.IdentityThreshold = 0.82 }
 	if req.IdentityMeanThreshold == 0 { req.IdentityMeanThreshold = 0.70 }
+	if req.IdentityMarginThreshold == 0 { req.IdentityMarginThreshold = DefaultIdentityMargin }
 	if req.QualityThreshold == 0 { req.QualityThreshold = 0.78 }
 	if req.NegativePrompt == "" { req.NegativePrompt = defaultNegative }
 	if req.BestOfN <= 0 {

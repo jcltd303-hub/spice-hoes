@@ -30,6 +30,7 @@ type AutonomousRequest struct {
 	PoseAttempts      int     `json:"pose_attempts,omitempty"`
 	IdentityThreshold float64 `json:"identity_threshold,omitempty"`
 	IdentityMeanThreshold float64 `json:"identity_mean_threshold,omitempty"`
+	IdentityMarginThreshold float64 `json:"identity_margin_threshold,omitempty"`
 	QualityThreshold  float64 `json:"quality_threshold,omitempty"`
 	Progress          func(ProgressEvent) `json:"-"`
 }
@@ -251,11 +252,11 @@ func AutonomousIdentity(ctx context.Context, req AutonomousRequest) (AutonomousR
 		reason:=""
 		identity:=IdentityResult{Passed:true,Reason:"rear_pose_no_face_gate",Metric:"not_applicable_rear_view"}
 		if asset.PoseID!="rear_standing" {
-			identity=scoreIdentityImageCached(ctx,manager,targetImg,identityEmbeddings,req.IdentityThreshold,req.IdentityMeanThreshold)
+			identity=scoreIdentityImageCached(ctx,manager,targetImg,identityEmbeddings,req.IdentityThreshold,req.IdentityMeanThreshold,req.PersonaID,req.IdentityMarginThreshold)
 			if !(identity.Scored && identity.Passed) && swapper!=nil {
 				swapped,_,swapErr:=swapper.SwapImage(ctx,sourceImg,targetImg)
 				if swapErr==nil {
-					swappedIdentity:=scoreIdentityImageCached(ctx,manager,swapped,identityEmbeddings,req.IdentityThreshold,req.IdentityMeanThreshold)
+					swappedIdentity:=scoreIdentityImageCached(ctx,manager,swapped,identityEmbeddings,req.IdentityThreshold,req.IdentityMeanThreshold,req.PersonaID,req.IdentityMarginThreshold)
 					if swappedIdentity.Scored && swappedIdentity.Passed {
 						finalImg=swapped
 						identity=swappedIdentity

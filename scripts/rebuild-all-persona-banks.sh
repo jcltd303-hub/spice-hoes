@@ -63,40 +63,35 @@ done
 echo "Building spicemedia..."
 go build -trimpath -o "$ROOT/bin/spicemedia" ./cmd/spicemedia
 
-echo "Rebuilding all five persona safetensor banks..."
-for persona in "${PERSONAS[@]}"; do
-  ref_dir="$REF_ROOT/$persona"
-  [[ -d "$ref_dir" ]] || { echo "Missing reference directory: $ref_dir" >&2; exit 3; }
-
-  count="$(find "$ref_dir" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) | wc -l | tr -d ' ')"
-  [[ "$count" -gt 0 ]] || { echo "No usable references for $persona" >&2; exit 4; }
-
-  echo
-  echo "=== $persona ($count refs on disk) ==="
-  "$ROOT/bin/spicemedia" persona-bank-build     --persona "$persona"     --reference-root "$REF_ROOT"     --out "$ROOT/personas/$persona.safetensors"
-done
+echo
+echo "Building anchor-weighted discriminative persona banks..."
+go run ./cmd/spicediscrim \
+  -root "$REF_ROOT" \
+  -bank-dir "$ROOT/personas" \
+  -anchor-weight "${SPICE_IDENTITY_ANCHOR_WEIGHT:-0.70}" \
+  -out "$ROOT/discriminative-banks.json"
 
 echo
-echo "Recalibrating identity gates..."
-go run ./cmd/spicecalibrate   -root "$REF_ROOT"   -out "$CAL_OUT"
+echo "Recalibrating raw reference diagnostics..."
+go run ./cmd/spicecalibrate \
+  -root "$REF_ROOT" \
+  -out "$CAL_OUT"
 
 echo
-echo "=== separability ==="
+echo "=== discriminative prototype build ==="
 if command -v jq >/dev/null 2>&1; then
   jq -r '
     .personas[]
-    | select(.recommended_max_gate != null)
     | [
         .persona_id,
-        ("max=" + (.recommended_max_gate.value|tostring)),
-        ("mean=" + (.recommended_mean_gate.value|tostring)),
-        ("max_sep=" + (.recommended_max_gate.separable|tostring)),
-        ("mean_sep=" + (.recommended_mean_gate.separable|tostring))
+        ("anchors=" + ((.anchor_labels|length)|tostring)),
+        ("support_kept=" + ((.support_kept|length)|tostring)),
+        ("support_rejected=" + ((.support_rejected|length)|tostring))
       ]
     | @tsv
-  ' "$CAL_OUT"
+  ' "$ROOT/discriminative-banks.json"
 else
-  echo "jq not installed; full report: $CAL_OUT"
+  echo "jq not installed; report: $ROOT/discriminative-banks.json"
 fi
 
 echo
