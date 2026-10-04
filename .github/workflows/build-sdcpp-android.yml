@@ -1,0 +1,62 @@
+name: Build stable-diffusion.cpp Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-sdcpp-android.yml"
+
+permissions:
+  contents: read
+
+env:
+  SDCPP_REPO: https://github.com/happyyzy/stable-diffusion.cpp.git
+  SDCPP_COMMIT: c3352fb512b2a39737974dabd2100f79e96cddc0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout pinned stable-diffusion.cpp
+        run: |
+          git clone "$SDCPP_REPO" sdcpp
+          git -C sdcpp checkout "$SDCPP_COMMIT"
+          git -C sdcpp submodule update --init --recursive
+
+      - name: Ensure Android NDK
+        run: |
+          NDK="$ANDROID_HOME/ndk/28.2.13676358"
+          if [ ! -d "$NDK" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "cmake;3.31.1"
+          fi
+          echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
+
+      - name: Configure arm64 Vulkan build
+        run: |
+          cmake -S sdcpp -B sdcpp/build-android             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a             -DANDROID_PLATFORM=android-28             -DCMAKE_BUILD_TYPE=Release             -DSD_BUILD_EXAMPLES=ON             -DSD_VULKAN=ON             -DSD_OPENCL=OFF             -DSD_WEBP=OFF             -DSD_WEBM=OFF
+
+      - name: Build sd-cli
+        run: cmake --build sdcpp/build-android --target sd-cli -j2
+
+      - name: Stage runtime
+        run: |
+          mkdir -p runtime/bin runtime/lib
+          CLI="$(find sdcpp/build-android -type f -name sd-cli -print -quit)"
+          test -n "$CLI"
+          cp "$CLI" runtime/bin/sd-cli
+          chmod +x runtime/bin/sd-cli
+          find sdcpp/build-android -type f \( -name 'libggml*.so' -o -name 'libstable-diffusion*.so' \) -exec cp -f {} runtime/lib/ \;
+          printf "%s\n" "$SDCPP_COMMIT" > runtime/SDCPP_COMMIT
+          file runtime/bin/sd-cli
+          ls -lh runtime/bin runtime/lib
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spice-sdcpp-android-arm64
+          path: runtime/
+          if-no-files-found: error
