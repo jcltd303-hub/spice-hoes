@@ -27,6 +27,7 @@ type Manager struct {
     LogPath string
     IdentityVision string
     FaceDetector string
+    RequireModelMatch bool
 }
 
 func FromEnv() *Manager {
@@ -45,6 +46,35 @@ func FromEnv() *Manager {
     return &Manager{Binary:bin, ModelDir:modelDir, LibDir:libDir, Type:modelType, Host:host, Port:port, LogPath:logPath, IdentityVision:identityVision, FaceDetector:faceDetector}
 }
 
+// FromEnvForPersona routes generation to a preconverted persona-specific SDXL
+// MNN pack when SPICE_LORA_MODEL_ROOT/<persona> is complete. QNN graphs have
+// immutable weights, so LoRA adapters are fused into per-persona MNN packs
+// ahead of time rather than pretending they can be injected into a compiled
+// QNN UNet at request time.
+func FromEnvForPersona(persona string) *Manager {
+    m := FromEnv()
+    persona = strings.TrimSpace(persona)
+    root := strings.TrimSpace(os.Getenv("SPICE_LORA_MODEL_ROOT"))
+    if persona == "" || root == "" { return m }
+
+    dir := filepath.Join(root, persona)
+    required := []string{
+        "tokenizer.json", "clip.mnn", "clip_2.mnn",
+        "unet.mnn", "vae_decoder.mnn",
+        "pos_emb.bin", "pos_emb_2.bin",
+        "token_emb.bin", "token_emb_2.bin",
+    }
+    for _, name := range required {
+        info, err := os.Stat(filepath.Join(dir, name))
+        if err != nil || info.IsDir() || info.Size() == 0 { return m }
+    }
+
+    m.ModelDir = dir
+    m.Type = "sdxlmnn"
+    m.RequireModelMatch = true
+    return m
+}
+
 func (m *Manager) baseURL() string { return fmt.Sprintf("http://%s:%d", m.Host, m.Port) }
 
 func startupTimeout() time.Duration {
@@ -60,10 +90,32 @@ func startupTimeout() time.Duration {
 }
 
 func (m *Manager) Health(ctx context.Context) bool {
+    ok, _ := m.healthMatches(ctx)
+    return ok
+}
+
+func (m *Manager) healthMatches(ctx context.Context) (bool, error) {
     req, _ := http.NewRequestWithContext(ctx, http.MethodGet, m.baseURL()+"/health", nil)
-    resp, err := http.DefaultClient.Do(req); if err != nil { return false }
+    resp, err := http.DefaultClient.Do(req); if err != nil { return false, err }
     defer resp.Body.Close()
-    return resp.StatusCode >= 200 && resp.StatusCode < 300
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 { return false, nil }
+    if !m.RequireModelMatch { return true, nil }
+
+    raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+    if err != nil { return false, err }
+    var meta map[string]any
+    if err := json.Unmarshal(raw, &meta); err != nil { return false, nil }
+    active, _ := meta["model_dir"].(string)
+    if strings.TrimSpace(active) == "" { return false, nil }
+    want, err := filepath.Abs(m.ModelDir); if err != nil { return false, err }
+    got, err := filepath.Abs(active); if err != nil { return false, err }
+    return filepath.Clean(want) == filepath.Clean(got), nil
+}
+
+func stopExistingCore() {
+    _ = exec.Command("pkill", "-f", "spice-qnn-core").Run()
+    _ = exec.Command("pkill", "-f", "stable_diffusion_core").Run()
+    time.Sleep(350 * time.Millisecond)
 }
 
 func (m *Manager) faceOnly() bool {
@@ -88,7 +140,19 @@ func (m *Manager) validate() error {
 
 func (m *Manager) Ensure(ctx context.Context) error {
     check, cancel := context.WithTimeout(ctx, 700*time.Millisecond)
-    if m.Health(check) { cancel(); return nil }; cancel()
+    healthy, _ := m.healthMatches(check)
+    cancel()
+    if healthy { return nil }
+
+    // A persona-specific pre-fused MNN pack may need a different model than
+    // the currently-running core. Only persona-routed managers force a swap.
+    if m.RequireModelMatch {
+        probe, probeCancel := context.WithTimeout(ctx, 700*time.Millisecond)
+        anyHealthy := FromEnv().Health(probe)
+        probeCancel()
+        if anyHealthy { stopExistingCore() }
+    }
+
     if err := m.validate(); err != nil { return err }
     if err := os.MkdirAll(filepath.Dir(m.LogPath), 0755); err != nil { return err }
     logFile, err := os.OpenFile(m.LogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); if err != nil { return err }
