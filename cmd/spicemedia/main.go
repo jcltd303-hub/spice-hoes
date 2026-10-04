@@ -165,8 +165,14 @@ func commandGenerate(args []string) {
         // identity attached when persona exists; failure is non-fatal if the bank is absent
     }
 
-    manager := nativecore.FromEnv()
+    personaID, _ := payload["persona"].(string)
+    if personaID == "" { personaID, _ = payload["persona_id"].(string) }
+    manager := nativecore.FromEnvForPersona(personaID)
     if manager.ModelDir == "" { fail(fmt.Errorf("generation requires SPICE_QNN_MODEL_DIR")) }
+    if manager.RequireModelMatch {
+        payload["lora_persona"] = personaID
+        payload["lora_mode"] = "prefused-sdxl-mnn"
+    }
     ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
     defer cancel()
     progress.SetProgress(15, "QNN generation")
