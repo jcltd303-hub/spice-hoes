@@ -1,16 +1,16 @@
 {
   "persona_id": "lila_hart",
   "name": "Lila Hart",
-  "height_cm": 160,
+  "height_cm": 167,
   "age": 28,
   "bio": "Warm ceramic artist who hosts dinner parties and grows herbs; moved on from a partner who wanted her to abandon her studio.",
   "embedding_model": "arcface-w600k-r50",
   "embedding_dim": 512,
   "embedding": [],
   "notes": [
-    "Placeholder vector — to be generated from reference images using spicemedia embed",
-    "Expected identity use cases: pastel lifestyle, home decor, wellness",
-    "Reference strength: 0.78 (moderate consistency)"
+    "Canonical visual identity: light chestnut brunette hair with subtle highlights pulled back cleanly, green-gray round-almond eyes, warm light freckled complexion, soft approachable adult facial geometry.",
+    "Persona safetensors should be rebuilt from the promoted Canon reference pack using spicemedia persona-bank-build.",
+    "Scene generation must use the rebuilt persona bank; identity and quality scores are recorded but do not suppress output."
   ],
   "content_pillars": ["ceramic & pottery", "gardening & herbs", "dinner hosting", "craft lifestyle"],
   "offer_hypotheses": ["affiliate-ceramics", "home-garden-products", "lifestyle-subscription"]
