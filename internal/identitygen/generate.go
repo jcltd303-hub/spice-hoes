@@ -161,10 +161,16 @@ type AttemptSummary struct {
 	MetadataPath  string  `json:"metadata_path,omitempty"`
 	IdentityScore float64 `json:"identity_score,omitempty"`
 	IdentityMean  float64 `json:"identity_mean,omitempty"`
+	PrototypeScore float64 `json:"prototype_score,omitempty"`
+	NearestOtherScore float64 `json:"nearest_other_score,omitempty"`
+	NearestOtherPersona string `json:"nearest_other_persona,omitempty"`
+	IdentityMargin float64 `json:"identity_margin,omitempty"`
+	MarginThreshold float64 `json:"margin_threshold,omitempty"`
 	IdentityPass  bool    `json:"identity_pass"`
 	QualityScore  float64 `json:"quality_score,omitempty"`
 	QualityPass   bool    `json:"quality_pass"`
 	SelectionScore float64 `json:"selection_score,omitempty"`
+	RejectReason string `json:"reject_reason,omitempty"`
 	Error         string  `json:"error,omitempty"`
 }
 
