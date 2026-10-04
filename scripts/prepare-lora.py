@@ -33,6 +33,7 @@ def main():
     ap.add_argument("--face-crops", default="")
     ap.add_argument("--out-root", default="data/lora-training")
     ap.add_argument("--token", default="")
+    ap.add_argument("--include-canon", action="store_true", help="include strict Canon images alongside extracted face crops")
     args=ap.parse_args()
     persona=args.persona
     token=args.token or PERSONA_TOKENS[persona]
@@ -43,15 +44,24 @@ def main():
 
     sources=[]
     crop_dir=Path(args.face_crops) if args.face_crops else Path("data/canon-face-crops")/persona
+    crop_sources=[]
     if crop_dir.is_dir():
-        sources=[p for p in sorted(crop_dir.iterdir()) if p.suffix.lower() in {".png",".jpg",".jpeg"}]
+        crop_sources=[p for p in sorted(crop_dir.iterdir()) if p.suffix.lower() in {".png",".jpg",".jpeg"}]
+        sources.extend(crop_sources)
 
-    if not sources:
-        # Fallback only: use strict Canon images directly. The preferred path is
-        # scripts/extract-canon-faces.sh, which generates one crop per detected view.
-        sources=canon_files(Path(args.reference_root), persona)
+    if args.include_canon or not sources:
+        # Whole Canon frames help prevent a face-only dataset from teaching
+        # pathological macro/eye crops. Keep this opt-in because some personas
+        # use contact sheets where whole-sheet training is undesirable.
+        for p in canon_files(Path(args.reference_root), persona):
+            if p not in sources:
+                sources.append(p)
 
-    caption=f"photo of {token} woman, fictional adult woman"
+    PERSONA_CAPTIONS = {
+        "ruby_wren": f"photo of {token} woman, fictional adult woman, age 30, vivid copper-auburn short textured bob with deep side part, fair neutral skin with light freckles, green-hazel upturned almond eyes",
+        "tess_wilder": f"photo of {token} woman, fictional adult woman, age 27, dark brown hair tied back cleanly, neutral light-medium freckled skin, gray-green slightly hooded almond eyes, athletic adult facial structure",
+    }
+    caption=PERSONA_CAPTIONS.get(persona, f"photo of {token} woman, fictional adult woman")
     records=[]
     for i, src in enumerate(sources, 1):
         img=Image.open(src).convert("RGB")
