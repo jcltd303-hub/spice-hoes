@@ -39,8 +39,9 @@ jobs:
       - name: Install Vulkan shader compiler
         run: |
           sudo apt-get update
-          sudo apt-get install -y glslc
+          sudo apt-get install -y glslc spirv-headers spirv-tools
           command -v glslc
+          test -d /usr/share/cmake/SPIRV-Headers || find /usr -type d -name 'SPIRV-Headers' -print -quit
 
       - name: Configure arm64 Vulkan build
         run: |
