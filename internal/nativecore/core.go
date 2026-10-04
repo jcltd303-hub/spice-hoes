@@ -163,7 +163,7 @@ func (m *Manager) Ensure(ctx context.Context) error {
         args = []string{"--upscaler_mode","--lib_dir",m.LibDir,"--port",strconv.Itoa(m.Port)}
     } else {
         args = []string{"--type",m.Type,"--model_dir",m.ModelDir,"--lib_dir",m.LibDir,"--port",strconv.Itoa(m.Port)}
-        if m.Type == "sdxl" {
+        if m.Type == "sdxl" || m.Type == "sdxlmnn" {
             args = append(args, "--no_img2img", "--lowram")
         }
     }
