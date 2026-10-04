@@ -25,6 +25,7 @@ import (
 	"github.com/jcltd303-hub/spice-hoes/internal/faceswap"
 	"github.com/jcltd303-hub/spice-hoes/internal/localdream"
 	"github.com/jcltd303-hub/spice-hoes/internal/nativecore"
+	"github.com/jcltd303-hub/spice-hoes/internal/sdcpp"
 	"gopkg.in/yaml.v3"
 )
 
@@ -791,6 +792,9 @@ func generationBackend(req Request) string {
 		backend = strings.ToLower(strings.TrimSpace(os.Getenv("SPICE_IDENTITY_GENERATOR")))
 	}
 	if backend == "" || backend == "auto" {
+		if sdcpp.Available(strings.TrimSpace(req.PersonaID)) {
+			return "sdcpp"
+		}
 		if strings.TrimSpace(os.Getenv("LOCAL_DREAM_URL")) != "" {
 			return "local-dream"
 		}
@@ -799,6 +803,8 @@ func generationBackend(req Request) string {
 	switch backend {
 	case "local-dream", "localdream", "ld":
 		return "local-dream"
+	case "sdcpp", "stable-diffusion.cpp", "stable-diffusion-cpp":
+		return "sdcpp"
 	default:
 		return "qnn"
 	}
@@ -864,6 +870,28 @@ func resolveIdentityEmbedding(ctx context.Context, req *Request, p Persona) (map
 
 func generateFrame(ctx context.Context, req Request, prompt string) (generatedFrame, map[string]any, string, error) {
 	backend := generationBackend(req)
+	if backend == "sdcpp" {
+		weight := req.IdentityEmbeddingWeight
+		if weight <= 0 { weight = 0.8 }
+		out, err := sdcpp.Generate(ctx, sdcpp.Request{
+			Persona: req.PersonaID,
+			Prompt: reqPrompt(prompt),
+			Negative: req.NegativePrompt,
+			Seed: req.Seed,
+			Width: req.Width,
+			Height: req.Height,
+			Steps: req.Steps,
+			Guidance: req.Guidance,
+			LoRAWeight: weight,
+		})
+		if err != nil { return generatedFrame{}, nil, backend, err }
+		img, _, err := image.Decode(bytes.NewReader(out.Image))
+		if err != nil { return generatedFrame{}, nil, backend, fmt.Errorf("decode stable-diffusion.cpp output: %w", err) }
+		meta := out.Meta
+		if meta == nil { meta = map[string]any{} }
+		meta["pipeline_image_mode"] = "decoded-memory"
+		return generatedFrame{Image:img, Encoded:out.Image}, meta, backend, nil
+	}
 	if backend == "local-dream" {
 		client := localdream.FromEnv()
 		out, err := client.Generate(ctx, localdream.GenerateRequest{
