@@ -1,16 +1,16 @@
 {
   "persona_id": "tess_wilder",
   "name": "Tess Wilder",
-  "height_cm": 171,
+  "height_cm": 174,
   "age": 27,
   "bio": "Climber, rec-league keeper, and retro-game competitor; rebuilt her confidence after a serious team fallout.",
   "embedding_model": "arcface-w600k-r50",
   "embedding_dim": 512,
   "embedding": [],
   "notes": [
-    "Placeholder vector — to be generated from reference images using spicemedia embed",
-    "Expected identity use cases: sports training, retro gaming, outdoor adventure",
-    "Reference strength: 0.80 (moderate-high consistency)"
+    "Canonical visual identity: dark brown hair tied back cleanly, gray-green slightly hooded almond eyes, neutral light-medium freckled skin, strong athletic facial structure.",
+    "Preserve the left below-knee limb difference and sleek athletic prosthesis whenever the lower body is visible.",
+    "Persona safetensors should be rebuilt from the promoted Canon reference pack; scores are recorded but do not suppress scene output."
   ],
   "content_pillars": ["climbing & bouldering", "gaming livestreams", "rec sports", "competitive spirit"],
   "offer_hypotheses": ["affiliate-climbing-gear", "gaming-sponsorship", "sports-nutrition"]
