@@ -10,7 +10,7 @@ favorite_book: The Dispossessed
 backstory: A zine writer who began self-publishing after a failed gallery collaboration.
 heartbreak: A gallery partner dismissed her writing just before an exhibition.
 voice: Fiery, eloquent, irreverent
-visual: Copper-toned hair, green-hazel eyes, colorful modern silhouettes, unique iconography
+visual: Copper-auburn short textured bob with a deep side part, green-hazel eyes, fair neutral skin with light freckles, colorful modern silhouettes, unique iconography
 physical:
   height_cm: 170
   weight_kg: 60
@@ -19,8 +19,8 @@ physical:
   eye_color: green-hazel
   eye_shape: upturned almond
   hair_color: copper auburn
-  hair_texture: straight with slight wave
-  hair_reference_style: tight high bun exposing forehead ears and nape
+  hair_texture: softly textured with slight wave
+  hair_reference_style: short copper-auburn textured bob with deep side part, face unobscured
   skin_tone: fair neutral with light freckles
   distinguishing_features:
     - prominent constellation-like freckle cluster across left shoulder and collarbone
@@ -30,7 +30,7 @@ identity_reference:
   embedding_weight: 1.10
   body_prompt: lean curvy adult woman with elongated proportions, long legs, lightly defined flat abdomen, narrow waist, balanced natural bust and hips, firm toned glutes, realistic anatomy
   wardrobe_mode: neutral minimal reference clothing; wardrobe is never part of identity lock
-  hair_mode: tight high bun exposing all facial contours and nape
+  hair_mode: short copper-auburn bob with side part, facial contours visible
   pose_template: expressive canonical body and face reference set
 adult_interest:
   type: power-contrast aesthetic

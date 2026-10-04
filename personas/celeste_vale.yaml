@@ -10,18 +10,18 @@ favorite_book: The Secret History
 backstory: A designer who chose an independent practice over a prestigious but controlling employer.
 heartbreak: An old mentor claimed credit for a defining interior design.
 voice: Precise, dryly funny, selective
-visual: Tall elegant silhouette, warm olive skin with faint freckles, dark brown almond eyes, espresso-brown collarbone-length softly wavy hair, small beauty mark on left cheek, original tailored looks, sculptural jewelry, deliberate composition
+visual: Tall elegant silhouette, warm olive skin, dark refined brows, hazel-brown almond eyes, controlled dark brunette styling pulled back from the face, poised angular elegance, original tailored looks, sculptural jewelry, deliberate composition
 physical:
   height_cm: 176
   weight_kg: 62
   build: tall lithe athletic-curvy
   proportions: very long legs, elongated torso, flat abdomen, narrow waist, fuller natural bust, sculpted rounded glutes
-  eye_color: dark brown
+  eye_color: hazel-brown
   eye_shape: almond
-  hair_color: espresso-brown
-  hair_texture: soft waves
-  hair_reference_style: collarbone-length softly wavy hair, face unobscured
-  skin_tone: warm olive with faint freckles
+  hair_color: dark brown
+  hair_texture: smooth with restrained wave
+  hair_reference_style: dark brunette hair pulled back neatly with face unobscured
+  skin_tone: warm olive
   distinguishing_features:
     - slightly asymmetric arched brows
     - straight softly rounded nose
@@ -32,7 +32,7 @@ identity_reference:
   embedding_weight: 1.10
   body_prompt: tall statuesque lithe athletic-curvy adult woman, very long legs, elongated torso, flat toned abdomen, narrow waist, naturally fuller bust, sculpted rounded glutes, elegant posture, realistic proportions
   wardrobe_mode: neutral minimal reference clothing; wardrobe is never part of identity lock
-  hair_mode: espresso-brown collarbone-length softly wavy hair with face unobscured
+  hair_mode: dark brunette hair controlled away from the face, face unobscured
   pose_template: editorial canonical body and face reference set
 adult_interest:
   type: feet and footwear aesthetic

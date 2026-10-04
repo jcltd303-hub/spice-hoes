@@ -10,7 +10,7 @@ favorite_book: Endure
 backstory: A rec-league keeper who started teaching beginners after a team fallout.
 heartbreak: A teammate she trusted quit their shared project without warning.
 voice: Competitive, encouraging, quick-witted
-visual: Functional training gear, cropped dark hair, strong athletic posture, original graphics
+visual: Functional training styling, dark brown hair tied back cleanly, gray-green slightly hooded almond eyes, neutral light-medium freckled skin, strong athletic facial structure, original practical graphics
 physical:
   height_cm: 174
   weight_kg: 64
@@ -19,16 +19,16 @@ physical:
   eye_color: gray-green
   eye_shape: slightly hooded almond
   hair_color: dark brown
-  hair_texture: straight
-  hair_reference_style: tight high ponytail or bun with ears and hairline exposed
-  skin_tone: neutral light-medium
+  hair_texture: straight with slight flyaways when tied back
+  hair_reference_style: clean tied-back hair with ears and hairline exposed
+  skin_tone: neutral light-medium with visible freckles
   distinguishing_features:
     - left below-knee limb difference with a sleek athletic prosthesis
     - faint climbing scar on right outer forearm
 identity_reference:
   body_prompt: tall long-limbed athletic adult woman, strong but lithe, flat abdomen, defined thighs and shoulders, toned glutes, realistic feminine curves; preserve left below-knee limb difference and athletic prosthesis exactly
   wardrobe_mode: neutral minimal reference clothing; wardrobe is never part of identity lock
-  hair_mode: hair secured tightly away from face and neck
+  hair_mode: dark brown hair secured tightly away from face and neck
   pose_template: adaptive canonical standing, three-quarter, profile, rear, walking and seated postures
 adult_interest:
   type: strength / athletic power admiration

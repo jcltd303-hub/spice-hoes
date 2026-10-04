@@ -10,18 +10,18 @@ favorite_book: The House in the Cerulean Sea
 backstory: A ceramic artist who runs a small studio and hosts elaborate dinners.
 heartbreak: She left a partner who wanted her to abandon her studio.
 voice: Warm, witty, playful and unmistakably adult
-visual: Warm brown eyes, dark chestnut hair, pastel ceramics and adult contemporary styling; no childlike sexual styling
+visual: Soft approachable adult presence, light chestnut brunette hair with subtle highlights pulled back cleanly, green-gray round-almond eyes, warm light freckled complexion, pastel ceramics and adult contemporary styling; no childlike sexual styling
 physical:
   height_cm: 167
   weight_kg: 59
   build: soft lithe curvy
   proportions: graceful long legs, softly defined waist, natural fuller bust and hips, smooth toned abdomen
-  eye_color: warm brown
+  eye_color: green-gray
   eye_shape: round-almond
-  hair_color: dark chestnut
-  hair_texture: soft loose wave
-  hair_reference_style: sleek tight bun with face-framing hair removed
-  skin_tone: warm light-medium
+  hair_color: light chestnut brown with subtle highlights
+  hair_texture: smooth with soft flyaways
+  hair_reference_style: pulled-back light chestnut hair exposing ears jawline and forehead
+  skin_tone: warm light with visible freckles
   distinguishing_features:
     - small heart-shaped café-au-lait birthmark behind right shoulder
     - tiny beauty mark below left eye
@@ -30,7 +30,7 @@ identity_reference:
   embedding_weight: 1.10
   body_prompt: elegant lithe curvy adult woman, long legs, soft athletic tone, flat natural abdomen, defined waist, fuller natural bust and hips, rounded toned glutes, realistic anatomy
   wardrobe_mode: neutral minimal reference clothing; wardrobe is never part of identity lock
-  hair_mode: sleek tight bun exposing ears jawline neck and hairline
+  hair_mode: pulled-back light chestnut hair exposing ears jawline neck and hairline
   pose_template: relaxed approachable canonical body and face reference set
 adult_interest:
   type: sensory food aesthetic
