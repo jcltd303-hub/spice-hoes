@@ -238,7 +238,26 @@ generate_scene() {
     --scene "$scene" \
     > "$out_json"
 
-  cat "$out_json"
+  jq '{
+    persona_id,
+    status,
+    asset_path,
+    documents_path,
+    identity: {
+      score: .identity.score,
+      mean_score: .identity.mean_score,
+      prototype_score: .identity.prototype_score,
+      nearest_other_persona: .identity.nearest_other_persona,
+      nearest_other_score: .identity.nearest_other_score,
+      identity_margin: .identity.identity_margin,
+      passed: .identity.passed
+    },
+    quality: {
+      score: .quality.local_score,
+      passed: .quality_passed
+    },
+    generator: .generation.generator
+  }' "$out_json"
   printf '\n'
 }
 
