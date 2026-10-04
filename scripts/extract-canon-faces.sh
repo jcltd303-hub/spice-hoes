@@ -49,11 +49,33 @@ img=Image.open(src).convert("RGB")
 data=json.loads(det.read_text())
 faces=data.get("faces") or []
 W,H=img.size
-written=0
-for i,f in enumerate(faces):
+
+# The 0.10 SCRFD fallback is intentionally permissive for contact sheets, but
+# it can return dozens of tiny false positives. Rank detections by confidence
+# and face area, reject implausibly small boxes, then cap each Canon sheet at
+# eight views. A six-view sheet should normally yield about six crops, not 49.
+candidates=[]
+min_side=0.07*min(W,H)
+min_area=0.004*W*H
+for f in faces:
     box=f.get("box") or []
     if len(box)!=4: continue
     x1,y1,x2,y2=map(float,box)
+    fw=max(1.0,x2-x1); fh=max(1.0,y2-y1)
+    area=fw*fh
+    score=float(f.get("score") or 0.0)
+    if min(fw,fh) < min_side or area < min_area:
+        continue
+    # Favor confident, substantial portrait faces without letting sheer box
+    # size overwhelm confidence.
+    rank=score*((area/(W*H))**0.25)
+    candidates.append((rank,score,area,(x1,y1,x2,y2)))
+
+candidates.sort(reverse=True, key=lambda x:x[0])
+candidates=candidates[:8]
+
+written=0
+for _,score,area,(x1,y1,x2,y2) in candidates:
     fw=max(1.0,x2-x1); fh=max(1.0,y2-y1)
     cx=(x1+x2)/2; cy=(y1+y2)/2
     # generous portrait crop: hair + shoulders, while preserving the detected face.
@@ -70,11 +92,16 @@ for i,f in enumerate(faces):
     dst=out/f"canon-face-{offset+written+1:02d}.png"
     canvas.save(dst)
     written+=1
-print(written)
+
+print(json.dumps({
+    "raw_detections": len(faces),
+    "accepted_crops": written,
+    "max_score": max([float(f.get("score") or 0.0) for f in faces], default=0.0),
+}))
 PY
 
-  count="$(jq '.count // 0' "$json")"
-  n=$((n + count))
+  count="$(find "$OUT_DIR" -maxdepth 1 -type f -name 'canon-face-*.png' | wc -l | tr -d ' ')"
+  n="$count"
 done
 
 rm -f "$OUT_DIR"/detect-*.json
