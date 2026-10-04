@@ -473,7 +473,7 @@ func referenceCentroid(refs []referenceEmbedding) ([]float64, error) {
 	return ident.Normalize(out), nil
 }
 
-func scoreIdentityImageCached(ctx context.Context, m *nativecore.Manager, generated image.Image, refs []referenceEmbedding, threshold, meanThreshold float64) IdentityResult {
+func scoreIdentityImageCached(ctx context.Context, m *nativecore.Manager, generated image.Image, refs []referenceEmbedding, threshold, meanThreshold float64, personaID string, marginThreshold float64) IdentityResult {
 	result := IdentityResult{
 		Threshold: threshold,
 		MeanThreshold: meanThreshold,
@@ -512,6 +512,27 @@ func scoreIdentityImageCached(ctx context.Context, m *nativecore.Manager, genera
 	result.MeanScore = sum / float64(len(scores))
 	result.ReferenceCount = len(scores)
 	result.Passed = result.Score >= threshold && result.MeanScore >= meanThreshold
+	result.DecisionBasis = "legacy_raw_reference_max_and_mean"
+
+	if strings.TrimSpace(personaID) != "" {
+		if marginThreshold <= 0 { marginThreshold = DefaultIdentityMargin }
+		if protos, err := LoadDiscriminativePrototypes("personas"); err == nil {
+			if own := protos[personaID]; len(own) > 0 {
+				if ps, err := ScorePrototypeMargin(genVec, personaID, own, protos, marginThreshold); err == nil {
+					result.PrototypeScore = ps.OwnScore
+					result.NearestOtherScore = ps.NearestOtherScore
+					result.IdentityMargin = ps.Margin
+					result.MarginThreshold = ps.MarginThreshold
+					result.NearestOtherPersona = ps.NearestOtherPersona
+					result.MarginScored = true
+					ownThreshold := meanThreshold
+					if ownThreshold <= 0 { ownThreshold = 0.70 }
+					result.Passed = ps.OwnScore >= ownThreshold && ps.Passed
+					result.DecisionBasis = "own_prototype_similarity_and_nearest_foreign_margin"
+				}
+			}
+		}
+	}
 	return result
 }
 
@@ -933,7 +954,7 @@ func runSingleAttempt(
 	preSwapBytes := append([]byte(nil), imageBytes...)
 	preSwapIdentity := IdentityResult{}
 	if len(refs) > 0 {
-		preSwapIdentity = scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+		preSwapIdentity = scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold, p.ID, req.IdentityMarginThreshold)
 		out["identity_pre_swap_score"] = preSwapIdentity.Score
 		out["identity_pre_swap_mean"] = preSwapIdentity.MeanScore
 		out["identity_pre_swap_scored"] = preSwapIdentity.Scored
@@ -959,7 +980,7 @@ func runSingleAttempt(
 				if len(vec) != 512 { return }
 				swappedImg, meta, swapErr := swapper.SwapImageWithEmbedding(ctx, vec, frame.Image)
 				if swapErr != nil || swappedImg == nil { return }
-				idResult := scoreIdentityImageCached(ctx, m, swappedImg, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+				idResult := scoreIdentityImageCached(ctx, m, swappedImg, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold, p.ID, req.IdentityMarginThreshold)
 				if !idResult.Scored { return }
 				q, qErr := imagemetrics.AnalyzeImage(swappedImg)
 				if qErr != nil || q.LocalScore < req.QualityThreshold { return }
@@ -1019,7 +1040,7 @@ func runSingleAttempt(
 		"attempt":attemptIndex, "best_of_n":attemptTotal,
 		"references":len(refs), "identity_threshold":req.IdentityThreshold,
 	})
-	identity := scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+	identity := scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold, p.ID, req.IdentityMarginThreshold)
 	if applied, _ := out["faceswap_applied"].(bool); applied && preSwapIdentity.Scored && identity.Scored && identity.Score < preSwapIdentity.Score {
 		out["faceswap_reverted"] = true
 		out["faceswap_revert_reason"] = fmt.Sprintf("post-swap identity %.6f below pre-swap %.6f", identity.Score, preSwapIdentity.Score)
@@ -1151,7 +1172,7 @@ func refineAttemptWithFaceSwap(
 		if len(vec) != 512 { return }
 		swapped, meta, swapErr := swapper.SwapImageWithEmbedding(ctx, vec, img)
 		if swapErr != nil || swapped == nil { return }
-		idResult := scoreIdentityImageCached(ctx, m, swapped, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+		idResult := scoreIdentityImageCached(ctx, m, swapped, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold, req.PersonaID, req.IdentityMarginThreshold)
 		if !idResult.Scored { return }
 		q, qErr := imagemetrics.AnalyzeImage(swapped)
 		if qErr != nil || q.LocalScore < req.QualityThreshold { return }
@@ -1260,6 +1281,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if req.ReferenceRoot == "" { req.ReferenceRoot = filepath.Join("data", "references") }
 	if req.IdentityThreshold == 0 { req.IdentityThreshold = 0.82 }
 	if req.IdentityMeanThreshold == 0 { req.IdentityMeanThreshold = 0.70 }
+	if req.IdentityMarginThreshold == 0 { req.IdentityMarginThreshold = DefaultIdentityMargin }
 	if req.QualityThreshold == 0 { req.QualityThreshold = 0.78 }
 	if req.NegativePrompt == "" { req.NegativePrompt = defaultNegative }
 	if req.BestOfN <= 0 {
