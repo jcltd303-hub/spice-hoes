@@ -347,7 +347,7 @@ func commandDetect() {
     progress.SetProgress(35, "SCRFD detection")
     outputs, meta, err := manager.Detect(ctx, prep.Tensor)
     if err != nil { fail(err) }
-    faces, err := ident.DecodeSCRFD(outputs, prep, ident.SCRFDThreshold(0.5), 0.4)
+    faces, thresholdUsed, err := ident.DecodeSCRFDWithFallback(outputs, prep, ident.SCRFDThreshold(0.5), 0.4)
     if err != nil { fail(err) }
 
     result := make([]map[string]any, 0, len(faces))
@@ -368,8 +368,9 @@ func commandDetect() {
         "model": "scrfd-10g-qnn",
         "npu": true,
         "latency_ms": meta["latency_ms"],
+        "threshold_used": thresholdUsed,
     }
-    finish("face detection metrics", map[string]any{"faces": len(result), "latency_ms": meta["latency_ms"], "model": "scrfd-10g-qnn", "npu": true})
+    finish("face detection metrics", map[string]any{"faces": len(result), "latency_ms": meta["latency_ms"], "model": "scrfd-10g-qnn", "npu": true, "threshold_used": thresholdUsed})
     write(response)
 }
 
