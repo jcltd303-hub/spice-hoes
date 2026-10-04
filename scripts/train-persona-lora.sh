@@ -20,11 +20,12 @@ TRAIN_DIR="${TRAIN_DIR:-$TRAIN_ROOT/images}"
 OUT_DIR="${OUT_DIR:-$TRAIN_ROOT/output}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-artifacts/loras}"
 DIFFUSERS_REF="${DIFFUSERS_REF:-v0.35.1}"
-STEPS="${STEPS:-1200}"
+STEPS="${STEPS:-600}"
 LR="${LR:-1e-4}"
-RANK="${RANK:-32}"
+RANK="${RANK:-16}"
 SEED="${SEED:-20261004}"
-RESOLUTION="${RESOLUTION:-1024}"
+RESOLUTION="${RESOLUTION:-768}"
+ACCUM_STEPS="${ACCUM_STEPS:-1}"
 
 python3 - <<'PY'
 import torch
@@ -110,8 +111,9 @@ accelerate launch "$TRAINER" \
   --instance_prompt="photo of $TOKEN woman, fictional adult woman" \
   --resolution="$RESOLUTION" \
   --train_batch_size=1 \
-  --gradient_accumulation_steps=4 \
+  --gradient_accumulation_steps="$ACCUM_STEPS" \
   --gradient_checkpointing \
+  --cache_latents \
   --use_8bit_adam \
   --learning_rate="$LR" \
   --lr_scheduler=constant \
