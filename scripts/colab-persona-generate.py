@@ -32,6 +32,14 @@ PERSONAS = {
     "lila_hart": ("splila", "Lila Hart"),
 }
 
+PERSONA_CUES = {
+    "zara_voss": "dark compact-curly high bun, warm medium olive skin, strong brows, amber-brown deep-set almond eyes",
+    "ruby_wren": "vivid copper-red short textured bob, fair neutral skin with freckles, green-hazel eyes, youthful adult facial proportions",
+    "tess_wilder": "tied-back dark brown hair, neutral light-medium freckled skin, gray-green slightly hooded almond eyes, athletic adult face, balanced jawline",
+    "celeste_vale": "dark brunette hair pulled back, olive skin, hazel-brown almond eyes, refined dark brows, angular mature elegance, beauty mark on left cheek",
+    "lila_hart": "warm light freckled complexion, green-gray round-almond eyes, light chestnut hair with subtle highlights pulled back, soft approachable adult facial geometry",
+}
+
 DEFAULT_SCENE = (
     "photorealistic portrait photo of {token} woman, fictional adult woman, "
     "natural daylight, realistic skin texture, realistic eyes, detailed hair, "
@@ -100,6 +108,9 @@ def main():
 
         prompt = args.prompt.strip() or DEFAULT_SCENE.format(token=token)
         prompt = prompt.replace("TOKEN", token)
+        cue = PERSONA_CUES.get(persona, "")
+        if cue:
+            prompt = f"{prompt}, identity traits: {cue}"
         if token not in prompt:
             prompt = f"{token}, {prompt}"
 
