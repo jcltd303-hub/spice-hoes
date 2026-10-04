@@ -8,9 +8,9 @@
   "embedding_dim": 512,
   "embedding": [],
   "notes": [
-    "Placeholder vector — to be generated from reference images using spicemedia embed",
-    "Expected identity use cases: mirror selfies, night scene content, urban fashion",
-    "Reference strength: 0.82 (high consistency required)"
+    "Canonical visual identity: dark espresso compact curls in a high curly bun, strong brows, amber-brown deep-set almond eyes, warm medium olive skin.",
+    "Persona safetensors should be rebuilt from the promoted Canon reference pack using spicemedia persona-bank-build.",
+    "Scene generation must use the rebuilt persona bank; identity and quality scores are recorded but do not suppress output."
   ],
   "content_pillars": ["night-market lifestyle", "music production", "event organization", "urban fashion"],
   "offer_hypotheses": ["affiliate-music-gear", "event-ticketing", "fashion-collab"]
