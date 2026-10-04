@@ -68,7 +68,28 @@ for persona in "${PERSONAS[@]}"; do
     exit 2
   fi
 
-  go run ./cmd/spicemedia persona-bank-build     --persona "$persona"     --reference-root "$REFERENCE_ROOT"     --out "personas/${persona}.safetensors"
+  mapfile -t canon_refs < <(
+    find "$ref_dir" -maxdepth 1 -type f \( \
+      -iname 'canon.png' -o -iname 'canon.jpg' -o -iname 'canon.jpeg' -o \
+      -iname 'canon-*.png' -o -iname 'canon-*.jpg' -o -iname 'canon-*.jpeg' -o \
+      -iname 'canon_*.png' -o -iname 'canon_*.jpg' -o -iname 'canon_*.jpeg' \
+    \) | sort
+  )
+
+  if (( ${#canon_refs[@]} == 0 )); then
+    echo "no strict Canon references found for $persona in $ref_dir" >&2
+    echo "expected canon.png or canon-* / canon_* image files" >&2
+    echo "old anchor-* and bootstrap-* files are intentionally ignored" >&2
+    exit 3
+  fi
+
+  echo "  $persona Canon refs:"
+  printf '    %s\n' "${canon_refs[@]}"
+
+  go run ./cmd/spicemedia persona-bank-build \
+    --persona "$persona" \
+    --reference-root "$REFERENCE_ROOT" \
+    --out "personas/${persona}.safetensors"
 done
 
 generate_scene() {
