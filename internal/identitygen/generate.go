@@ -369,18 +369,54 @@ type referenceEmbedding struct {
 	vec   []float64
 }
 
+func embedReferenceFaces(ctx context.Context, m *nativecore.Manager, raw []byte, sourceIndex int) ([]referenceEmbedding, error) {
+	img, _, err := image.Decode(bytes.NewReader(raw))
+	if err != nil { return nil, fmt.Errorf("decode image: %w", err) }
+	if m.FaceDetector == "" { return nil, fmt.Errorf("SCRFD face detector is not configured") }
+	if m.IdentityVision == "" { return nil, fmt.Errorf("ArcFace embedding model is not configured") }
+
+	prep, err := ident.SCRFDInputImage(img)
+	if err != nil { return nil, fmt.Errorf("prepare SCRFD input: %w", err) }
+	outputs, _, err := m.Detect(ctx, prep.Tensor)
+	if err != nil { return nil, fmt.Errorf("SCRFD detection failed: %w", err) }
+	faces, _, err := ident.DecodeSCRFDWithFallback(outputs, prep, ident.SCRFDThreshold(0.5), 0.4)
+	if err != nil || len(faces) == 0 {
+		if err == nil { err = fmt.Errorf("no face detected") }
+		return nil, fmt.Errorf("SCRFD landmarks unavailable: %w", err)
+	}
+
+	// Canon sheets intentionally contain several views of the same fictional
+	// adult identity. Treat every detected face as a separate ArcFace sample
+	// instead of silently taking faces[0].
+	const maxFacesPerReference = 8
+	if len(faces) > maxFacesPerReference { faces = faces[:maxFacesPerReference] }
+
+	out := make([]referenceEmbedding, 0, len(faces))
+	for _, face := range faces {
+		input, alignErr := ident.ArcFaceInputAlignedImage(img, face.Landmarks)
+		if alignErr != nil { continue }
+		vec, _, embedErr := m.Embed(ctx, input)
+		if embedErr != nil { continue }
+		vec = ident.Normalize(vec)
+		if len(vec) == 0 { continue }
+		out = append(out, referenceEmbedding{index:sourceIndex, vec:vec})
+	}
+	if len(out) == 0 { return nil, fmt.Errorf("no detected Canon face produced an ArcFace embedding") }
+	return out, nil
+}
+
 func embedReferences(ctx context.Context, m *nativecore.Manager, refs [][]byte, paths []string) ([]referenceEmbedding, []string) {
-	out := make([]referenceEmbedding, 0, len(refs))
+	out := make([]referenceEmbedding, 0, len(refs)*4)
 	failures := make([]string, 0)
 	for i, ref := range refs {
-		vec, _, err := arcEmbedding(ctx, m, ref)
+		embeddings, err := embedReferenceFaces(ctx, m, ref, i)
 		if err != nil {
 			label := fmt.Sprintf("reference[%d]", i)
 			if i < len(paths) && strings.TrimSpace(paths[i]) != "" { label = paths[i] }
 			failures = append(failures, fmt.Sprintf("%s: %v", label, err))
 			continue
 		}
-		out = append(out, referenceEmbedding{index:i, vec:vec})
+		out = append(out, embeddings...)
 	}
 	return out, failures
 }
