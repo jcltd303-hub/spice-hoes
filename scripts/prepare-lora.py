@@ -34,6 +34,7 @@ def main():
     ap.add_argument("--out-root", default="data/lora-training")
     ap.add_argument("--token", default="")
     ap.add_argument("--include-canon", action="store_true", help="include strict Canon images alongside extracted face crops")
+    ap.add_argument("--expand-single-canon", action="store_true", help="create deterministic mild crop variants when only one Canon image is available")
     args=ap.parse_args()
     persona=args.persona
     token=args.token or PERSONA_TOKENS[persona]
@@ -63,19 +64,35 @@ def main():
     }
     caption=PERSONA_CAPTIONS.get(persona, f"photo of {token} woman, fictional adult woman")
     records=[]
-    for i, src in enumerate(sources, 1):
-        img=Image.open(src).convert("RGB")
-        # Preserve composition, standardize orientation, and create one neutral
-        # 1024 training image. Do not synthesize identity-changing augmentations.
-        img=ImageOps.exif_transpose(img)
+
+    def write_training_image(img, src, index, variant):
+        img=ImageOps.exif_transpose(img).convert("RGB")
         img.thumbnail((1024,1024), Image.Resampling.LANCZOS)
         canvas=Image.new("RGB",(1024,1024),(127,127,127))
         x=(1024-img.width)//2; y=(1024-img.height)//2
         canvas.paste(img,(x,y))
-        dst=images/f"{i:02d}.jpg"
+        dst=images/f"{index:02d}.jpg"
         canvas.save(dst, quality=96, subsampling=0)
-        (images/f"{i:02d}.txt").write_text(caption+"\n", encoding="utf-8")
-        records.append({"source":str(src),"image":str(dst),"caption":caption})
+        (images/f"{index:02d}.txt").write_text(caption+"\n", encoding="utf-8")
+        records.append({"source":str(src),"image":str(dst),"caption":caption,"variant":variant})
+
+    next_index=1
+    for src in sources:
+        base=Image.open(src).convert("RGB")
+        write_training_image(base.copy(), src, next_index, "full")
+        next_index += 1
+
+        # A single Canon image is not enough for DreamBooth LoRA training.
+        # For Ruby/Tess we create only mild deterministic center crops of the
+        # same authoritative pixels. No color/style/face synthesis is used.
+        if args.expand_single_canon and len(sources)==1:
+            w,h=base.size
+            for ratio in (0.96,0.92,0.88,0.84,0.80):
+                cw=max(1,int(w*ratio)); ch=max(1,int(h*ratio))
+                left=(w-cw)//2; top=(h-ch)//2
+                crop=base.crop((left,top,left+cw,top+ch))
+                write_training_image(crop, src, next_index, f"center_crop_{ratio:.2f}")
+                next_index += 1
 
     manifest={
         "persona":persona,
