@@ -3,6 +3,11 @@ __pycache__/
 *.pyc
 .venv/
 .env
+.env.swarm
+.env.spicemedia
+node_modules/
+dist/
+bin/
 assets/private/
 
 # Commit only authoritative fictional-persona Canon images; keep all other data private.

@@ -76,7 +76,7 @@ class ControlPlaneTests(unittest.TestCase):
         dispatch("recommend", {"seed": 4, "audit": True}, self.store, self.personas)
         self.assertEqual(self.store.events()[-1]["kind"], "policy_decision")
 
-    def test_simulation_records_real_outcomes(self):
+    def test_simulation_reports_separate_demo_outcomes(self):
         persona = self.personas[0]
         cid = self.store.propose(persona, "sim", "still", "test", "offer")
         self.store.review(cid, "approved", "tester")
@@ -94,9 +94,21 @@ class ControlPlaneTests(unittest.TestCase):
             self.personas,
         )
         row = next(item for item in out["stats"] if item["persona_id"] == persona["id"])
-        self.assertEqual(row["impressions"], 2)
-        self.assertEqual(row["clicks"], 1)
-        self.assertEqual(row["revenue_cents"], 700)
+        self.assertEqual(row["impressions"], 0)
+        self.assertEqual(row["clicks"], 0)
+        self.assertEqual(row["revenue_cents"], 0)
+        self.assertEqual(out["mode"], "simulation")
+        self.assertEqual(out["simulation"]["revenue_cents"], 700)
+
+    def test_simulated_sales_cannot_enter_the_live_revenue_ledger(self):
+        persona = self.personas[0]
+        cid = self.store.propose(persona, "simulation", "still", "test", "offer")
+        self.store.review(cid, "approved", "tester")
+        self.store.publish(cid, "https://example.test/sim")
+        dispatch("simulate", {"candidate_id": cid, "purchases": 2, "purchaseCents": 700},
+                 self.store, self.personas)
+        live = next(item for item in self.store.stats(self.personas) if item["persona_id"] == persona["id"])
+        self.assertEqual(live["revenue_cents"], 0)
 
     def test_runtime_policy_update_and_rl_status(self):
         current = dispatch("policy", {}, self.store, self.personas)

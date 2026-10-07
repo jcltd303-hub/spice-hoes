@@ -4,6 +4,8 @@ import argparse
 import json
 import os
 import secrets
+import signal
+import threading
 from http.server import HTTPServer
 from pathlib import Path
 
@@ -13,7 +15,7 @@ from .autopilot import CoreAutopilot
 from .deeprl import DeepRLPolicy
 from .experiments import ExperimentPlanner
 from .engagement import EngagementAgent
-from .core import Store, load_personas
+from .core import Store, load_personas, OUTCOME_KINDS
 from .memory import KnowledgeBase
 from .learning import LearningController
 from .moa import MixtureOfAgents
@@ -197,7 +199,7 @@ def main(argv=None):
 
     outcome = sub.add_parser("outcome")
     outcome.add_argument("candidate_id")
-    outcome.add_argument("kind", choices=("impression", "click", "purchase", "refund", "distribution_cost", "commerce_cost"))
+    outcome.add_argument("kind", choices=OUTCOME_KINDS)
     outcome.add_argument("--amount-cents", type=int, default=0)
     outcome.add_argument("--external-id")
 
@@ -337,6 +339,16 @@ def main(argv=None):
     pset.add_argument("--actor", required=True)
     pset.add_argument("--note", default="")
 
+    swarm_status = sub.add_parser("swarm-status")
+    swarm_status.add_argument("--config", default=os.getenv("SPICE_SWARM_CONFIG"))
+    swarm_run = sub.add_parser("swarm-run")
+    swarm_run.add_argument("--config", default=os.getenv("SPICE_SWARM_CONFIG"))
+    swarm_run.add_argument("--once", action="store_true")
+    swarm_run.add_argument("--interval", type=int, default=60)
+    commerce_serve = sub.add_parser("commerce-serve")
+    commerce_serve.add_argument("--host", default="127.0.0.1")
+    commerce_serve.add_argument("--port", type=int, default=8766)
+
     args = parser.parse_args(argv)
     ui = SpiceUI(force_json=args.json, no_color=args.no_color)
     ui.header(args.command)
@@ -352,6 +364,47 @@ def main(argv=None):
             output = store.stats(personas)
         elif args.command == "events":
             output = store.events()
+        elif args.command in ("swarm-status", "swarm-run"):
+            from .swarm import SwarmConfig
+            from .swarm_factory import make_swarm
+            config = SwarmConfig.load(args.config) if args.config else SwarmConfig()
+            runtime = make_swarm(store, personas, config)
+            if args.command == "swarm-status":
+                output = runtime.status()
+            elif args.once:
+                output = runtime.tick()
+            else:
+                if not 1 <= args.interval <= 3600:
+                    parser.error("--interval must be 1..3600 seconds")
+                stop = threading.Event()
+                previous = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGINT)}
+                for s in previous:
+                    signal.signal(s, lambda *_: stop.set())
+                try:
+                    while not stop.is_set():
+                        try:
+                            report = runtime.tick()
+                        except Exception as exc:
+                            report = {"status": "failed", "error_type": type(exc).__name__}
+                        print(json.dumps(report, sort_keys=True), flush=True)
+                        stop.wait(args.interval)
+                finally:
+                    for s, handler in previous.items():
+                        signal.signal(s, handler)
+                return
+        elif args.command == "commerce-serve":
+            from .commerce_web import make_commerce_handler
+            secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+            if not secret:
+                parser.error("STRIPE_WEBHOOK_SECRET is required")
+            server = HTTPServer((args.host, args.port), make_commerce_handler(args.db, secret))
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                server.server_close()
+            return
         elif args.command == "briefs":
             output = build_briefs(personas, args.theme, args.channel, args.seed)
         elif args.command == "campaign":

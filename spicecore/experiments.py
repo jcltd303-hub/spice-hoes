@@ -6,6 +6,8 @@ import json
 import uuid
 from datetime import datetime, timezone
 
+from .core import MONETARY_OUTCOMES
+
 
 class ExperimentPlanError(ValueError):
     pass
@@ -255,18 +257,22 @@ class ExperimentPlanner:
         return outputs
 
 
-    def results(self, plan_id: str) -> dict:
+    def results(self, plan_id: str, *, verified_revenue_only: bool = False) -> dict:
         plan = self.get(plan_id)
         variants = []
         for variant in plan["variants"]:
             candidate_id = variant.get("candidate_id")
             metrics = {
                 "impressions": 0,
+                "views": 0,
                 "clicks": 0,
                 "revenue_cents": 0,
                 "refund_cents": 0,
+                "chargeback_cents": 0,
+                "chargeback_reversal_cents": 0,
                 "distribution_cost_cents": 0,
                 "commerce_cost_cents": 0,
+                "commerce_cost_reversal_cents": 0,
                 "generation_cost_cents": 0,
                 "net_cents": 0,
             }
@@ -276,32 +282,48 @@ class ExperimentPlanner:
                 status = candidate["status"]
                 metrics["generation_cost_cents"] = int(candidate["cost_cents"])
                 rows = self.store.db.execute(
-                    """SELECT kind,payload FROM events
-                       WHERE kind IN ('impression','click','purchase','refund','distribution_cost','commerce_cost')"""
+                    """SELECT id,kind,payload FROM events
+                       WHERE kind IN ('impression','view','click','purchase','refund','chargeback',
+                                      'chargeback_reversal','distribution_cost','commerce_cost',
+                                      'commerce_cost_reversal')"""
                 ).fetchall()
                 for row in rows:
                     payload = json.loads(row["payload"])
                     if payload.get("candidate_id") != candidate_id:
                         continue
                     kind = row["kind"]
+                    if (verified_revenue_only and kind in MONETARY_OUTCOMES
+                            and not self.store.monetary_event_is_observed(row["id"], kind)):
+                        continue
                     amount = int(payload.get("amount_cents", 0))
                     if kind == "impression":
-                        metrics["impressions"] += 1
+                        metrics["impressions"] += int(payload.get("count", 1))
+                    elif kind == "view":
+                        metrics["views"] += int(payload.get("count", 1))
                     elif kind == "click":
-                        metrics["clicks"] += 1
+                        metrics["clicks"] += int(payload.get("count", 1))
                     elif kind == "purchase":
                         metrics["revenue_cents"] += amount
                     elif kind == "refund":
                         metrics["refund_cents"] += amount
+                    elif kind == "chargeback":
+                        metrics["chargeback_cents"] += amount
+                    elif kind == "chargeback_reversal":
+                        metrics["chargeback_reversal_cents"] += amount
                     elif kind == "distribution_cost":
                         metrics["distribution_cost_cents"] += amount
                     elif kind == "commerce_cost":
                         metrics["commerce_cost_cents"] += amount
+                    elif kind == "commerce_cost_reversal":
+                        metrics["commerce_cost_reversal_cents"] += amount
                 metrics["net_cents"] = (
                     metrics["revenue_cents"]
                     - metrics["refund_cents"]
+                    - metrics["chargeback_cents"]
+                    + metrics["chargeback_reversal_cents"]
                     - metrics["distribution_cost_cents"]
                     - metrics["commerce_cost_cents"]
+                    + metrics["commerce_cost_reversal_cents"]
                     - metrics["generation_cost_cents"]
                 )
 
@@ -316,7 +338,7 @@ class ExperimentPlanner:
                 **metrics,
             })
 
-        observed = [v for v in variants if v["candidate_id"] and v["impressions"] > 0]
+        observed = [v for v in variants if v["candidate_id"] and (v["impressions"] > 0 or v["views"] > 0)]
         leader = None
         if observed:
             leader = max(

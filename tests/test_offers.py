@@ -61,7 +61,7 @@ class OfferAttributionTests(unittest.TestCase):
         self.assertEqual(click1["audit_event_id"], click2["audit_event_id"])
 
         purchase = self.registry.ingest(
-            link["tracking_token"], "purchase", "order-1"
+            link["tracking_token"], "purchase", "order-1", amount_cents=900
         )
         self.assertEqual(purchase["amount_cents"], 900)
         self.assertIsNotNone(purchase["commerce_cost_event_id"])

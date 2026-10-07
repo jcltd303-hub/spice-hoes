@@ -71,13 +71,16 @@ class TestMetricIngest(unittest.TestCase):
         # Check persona stats in store
         stats1 = self.store.stats([self.persona])[0]
         self.assertEqual(stats1["revenue_cents"], 4500)
-        self.assertGreaterEqual(stats1["impressions"], 1)
+        self.assertEqual(stats1["impressions"], 1500)
+        self.assertEqual(stats1["clicks"], 35)
 
         # 3. IDEMPOTENT INGESTION: Ingesting identical metrics again must NOT double revenue or impressions
         res2 = self.ingestor.ingest(normalized)
 
         stats2 = self.store.stats([self.persona])[0]
         self.assertEqual(stats2["revenue_cents"], 4500)  # Still exactly 4500, not 9000!
+        self.assertEqual(stats2["impressions"], 1500)
+        self.assertEqual(stats2["clicks"], 35)
 
 
 if __name__ == "__main__":

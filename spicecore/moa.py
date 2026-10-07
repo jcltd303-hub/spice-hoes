@@ -84,12 +84,15 @@ class MixtureOfAgents:
     def __init__(self, provider, store, experts=DEFAULT_EXPERTS, embedder=None):
         self.provider = provider
         self.store = store
-        self.knowledge = KnowledgeBase(store, embedder=embedder)
+        self.knowledge = KnowledgeBase(store, embedder=embedder,
+                                       verified_experiments_only=bool(getattr(provider, "restrict_to_azure", False)))
         self.experts = tuple(experts)
         if len(self.experts) < 2:
             raise ValueError("MoA requires at least two experts")
 
     def _fallback_models(self, role: str) -> tuple[str, ...]:
+        if getattr(self.provider, "restrict_to_azure", False):
+            return ()
         role_key = f"MOA_{role.upper()}_FALLBACK_MODELS"
         raw = os.getenv(role_key, os.getenv("MOA_FALLBACK_MODELS", ""))
         if raw.strip():
@@ -97,6 +100,8 @@ class MixtureOfAgents:
         return DEFAULT_FALLBACK_MODELS
 
     def _role_model(self, role: str, default: str) -> str:
+        if getattr(self.provider, "restrict_to_azure", False):
+            return os.getenv(f"AZURE_MOA_DEPLOYMENT_{role.upper()}", self.provider.model).strip() or self.provider.model
         return os.getenv(f"MOA_MODEL_{role.upper()}", default).strip() or default
 
     def _chat_json(self, system: str, user: str, temperature: float,
@@ -257,7 +262,7 @@ class MixtureOfAgents:
             raise ProviderError("MoA aggregator returned invalid JSON")
 
         result = {
-            "architecture": "moa-v3-heterogeneous-openrouter",
+            "architecture": "moa-v3-azure" if getattr(self.provider, "restrict_to_azure", False) else "moa-v3-heterogeneous-openrouter",
             "provider": getattr(self.provider, "model_name", type(self.provider).__name__),
             "objective": objective,
             "persona_id": (persona or {}).get("id"),

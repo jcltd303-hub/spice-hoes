@@ -197,9 +197,8 @@ class OfferRegistry:
             amount = 0
         else:
             if amount_cents is None:
-                amount = int(link["expected_payout_cents"])
-            else:
-                amount = int(amount_cents)
+                raise ValueError("observed purchase/refund amount is required; expected payout is an estimate")
+            amount = int(amount_cents)
             if amount <= 0:
                 raise ValueError("purchase/refund amount must be positive")
 
@@ -225,6 +224,7 @@ class OfferRegistry:
             "tracking_token": tracking_token,
             "kind": kind,
             "amount_cents": amount,
+            "provenance": "manual_import",
             "outcome_event_id": event["id"],
             "commerce_cost_event_id": (
                 commerce_cost_event["id"] if commerce_cost_event else None
@@ -247,6 +247,7 @@ class OfferRegistry:
         metrics = {
             "candidates": len(candidate_ids),
             "impressions": 0,
+            "views": 0,
             "clicks": 0,
             "purchases": 0,
             "revenue_cents": 0,
@@ -254,6 +255,9 @@ class OfferRegistry:
             "distribution_cost_cents": 0,
             "commerce_cost_cents": 0,
             "generation_cost_cents": 0,
+            "chargeback_cents": 0,
+            "chargeback_reversal_cents": 0,
+            "commerce_cost_reversal_cents": 0,
         }
         for cid in candidate_ids:
             metrics["generation_cost_cents"] += int(
@@ -262,8 +266,9 @@ class OfferRegistry:
 
         rows = self.store.db.execute(
             """SELECT kind,payload FROM events
-               WHERE kind IN ('impression','click','purchase','refund',
-                              'distribution_cost','commerce_cost')"""
+               WHERE kind IN ('impression','view','click','purchase','refund',
+                              'distribution_cost','commerce_cost','chargeback',
+                              'chargeback_reversal','commerce_cost_reversal')"""
         ).fetchall()
         for row in rows:
             payload = json.loads(row["payload"])
@@ -272,9 +277,11 @@ class OfferRegistry:
             kind = row["kind"]
             amount = int(payload.get("amount_cents", 0))
             if kind == "impression":
-                metrics["impressions"] += 1
+                metrics["impressions"] += int(payload.get("count", 1))
+            elif kind == "view":
+                metrics["views"] += int(payload.get("count", 1))
             elif kind == "click":
-                metrics["clicks"] += 1
+                metrics["clicks"] += int(payload.get("count", 1))
             elif kind == "purchase":
                 metrics["purchases"] += 1
                 metrics["revenue_cents"] += amount
@@ -284,6 +291,8 @@ class OfferRegistry:
                 metrics["distribution_cost_cents"] += amount
             elif kind == "commerce_cost":
                 metrics["commerce_cost_cents"] += amount
+            elif kind in ("chargeback", "chargeback_reversal", "commerce_cost_reversal"):
+                metrics[kind + "_cents"] += amount
 
         metrics["net_cents"] = (
             metrics["revenue_cents"]
@@ -291,6 +300,9 @@ class OfferRegistry:
             - metrics["distribution_cost_cents"]
             - metrics["commerce_cost_cents"]
             - metrics["generation_cost_cents"]
+            - metrics["chargeback_cents"]
+            + metrics["chargeback_reversal_cents"]
+            + metrics["commerce_cost_reversal_cents"]
         )
         metrics["click_rate"] = (
             round(metrics["clicks"] / metrics["impressions"], 6)

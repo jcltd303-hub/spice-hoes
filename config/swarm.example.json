@@ -1,0 +1,21 @@
+{
+  "campaign_id": "lifestyle-launch-v1",
+  "objective": "Improve verified contribution margin from disclosed AI lifestyle content",
+  "channel": "instagram",
+  "offer_id": "",
+  "destination_url": "",
+  "accounts": {},
+  "generation_enabled": true,
+  "auto_approve": true,
+  "variants": 2,
+  "asset_cost_cents": 10,
+  "generation_reservation_cents": 100,
+  "monthly_budget_cents": 20000,
+  "generation_interval_seconds": 14400,
+  "observation_window_seconds": 86400,
+  "metrics_interval_seconds": 3600,
+  "learning_exposure_metric": "views",
+  "max_unsettled_batches": 3,
+  "max_posts_per_day": 3,
+  "caption_template": "{name}'s {theme} inspiration. Explore {offer}: {url}"
+}
