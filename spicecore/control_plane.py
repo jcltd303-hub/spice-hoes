@@ -24,7 +24,7 @@ from .memory import KnowledgeBase
 from .moa import MixtureOfAgents
 from .operations import Operations
 from .policy import recommend
-from .providers import OpenAICompatibleChatProvider, OpenAICompatibleEmbeddingProvider, LocalDreamProvider, ProviderError
+from .providers import OpenAICompatibleChatProvider, OpenAICompatibleEmbeddingProvider, media_provider, ProviderError
 from .runtime_policy import RuntimePolicy
 from .thompson_sampling import recommend_thompson_sampling
 from .workflow import build_briefs
@@ -45,7 +45,7 @@ def _asset_generator(store: Store):
     values = RuntimePolicy(store).current()["values"]
     return AssetGenerator(
         store,
-        provider=LocalDreamProvider(),
+        provider=media_provider(),
         asset_dir="data/assets",
         identity_threshold=values["identity_threshold"],
         reference_strength=values["reference_strength"],
@@ -191,15 +191,14 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
             raise ValueError("purchase amount must be positive")
         if refunds and refund_cents <= 0:
             raise ValueError("refund amount must be positive")
-        for _ in range(impressions):
-            store.record_outcome(cid, "impression")
-        for _ in range(clicks):
-            store.record_outcome(cid, "click")
-        for _ in range(purchases):
-            store.record_outcome(cid, "purchase", purchase_cents)
-        for _ in range(refunds):
-            store.record_outcome(cid, "refund", refund_cents)
-        return {"success": True, "stats": store.stats(personas)}
+        candidate = store.candidate(cid)
+        simulation = {"candidate_id": cid, "persona_id": candidate["persona_id"],
+                      "impressions": impressions, "clicks": clicks,
+                      "revenue_cents": purchases * purchase_cents,
+                      "refund_cents": refunds * refund_cents, "mode": "simulation"}
+        store.record_event("simulation_result", simulation)
+        return {"success": True, "mode": "simulation", "simulation": simulation,
+                "stats": store.stats(personas)}
 
     if action == "stats":
         return store.stats(personas)
@@ -391,6 +390,14 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
 
     if action == "doctor":
         return Operations(store, personas).doctor()
+
+    if action in ("swarm_status", "swarm_tick"):
+        from .swarm import SwarmConfig
+        from .swarm_factory import make_swarm
+        path = os.getenv("SPICE_SWARM_CONFIG")
+        config = SwarmConfig.load(path) if path else SwarmConfig()
+        runtime = make_swarm(store, personas, config)
+        return runtime.status() if action == "swarm_status" else runtime.tick()
 
     if action == "autopilot_run":
         runtime = RuntimePolicy(store).current()["values"]

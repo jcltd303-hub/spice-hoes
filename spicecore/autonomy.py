@@ -112,10 +112,11 @@ class AutonomyEngine:
 
     def _candidate_reward_cents(self, candidate_id: str) -> int:
         candidate = self.store.candidate(candidate_id)
-        revenue = refunds = distribution = commerce = 0
+        revenue = refunds = distribution = commerce = chargeback = reversal = fee_credit = 0
         rows = self.store.db.execute(
             """SELECT kind,payload FROM events
-               WHERE kind IN ('purchase','refund','distribution_cost','commerce_cost')"""
+               WHERE kind IN ('purchase','refund','distribution_cost','commerce_cost',
+                              'chargeback','chargeback_reversal','commerce_cost_reversal')"""
         ).fetchall()
         for row in rows:
             payload = json.loads(row["payload"])
@@ -128,9 +129,15 @@ class AutonomyEngine:
                 refunds += amount
             elif row["kind"] == "distribution_cost":
                 distribution += amount
-            else:
+            elif row["kind"] == "commerce_cost":
                 commerce += amount
-        return revenue - refunds - distribution - commerce - int(candidate["cost_cents"])
+            elif row["kind"] == "chargeback":
+                chargeback += amount
+            elif row["kind"] == "chargeback_reversal":
+                reversal += amount
+            else:
+                fee_credit += amount
+        return revenue - refunds - distribution - commerce - chargeback + reversal + fee_credit - int(candidate["cost_cents"])
 
     def settle_cycle(self, cycle_id: str, done: bool = True) -> dict:
         row = self.store.db.execute(

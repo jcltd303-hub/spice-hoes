@@ -28,9 +28,10 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 
 class KnowledgeBase:
-    def __init__(self, store, embedder=None):
+    def __init__(self, store, embedder=None, *, verified_experiments_only: bool = False):
         self.store = store
         self.embedder = embedder
+        self.verified_experiments_only = verified_experiments_only
         self.store.db.executescript(
             """
             CREATE TABLE IF NOT EXISTS knowledge (
@@ -165,6 +166,22 @@ class KnowledgeBase:
 
         scored = []
         for row in rows:
+            if self.verified_experiments_only and row["source"].startswith("experiment:"):
+                try:
+                    summary = json.loads(row["body"])
+                except (ValueError, TypeError):
+                    continue
+                if not isinstance(summary, dict) or summary.get("verified_revenue_only") is not True:
+                    continue
+                tables = {r[0] for r in self.store.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if not {"learning_closure", "rl_verified_experience"}.issubset(tables):
+                    continue
+                if self.store.db.execute(
+                    """SELECT 1 FROM learning_closure c JOIN rl_verified_experience v
+                       ON v.experience_id=c.experience_id WHERE c.knowledge_id=? AND c.plan_id=?""",
+                    (row["id"], row["source"][len("experiment:"):]),
+                ).fetchone() is None:
+                    continue
             lexical = self._lexical_score(query_tokens, row)
             semantic = 0.0
             if query_vector is not None and row["embedding_json"]:

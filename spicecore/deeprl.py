@@ -17,7 +17,8 @@ class DeepRLPolicy:
     POLICY_VERSION = "tiny-dqn-v2"
 
     def __init__(self, store, action_ids: list[str], hidden: int = 12, seed: int = 7,
-                 min_experiences: int = 128, gamma: float = 0.92, autoload: bool = True):
+                 min_experiences: int = 128, gamma: float = 0.92, autoload: bool = True,
+                 *, verified_experiences_only: bool = False):
         if len(action_ids) < 2:
             raise ValueError("DeepRL requires at least two actions")
         self.store = store
@@ -25,6 +26,8 @@ class DeepRLPolicy:
         self.hidden = hidden
         self.gamma = gamma
         self.min_experiences = min_experiences
+        self.verified_experiences_only = verified_experiences_only
+        self.experience_scope = "verified_income" if verified_experiences_only else "all"
         self.rng = random.Random(seed)
         self.input_size = 6
         self._ensure_schema()
@@ -55,8 +58,13 @@ class DeepRLPolicy:
                 experiences INTEGER NOT NULL,
                 final_mse REAL
             );
+            CREATE TABLE IF NOT EXISTS rl_verified_experience (
+                experience_id TEXT PRIMARY KEY REFERENCES rl_experience(id)
+            );
             """
         )
+        if "experience_scope" not in {r[1] for r in self.store.db.execute("PRAGMA table_info(rl_policy_snapshot)")}:
+            self.store.db.execute("ALTER TABLE rl_policy_snapshot ADD COLUMN experience_scope TEXT NOT NULL DEFAULT 'all'")
         self.store.db.commit()
 
     def _initialize_weights(self):
@@ -114,6 +122,8 @@ class DeepRLPolicy:
         return item_id
 
     def count(self) -> int:
+        if self.verified_experiences_only:
+            return self.store.db.execute("SELECT COUNT(*) FROM rl_experience e JOIN rl_verified_experience v ON v.experience_id=e.id").fetchone()[0]
         return self.store.db.execute("SELECT COUNT(*) FROM rl_experience").fetchone()[0]
 
     def _forward(self, x):
@@ -139,27 +149,30 @@ class DeepRLPolicy:
         with self.store.db:
             self.store.db.execute(
                 """INSERT INTO rl_policy_snapshot
-                   (id,ts,policy_version,action_ids_json,hidden,gamma,weights_json,experiences,final_mse)
-                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                   (id,ts,policy_version,action_ids_json,hidden,gamma,weights_json,experiences,final_mse,experience_scope)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
                 (snapshot_id, ts, self.POLICY_VERSION, json.dumps(self.action_ids),
-                 self.hidden, self.gamma, json.dumps(payload), experiences, final_mse),
+                 self.hidden, self.gamma, json.dumps(payload), experiences, final_mse, self.experience_scope),
             )
             self.store._event("rl_policy_snapshot_saved", {
                 "snapshot_id": snapshot_id,
                 "policy_version": self.POLICY_VERSION,
                 "experiences": experiences,
                 "final_mse": final_mse,
+                "experience_scope": self.experience_scope,
             })
         return {
             "snapshot_id": snapshot_id,
             "policy_version": self.POLICY_VERSION,
             "experiences": experiences,
             "final_mse": final_mse,
+            "experience_scope": self.experience_scope,
         }
 
     def load_latest(self) -> bool:
         row = self.store.db.execute(
-            "SELECT * FROM rl_policy_snapshot ORDER BY ts DESC LIMIT 1"
+            "SELECT * FROM rl_policy_snapshot WHERE experience_scope=? ORDER BY ts DESC LIMIT 1",
+            (self.experience_scope,),
         ).fetchone()
         if row is None:
             return False
@@ -179,7 +192,10 @@ class DeepRLPolicy:
         n = self.count()
         if n < self.min_experiences:
             raise InsufficientExperience(f"need {self.min_experiences} experiences, have {n}")
-        rows = self.store.db.execute("SELECT * FROM rl_experience ORDER BY ts,id").fetchall()
+        rows = self.store.db.execute(
+            "SELECT e.* FROM rl_experience e JOIN rl_verified_experience v ON v.experience_id=e.id ORDER BY e.ts,e.id"
+            if self.verified_experiences_only else "SELECT * FROM rl_experience ORDER BY ts,id"
+        ).fetchall()
         losses = []
         for _ in range(epochs):
             epoch_loss = 0.0
@@ -213,6 +229,7 @@ class DeepRLPolicy:
             "experiences": n,
             "epochs": epochs,
             "final_mse": final_mse,
+            "experience_scope": self.experience_scope,
         }
         self.store.record_event("rl_training_completed", result)
         if save_snapshot:

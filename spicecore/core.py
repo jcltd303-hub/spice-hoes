@@ -12,6 +12,11 @@ from pathlib import Path
 import yaml
 
 
+MONETARY_OUTCOMES = ('purchase', 'refund', 'distribution_cost', 'commerce_cost',
+                     'chargeback', 'chargeback_reversal', 'commerce_cost_reversal')
+OUTCOME_KINDS = ('impression', 'view', 'click', *MONETARY_OUTCOMES)
+
+
 def load_personas(directory: str | Path) -> list[dict]:
     personas = []
     for path in sorted(Path(directory).glob('*.yaml')):
@@ -61,6 +66,10 @@ class Store:
                 cost_cents INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'proposed',
                 created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS verified_money_event (
+                event_id TEXT PRIMARY KEY REFERENCES events(id),
+                provider TEXT NOT NULL
             );
         ''')
         self.db.commit()
@@ -151,33 +160,46 @@ class Store:
 
     def record_outcome(self, cid: str, kind: str, amount_cents: int = 0,
                        external_id: str | None = None) -> dict:
-        if kind not in ('impression', 'click', 'purchase', 'refund', 'distribution_cost', 'commerce_cost') or amount_cents < 0:
+        if kind not in OUTCOME_KINDS or amount_cents < 0:
             raise ValueError('Invalid outcome')
         current = self.candidate(cid)
         if current['status'] != 'published':
             raise ValueError('Outcomes require published candidates')
-        if kind in ('purchase', 'refund', 'distribution_cost', 'commerce_cost') and amount_cents == 0:
+        if kind in MONETARY_OUTCOMES and amount_cents == 0:
             raise ValueError('Monetary outcome requires a positive amount')
         return self.record_event(kind, {'candidate_id': cid, 'persona_id': current['persona_id'],
                                        'amount_cents': amount_cents}, external_id)
 
-    def stats(self, personas: list[dict]) -> list[dict]:
+    def monetary_event_is_observed(self, event_id: str, kind: str) -> bool:
+        if kind not in MONETARY_OUTCOMES or kind == 'distribution_cost':
+            return True
+        return self.db.execute('SELECT 1 FROM verified_money_event WHERE event_id=?',
+                               (event_id,)).fetchone() is not None
+
+    def stats(self, personas: list[dict], *, verified_revenue_only: bool = False) -> list[dict]:
         result = []
         for p in personas:
             published = self.db.execute("SELECT COUNT(*) FROM candidates WHERE persona_id=? AND status='published'", (p['id'],)).fetchone()[0]
             cost = self.db.execute('SELECT COALESCE(SUM(cost_cents),0) FROM candidates WHERE persona_id=?', (p['id'],)).fetchone()[0]
-            rows = self.db.execute('SELECT kind,payload FROM events WHERE kind IN (\'impression\',\'click\',\'purchase\',\'refund\',\'distribution_cost\',\'commerce_cost\')').fetchall()
-            sums = {'impression': 0, 'click': 0, 'purchase': 0, 'refund': 0, 'distribution_cost': 0, 'commerce_cost': 0}
+            placeholders = ','.join('?' for _ in OUTCOME_KINDS)
+            rows = self.db.execute(f'SELECT id,kind,payload FROM events WHERE kind IN ({placeholders})', OUTCOME_KINDS).fetchall()
+            sums = dict.fromkeys(OUTCOME_KINDS, 0)
             for row in rows:
+                if verified_revenue_only and not self.monetary_event_is_observed(row['id'], row['kind']):
+                    continue
                 item = json.loads(row['payload'])
                 if item['persona_id'] == p['id']:
-                    sums[row['kind']] += item['amount_cents'] if row['kind'] in ('purchase', 'refund', 'distribution_cost', 'commerce_cost') else int(item.get('count', 1))
+                    sums[row['kind']] += item['amount_cents'] if row['kind'] in MONETARY_OUTCOMES else int(item.get('count', 1))
             result.append({'persona_id': p['id'], 'name': p['name'], 'published': published,
-                           'impressions': sums['impression'], 'clicks': sums['click'],
+                           'impressions': sums['impression'], 'views': sums['view'], 'clicks': sums['click'],
                            'revenue_cents': sums['purchase'], 'refund_cents': sums['refund'],
-                           'cost_cents': cost + sums['distribution_cost'] + sums['commerce_cost'],
+                           'cost_cents': cost + sums['distribution_cost'] + sums['commerce_cost'] - sums['commerce_cost_reversal'],
                            'commerce_cost_cents': sums['commerce_cost'],
-                           'net_cents': sums['purchase'] - sums['refund'] - cost - sums['distribution_cost'] - sums['commerce_cost']})
+                           'commerce_cost_reversal_cents': sums['commerce_cost_reversal'],
+                           'chargeback_cents': sums['chargeback'],
+                           'chargeback_reversal_cents': sums['chargeback_reversal'],
+                           'net_cents': sums['purchase'] - sums['refund'] - cost - sums['distribution_cost'] - sums['commerce_cost']
+                                        - sums['chargeback'] + sums['chargeback_reversal'] + sums['commerce_cost_reversal']})
         return result
 
     def events(self) -> list[dict]:

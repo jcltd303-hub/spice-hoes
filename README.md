@@ -6,6 +6,8 @@ Runnable experiment loop for a portfolio of **fictional adult** AI influencers. 
 
 The operating objective follows [project.md](project.md): optimize attributable net revenue while accounting for production/distribution cost, refunds, repeat purchase, retention, platform constraints, and evidence quality. Generated recommendations remain proposals until approved.
 
+The [income swarm launcher](docs/income-swarm.md) connects Azure MoA planning, native S24 generation, owner-authorized scored release, durable publishing, signed live Stripe receipts, and corrected learning in a supervised loop. Start with `swarm-status`; unconfigured providers block paid production. The first unattended lane produces Instagram still images, with views kept separate from impressions and cost reservations kept separate from verified money.
+
 ## Start locally
 
 Requires Python 3.11+ and PyYAML:
@@ -305,12 +307,12 @@ python3 -m spicecore.cli offer-event TRACKING_TOKEN click \
   --external-id click-123
 
 python3 -m spicecore.cli offer-event TRACKING_TOKEN purchase \
-  --external-id order-456
+  --external-id order-456 --amount-cents 900
 
 python3 -m spicecore.cli offer-performance OFFER_ID
 ```
 
-Purchase events can use the offer's configured expected payout when no amount is supplied. Variable commerce cost is recorded separately from distribution spend and flows into persona stats, experiment results, and RL reward. External event IDs keep imports idempotent. The current monetary ledger is intentionally USD-only until explicit multi-currency conversion is added.
+Manual purchase/refund imports require an explicit observed amount; expected payouts remain estimates. These imports appear in the general ledger but cannot assert verified earnings for the production swarm. Signed live Stripe receipts enter its verified money ledger. Variable commerce cost is recorded separately from distribution spend, and external event IDs keep imports idempotent. The current monetary ledger supports USD only.
 
 ## Reviewed publish/outcome loop
 
@@ -455,4 +457,3 @@ echo '{}' | ./bin/spicemedia health
 ```
 
 Local Dream may remain installed as an optional benchmark/legacy baseline; it is not required by the Go/QNN runtime and is not the canonical production path. See `docs/architecture.md`.
-

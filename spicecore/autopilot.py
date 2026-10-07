@@ -11,16 +11,19 @@ from .policy import recommend
 
 
 class CoreAutopilot:
-    def __init__(self, store, personas, moa, planner, generator, min_experiences=128):
+    def __init__(self, store, personas, moa, planner, generator, min_experiences=128,
+                 *, verified_revenue_only=False):
         self.store = store
         self.personas = list(personas)
         self.by_id = {p["id"]: p for p in self.personas}
         self.moa = moa
         self.planner = planner
         self.generator = generator
+        self.verified_revenue_only = verified_revenue_only
         self.policy = DeepRLPolicy(
             store, [p["id"] for p in self.personas],
             min_experiences=min_experiences,
+            verified_experiences_only=verified_revenue_only,
         )
         self._ensure_schema()
 
@@ -54,7 +57,7 @@ class CoreAutopilot:
         ).fetchone()[0])
 
     def _select_persona(self, seed=None):
-        stats = self.store.stats(self.personas)
+        stats = self.store.stats(self.personas, verified_revenue_only=self.verified_revenue_only)
         state = DeepRLPolicy.features(stats)
         try:
             decision = self.policy.select(state, seed=seed)
