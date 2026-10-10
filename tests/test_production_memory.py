@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from spicecore.azure_moa import AzureChatProvider
+from spicecore.local_compute import LocalChatProvider
 from spicecore.learning import LearningController
 from spicecore.memory import KnowledgeBase
 from spicecore.moa import MixtureOfAgents
@@ -20,7 +20,7 @@ class ProductionMemoryTests(unittest.TestCase):
             self.store.publish(cid, "https://www.instagram.com/p/receipt/")
             self.store.record_event("impression", {"candidate_id": cid, "count": 100,
                                    "persona_id": self.store.candidate(cid)["persona_id"]})
-        self.provider = AzureChatProvider("https://launch.openai.azure.com", "key", "strategy")
+        self.provider = LocalChatProvider(model="strategy")
 
     def tearDown(self):
         self.fixture.tearDown()

@@ -26,7 +26,7 @@ class SwarmCLITests(unittest.TestCase):
                 main(["--db", str(Path(root) / "ledger.sqlite"), "--personas", str(ROOT / "personas"),
                       "--json", "swarm-status"])
             status = json.loads(output.getvalue())
-            self.assertIn("AZURE_OPENAI_ENDPOINT", status["blockers"])
+            self.assertIn("local_chat_unavailable", status["blockers"])
             self.assertIn("INSTAGRAM_ACCESS_TOKEN", status["blockers"])
             self.assertFalse(status["generation_enabled"])
 
@@ -51,11 +51,9 @@ class SwarmCLITests(unittest.TestCase):
 
     def test_invalid_media_credentials_block_paid_generation(self):
         with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {
-            "AZURE_OPENAI_ENDPOINT": "https://launch.openai.azure.com",
-            "AZURE_OPENAI_API_KEY": "test-key", "AZURE_MOA_DEPLOYMENT": "strategy",
+            "MOA_BASE_URL": "http://127.0.0.1:8083/v1", "MOA_MODEL": "strategy",
             "INSTAGRAM_ACCESS_TOKEN": "test-token", "STRIPE_WEBHOOK_SECRET": "whsec-test",
             "SPICE_MEDIA_BIN": sys.executable, "SPICE_QNN_MODEL_DIR": root,
-            "AZURE_MEDIA_UPLOAD_CONTAINER_SAS_URL": "invalid",
-            "AZURE_MEDIA_READ_CONTAINER_SAS_URL": "invalid",
+            "SPICE_MEDIA_PUBLIC_BASE_URL": "invalid",
         }, clear=True):
-            self.assertIn("valid_Azure_media_configuration", production_blockers(SwarmConfig()))
+            self.assertIn("valid_public_media_configuration", production_blockers(SwarmConfig()))

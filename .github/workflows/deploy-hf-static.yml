@@ -16,8 +16,11 @@ permissions:
 
 jobs:
   deploy:
-    if: ${{ secrets.HF_TOKEN != '' && vars.HF_SPACE_REPO != '' }}
+    if: ${{ vars.HF_SPACE_REPO != '' }}
     runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,12 +29,11 @@ jobs:
           node-version: "22"
 
       - name: Build static dashboard
+        if: env.HF_TOKEN != ''
         run: npm install --no-audit --no-fund && npm run build
 
       - name: Push Hugging Face static Space
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
+        if: env.HF_TOKEN != ''
         run: |
           rm -rf /tmp/hf-space
           mkdir -p /tmp/hf-space

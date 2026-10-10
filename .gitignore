@@ -40,3 +40,10 @@ data/references/lila_hart/*
 !data/references/lila_hart/canon*.png
 !data/references/lila_hart/canon*.jpg
 !data/references/lila_hart/canon*.jpeg
+
+.env.s24
+models/llm/
+runtime/llama-snapdragon/
+
+/node_modules
+.kotlin/

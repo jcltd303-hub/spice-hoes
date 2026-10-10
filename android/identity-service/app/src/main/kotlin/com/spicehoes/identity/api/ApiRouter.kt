@@ -13,6 +13,10 @@ import com.spicehoes.identity.backend.TransferOptions
 import com.spicehoes.identity.http.HttpRequest
 import com.spicehoes.identity.http.HttpResponse
 import com.spicehoes.identity.image.ImageInspector
+import com.spicehoes.identity.voice.UnavailableVoiceBackend
+import com.spicehoes.identity.voice.VoiceBackend
+import com.spicehoes.identity.voice.DenyVoiceAuthorizer
+import com.spicehoes.identity.voice.VoiceAuthorizer
 import org.json.JSONException
 import org.json.JSONObject
 import java.util.Base64
@@ -31,9 +35,14 @@ class ApiRouter(
     private val meta: BuildMeta,
     private val thermal: () -> String = { "NORMAL" },
     private val gate: InferenceGate = InferenceGate(),
+    voice: VoiceBackend = UnavailableVoiceBackend,
+    voiceAuthorizer: VoiceAuthorizer = DenyVoiceAuthorizer,
 ) {
+    private val voiceRouter = VoiceApiRouter(voice, voiceAuthorizer)
+
     fun handle(req: HttpRequest): HttpResponse = try {
         when {
+            voiceRouter.handles(req.path) -> voiceRouter.handle(req)
             req.path == "/health" && req.method == "GET" -> health()
             req.path == "/transfer" && req.method == "POST" -> transfer(req)
             req.path == "/health" || req.path == "/transfer" ->
@@ -50,7 +59,8 @@ class ApiRouter(
             .put("code", e.code.name)
             .put("message", e.message ?: "")
             .put("request_id", e.requestId ?: JSONObject.NULL)
-        return json(e.httpStatus, JSONObject().put("error", err))
+        val headers = if (e.code == ErrorCode.UNAUTHORIZED) mapOf("WWW-Authenticate" to "Bearer realm=\"spice-voice\"") else emptyMap()
+        return json(e.httpStatus, JSONObject().put("error", err), headers)
     }
 
     private fun toServiceException(t: Throwable): ServiceException = when (t) {
@@ -214,6 +224,6 @@ class ApiRouter(
 
     private fun msSince(nanoStart: Long) = (System.nanoTime() - nanoStart) / 1_000_000
 
-    private fun json(status: Int, o: JSONObject) =
-        HttpResponse(status, "application/json", o.toString().toByteArray(Charsets.UTF_8))
+    private fun json(status: Int, o: JSONObject, headers: Map<String, String> = emptyMap()) =
+        HttpResponse(status, "application/json", o.toString().toByteArray(Charsets.UTF_8), headers)
 }

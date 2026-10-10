@@ -24,7 +24,8 @@ from .memory import KnowledgeBase
 from .moa import MixtureOfAgents
 from .operations import Operations
 from .policy import recommend
-from .providers import OpenAICompatibleChatProvider, OpenAICompatibleEmbeddingProvider, media_provider, ProviderError
+from .local_compute import chat_provider, compute_status
+from .providers import OpenAICompatibleEmbeddingProvider, media_provider, ProviderError
 from .runtime_policy import RuntimePolicy
 from .thompson_sampling import recommend_thompson_sampling
 from .workflow import build_briefs
@@ -120,6 +121,8 @@ def _bounded_count(value, default: int, *, maximum: int = 10000) -> int:
 
 
 def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
+    if action == "compute_status":
+        return compute_status()
     if action == "health":
         return {
             "status": "ok",
@@ -266,9 +269,9 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
             },
             "media": {
                 "ffmpeg": bool(__import__("shutil").which("ffmpeg")),
-                "video_provider": env.get("SPICE_VIDEO_PROVIDER", "mock"),
-                "voice_provider": env.get("SPICE_VOICE_PROVIDER", "mock"),
-                "lipsync_provider": env.get("SPICE_LIPSYNC_PROVIDER", "mock"),
+                "video_provider": env.get("SPICE_VIDEO_PROVIDER", "freegpu"),
+                "voice_provider": env.get("SPICE_VOICE_PROVIDER", "android"),
+                "lipsync_provider": env.get("SPICE_LIPSYNC_PROVIDER", "freegpu"),
                 "piper": bool(__import__("shutil").which(env.get("PIPER_BIN", "piper"))) and bool(env.get("PIPER_MODEL") or env.get("PIPER_VOICE_MAP")),
                 "musetalk": bool(env.get("MUSETALK_DIR") and os.path.isdir(env.get("MUSETALK_DIR", ""))),
                 "luma": False,
@@ -303,10 +306,14 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
     if action == "media_create":
         candidate_id = str(payload.get("candidate_id", ""))
         candidate = store.candidate(candidate_id)
+        if candidate["status"] not in ("approved", "published"):
+            raise ValueError("Media creation requires an approved source candidate")
         persona_id = str(payload.get("persona_id", ""))
         if candidate["persona_id"] != persona_id:
             raise ValueError("media job persona_id does not match candidate")
         source_asset_uri = str(payload.get("source_asset_uri") or candidate.get("asset_uri") or "").strip()
+        if source_asset_uri != candidate.get("asset_uri"):
+            raise ValueError("Media source must match the approved candidate source")
         if not source_asset_uri:
             raise ValueError("source_asset_uri is required")
         script = str(payload.get("script", "")).strip()
@@ -437,7 +444,7 @@ def dispatch(action: str, payload: dict, store: Store, personas: list[dict]):
                 daily_budget_cents=runtime["daily_budget_cents"],
             )
 
-        provider = OpenAICompatibleChatProvider()
+        provider = chat_provider()
         planner = ExperimentPlanner(provider, store)
         engine = CoreAutopilot(
             store,

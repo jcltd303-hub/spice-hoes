@@ -23,7 +23,8 @@ from .offers import OfferRegistry, OFFER_KINDS
 from .operations import Operations
 from .runtime_policy import RuntimePolicy
 from .policy import recommend
-from .providers import OpenAICompatibleChatProvider, OpenAICompatibleEmbeddingProvider, ProviderError, media_provider
+from .local_compute import chat_provider, compute_status
+from .providers import OpenAICompatibleEmbeddingProvider, ProviderError, media_provider
 from .web import make_handler
 from .workflow import build_briefs
 from .distribution.nextdoor import generate_campaign
@@ -92,6 +93,12 @@ def main(argv=None):
     sub.add_parser("personas")
     sub.add_parser("stats")
     sub.add_parser("events")
+    sub.add_parser("compute-status", help="probe local model, image, and Android voice services")
+    voice = sub.add_parser("voice-chat", help="explicit on-device microphone and offline spoken replies")
+    voice.add_argument("--persona", required=True)
+    voice.add_argument("--turns", type=int, default=1)
+    voice.add_argument("--language", default="en-US")
+    voice.add_argument("--timeout", type=int, default=20)
 
     briefs = sub.add_parser("briefs")
     briefs.add_argument("--theme", required=True)
@@ -356,7 +363,22 @@ def main(argv=None):
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
     store = Store(args.db)
     try:
-        if args.command == "init":
+        if args.command == "compute-status":
+            output = compute_status()
+        elif args.command == "voice-chat":
+            from .android_voice import AndroidVoiceClient, voice_turn
+            if not 1 <= args.turns <= 100 or not 1 <= args.timeout <= 30:
+                parser.error("--turns must be 1..100 and --timeout 1..30 seconds")
+            persona = next((p for p in personas if p["id"] == args.persona), None)
+            if persona is None:
+                parser.error("unknown persona")
+            client, provider, history = AndroidVoiceClient(), chat_provider(), []
+            for _ in range(args.turns):
+                result = voice_turn(client, provider, persona, history=history,
+                                    language=args.language, timeout_seconds=args.timeout)
+                print(json.dumps(result, ensure_ascii=False), flush=True)
+            return
+        elif args.command == "init":
             output = {"database": args.db, "personas": len(personas)}
         elif args.command == "personas":
             output = personas
@@ -441,11 +463,9 @@ def main(argv=None):
             persona = next((p for p in personas if p["id"] == args.persona), None)
             if persona is None:
                 parser.error("Unknown persona")
-            if not os.getenv("MOA_API_KEY"):
-                parser.error("MoA provider not configured: set MOA_API_KEY (and MOA_BASE_URL); see README")
             output = engineer_campaign(
                 store,
-                OpenAICompatibleChatProvider(),
+                chat_provider(),
                 persona,
                 args.goal,
                 args.cause,
@@ -467,10 +487,8 @@ def main(argv=None):
             persona = next((p for p in personas if p["id"] == args.persona), None)
             if persona is None:
                 parser.error("Unknown persona")
-            if not os.getenv("MOA_API_KEY"):
-                parser.error("Chat provider not configured: set MOA_API_KEY (and MOA_BASE_URL); see README")
             agent = EngagementAgent(
-                OpenAICompatibleChatProvider(),
+                chat_provider(),
                 store,
                 KnowledgeBase(store, embedder=_optional_embedder()),
             )
@@ -591,12 +609,12 @@ def main(argv=None):
                 persona = next((p for p in personas if p["id"] == args.persona), None)
                 if persona is None:
                     parser.error("Unknown persona")
-            output = MixtureOfAgents(OpenAICompatibleChatProvider(), store, embedder=_optional_embedder()).deliberate(args.objective, persona)
+            output = MixtureOfAgents(chat_provider(), store, embedder=_optional_embedder()).deliberate(args.objective, persona)
         elif args.command == "autonomy-cycle":
             engine = AutonomyEngine(
                 store,
                 personas,
-                MixtureOfAgents(OpenAICompatibleChatProvider(), store, embedder=_optional_embedder()),
+                MixtureOfAgents(chat_provider(), store, embedder=_optional_embedder()),
                 _asset_generator(store),
             )
             output = engine.run_cycle(
@@ -612,7 +630,7 @@ def main(argv=None):
             engine = AutonomyEngine(
                 store,
                 personas,
-                MixtureOfAgents(OpenAICompatibleChatProvider(), store, embedder=_optional_embedder()),
+                MixtureOfAgents(chat_provider(), store, embedder=_optional_embedder()),
                 _asset_generator(store),
             )
             output = engine.settle_cycle(args.cycle_id, done=args.done)
@@ -647,7 +665,7 @@ def main(argv=None):
             persona = next((p for p in personas if p["id"] == args.persona), None)
             if persona is None:
                 parser.error("Unknown persona")
-            provider = OpenAICompatibleChatProvider()
+            provider = chat_provider()
             deliberation = MixtureOfAgents(provider, store, embedder=_optional_embedder()).deliberate(
                 args.objective, persona
             )
@@ -660,7 +678,7 @@ def main(argv=None):
                 variant_count=args.variants,
             )
         elif args.command == "experiment-run":
-            planner = ExperimentPlanner(OpenAICompatibleChatProvider(), store)
+            planner = ExperimentPlanner(chat_provider(), store)
             plan = planner.get(args.plan_id)
             persona = next(
                 (p for p in personas if p["id"] == plan["persona_id"]),
@@ -676,12 +694,12 @@ def main(argv=None):
                 cost_cents_per_asset=args.cost_cents_per_asset,
             )
         elif args.command == "experiment-show":
-            output = ExperimentPlanner(OpenAICompatibleChatProvider(), store).get(args.plan_id)
+            output = ExperimentPlanner(chat_provider(), store).get(args.plan_id)
         elif args.command == "experiment-results":
-            output = ExperimentPlanner(OpenAICompatibleChatProvider(), store).results(args.plan_id)
+            output = ExperimentPlanner(chat_provider(), store).results(args.plan_id)
         elif args.command == "autopilot-run":
             values = _runtime_values(store)
-            provider = OpenAICompatibleChatProvider()
+            provider = chat_provider()
             planner = ExperimentPlanner(provider, store)
             engine = CoreAutopilot(
                 store,
@@ -716,7 +734,7 @@ def main(argv=None):
                 ui.stop_progress()
         elif args.command == "autopilot-settle":
             values = _runtime_values(store)
-            provider = OpenAICompatibleChatProvider()
+            provider = chat_provider()
             planner = ExperimentPlanner(provider, store)
             knowledge = KnowledgeBase(store, embedder=_optional_embedder())
             output = LearningController(
@@ -735,7 +753,7 @@ def main(argv=None):
             )
         elif args.command == "autopilot-status":
             values = _runtime_values(store)
-            provider = OpenAICompatibleChatProvider()
+            provider = chat_provider()
             engine = CoreAutopilot(
                 store,
                 personas,
@@ -768,7 +786,7 @@ def main(argv=None):
             if persona is None:
                 parser.error("Unknown persona")
             agent = EngagementAgent(
-                OpenAICompatibleChatProvider(),
+                chat_provider(),
                 store,
                 KnowledgeBase(store, embedder=_optional_embedder()),
             )
@@ -784,14 +802,14 @@ def main(argv=None):
             if persona is None:
                 parser.error("Unknown persona")
             agent = EngagementAgent(
-                OpenAICompatibleChatProvider(),
+                chat_provider(),
                 store,
                 KnowledgeBase(store, embedder=_optional_embedder()),
             )
             output = agent.draft_reply(persona, args.message_id)
         elif args.command == "engagement-review":
             agent = EngagementAgent(
-                OpenAICompatibleChatProvider(),
+                chat_provider(),
                 store,
                 KnowledgeBase(store, embedder=_optional_embedder()),
             )
@@ -803,7 +821,7 @@ def main(argv=None):
             )
         elif args.command == "engagement-outbox":
             agent = EngagementAgent(
-                OpenAICompatibleChatProvider(),
+                chat_provider(),
                 store,
                 KnowledgeBase(store, embedder=_optional_embedder()),
             )

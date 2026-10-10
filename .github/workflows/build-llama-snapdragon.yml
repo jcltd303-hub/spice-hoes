@@ -1,0 +1,41 @@
+name: Build S24 Snapdragon LLM
+on:
+  push:
+    branches: [main, feat/s24-local-freegpu]
+    paths: [".github/workflows/build-llama-snapdragon.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned llama.cpp
+        run: |
+          git init /tmp/spice-llama-src
+          git -C /tmp/spice-llama-src remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C /tmp/spice-llama-src fetch --depth 1 origin 08246a28f6000100433d297c4e037c02e9d2d464
+          git -C /tmp/spice-llama-src checkout --detach FETCH_HEAD
+      - name: Build native Android Hexagon v75 and OpenCL runtimes
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --volume /tmp/spice-llama-src:/workspace --workdir /workspace \
+            --entrypoint /bin/bash ghcr.io/snapdragon-toolchain/arm64-android:v0.7 -lc '
+              set -euo pipefail
+              cp docs/backend/snapdragon/CMakeUserPresets.json .
+              cmake --preset arm64-android-snapdragon-release -B build-snapdragon
+              cmake --build build-snapdragon --parallel 2
+              cmake --install build-snapdragon --prefix /workspace/llama-snapdragon
+            '
+          test -s /tmp/spice-llama-src/llama-snapdragon/bin/llama-server
+          test -s /tmp/spice-llama-src/llama-snapdragon/lib/libggml-htp-v75.so
+          mkdir -p artifact
+          tar -czf artifact/llama-snapdragon.tar.gz -C /tmp/spice-llama-src llama-snapdragon
+          (cd artifact && sha256sum llama-snapdragon.tar.gz > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spice-llama-snapdragon-arm64
+          path: artifact/*
+          if-no-files-found: error

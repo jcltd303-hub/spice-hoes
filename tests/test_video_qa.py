@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from spicecore.media.qa import VideoQA
 
@@ -60,6 +61,14 @@ class TestVideoQA(unittest.TestCase):
         report = self.qa.evaluate(empty_path)
         self.assertFalse(report.passed)
         self.assertEqual(report.score, 0.0)
+
+    def test_invalid_bytes_never_receive_automatic_qa_success(self):
+        path = os.path.join(self.temp_dir, 'invalid.mp4')
+        with open(path, 'wb') as f:
+            f.write(b'not a video')
+        self.assertFalse(self.qa.evaluate(path).passed)
+        with patch('spicecore.media.qa.shutil.which', return_value=None):
+            self.assertFalse(self.qa.evaluate(path).passed)
 
     def test_qa_fails_for_wrong_aspect_ratio_or_no_audio(self):
         bad_video_path = os.path.join(self.temp_dir, "landscape_no_audio.mp4")

@@ -23,6 +23,14 @@ import {
 } from 'lucide-react';
 import { Persona, Candidate, PersonaStats, PolicyRecommendation, SystemEvent } from './types';
 
+const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const apiFetch = (url: string, init?: RequestInit) => fetch(`${apiBase}${url}`, init);
+const apiRead = async (url: string) => {
+  const response = await apiFetch(url, { signal: AbortSignal.timeout(20000) });
+  if (!response.ok) throw new Error(`Controller request failed (HTTP ${response.status})`);
+  return response.json();
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'review' | 'media' | 'scheduler' | 'personas' | 'engine' | 'ledger' | 'events'>('review');
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -31,6 +39,7 @@ export default function App() {
   const [recommendation, setRecommendation] = useState<PolicyRecommendation | null>(null);
   const [thompsonRecommendation, setThompsonRecommendation] = useState<PolicyRecommendation | null>(null);
   const [capabilities, setCapabilities] = useState<any | null>(null);
+  const [computeStatus, setComputeStatus] = useState<any | null>(null);
   const [events, setEvents] = useState<SystemEvent[]>([]);
   const [mediaJobs, setMediaJobs] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -49,6 +58,7 @@ export default function App() {
   const [autopilotResult, setAutopilotResult] = useState<any | null>(null);
   const [controlBusy, setControlBusy] = useState(false);
   const [controlError, setControlError] = useState('');
+  const [dataError, setDataError] = useState('');
   const [loading, setLoading] = useState(true);
 
   // Review form state
@@ -61,20 +71,21 @@ export default function App() {
 
   const fetchData = async () => {
     try {
-      const [pRes, cRes, sRes, rRes, thompsonRes, eRes, mRes, schRes, policyRes, rlRes, autopilotRes, doctorRes, capabilitiesRes] = await Promise.all([
-        fetch('/api/personas').then(r => r.json()),
-        fetch('/api/candidates').then(r => r.json()),
-        fetch('/api/stats').then(r => r.json()),
-        fetch('/api/recommend').then(r => r.json()),
-        fetch('/api/recommend/thompson').then(r => r.json()),
-        fetch('/api/events?limit=50').then(r => r.json()),
-        fetch('/api/media-jobs').then(r => r.json()),
-        fetch('/api/schedules').then(r => r.json()),
-        fetch('/api/runtime-policy').then(r => r.json()),
-        fetch('/api/rl/status').then(r => r.json()),
-        fetch('/api/autopilot/status').then(r => r.json()),
-        fetch('/api/doctor').then(r => r.json()),
-        fetch('/api/capabilities').then(r => r.json()),
+      const [pRes, cRes, sRes, rRes, thompsonRes, eRes, mRes, schRes, policyRes, rlRes, autopilotRes, doctorRes, capabilitiesRes, compute] = await Promise.all([
+        apiRead('/api/personas'),
+        apiRead('/api/candidates'),
+        apiRead('/api/stats'),
+        apiRead('/api/recommend'),
+        apiRead('/api/recommend/thompson'),
+        apiRead('/api/events?limit=50'),
+        apiRead('/api/media-jobs'),
+        apiRead('/api/schedules'),
+        apiRead('/api/runtime-policy'),
+        apiRead('/api/rl/status'),
+        apiRead('/api/autopilot/status'),
+        apiRead('/api/doctor'),
+        apiRead('/api/capabilities'),
+        apiRead('/api/compute/status'),
       ]);
       setPersonas(pRes || []);
       setCandidates(cRes || []);
@@ -89,8 +100,11 @@ export default function App() {
       setAutopilotStatus(autopilotRes?.error ? null : autopilotRes);
       setDoctorStatus(doctorRes?.error ? null : doctorRes);
       setCapabilities(capabilitiesRes?.error ? null : capabilitiesRes);
+      setComputeStatus(compute?.error ? null : compute);
+      setDataError('');
     } catch (err) {
-      console.error('Error fetching data:', err);
+      setDataError((err as Error).message || 'Could not load controller data');
+      setComputeStatus(null);
     } finally {
       setLoading(false);
     }
@@ -103,7 +117,7 @@ export default function App() {
   const handleReviewCandidate = async (cid: string, decision: 'approved' | 'rejected' | 'revise') => {
     const note = reviewNotes[cid] || '';
     try {
-      const res = await fetch(`/api/candidates/${cid}/review`, {
+      const res = await apiFetch(`/api/candidates/${cid}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision, reviewer: reviewerName, note })
@@ -117,17 +131,17 @@ export default function App() {
   };
 
   const handleCreateMediaJob = async () => {
-    const cand = candidates.find(c => c.persona_id === selectedPersona) || candidates[0];
+    const cand = candidates.find(c => c.persona_id === selectedPersona && ['approved', 'published'].includes(c.status));
     if (!cand) return;
 
     try {
-      const res = await fetch('/api/media-jobs/create', {
+      const res = await apiFetch('/api/media-jobs/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           persona_id: selectedPersona,
           candidate_id: cand.id,
-          source_asset_uri: cand.asset_uri || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800',
+          source_asset_uri: cand.asset_uri,
           script: videoScript,
           aspect_ratio: '9:16'
         })
@@ -135,7 +149,7 @@ export default function App() {
       if (res.ok) {
         const newJob = await res.json();
         // Trigger render
-        await fetch(`/api/media-jobs/${newJob.id}/render`, { method: 'POST' });
+        await apiFetch(`/api/media-jobs/${newJob.id}/render`, { method: 'POST' });
         await fetchData();
         setActiveTab('media');
       }
@@ -146,7 +160,7 @@ export default function App() {
 
   const handleReviewMediaJob = async (id: string, decision: 'approved' | 'rejected' | 'revise') => {
     try {
-      const res = await fetch(`/api/media-jobs/${id}/review`, {
+      const res = await apiFetch(`/api/media-jobs/${id}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision, reviewer: reviewerName, note: 'Reviewed via web operator desk' })
@@ -159,9 +173,23 @@ export default function App() {
     }
   };
 
+  const handleRetryMediaJob = async (id: string) => {
+    setControlBusy(true);
+    try {
+      const res = await apiFetch(`/api/media-jobs/${id}/render`, { method: 'POST' });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Render could not start');
+      await fetchData();
+    } catch (err) {
+      setControlError((err as Error).message);
+    } finally {
+      setControlBusy(false);
+    }
+  };
+
   const handleScheduleMedia = async (jobId: string) => {
     try {
-      const res = await fetch('/api/schedules/schedule', {
+      const res = await apiFetch('/api/schedules/schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -185,7 +213,7 @@ export default function App() {
 
   const handleProcessOutbox = async () => {
     try {
-      const res = await fetch('/api/schedules/process-outbox', { method: 'POST' });
+      const res = await apiFetch('/api/schedules/process-outbox', { method: 'POST' });
       if (res.ok) {
         await fetchData();
       }
@@ -196,7 +224,7 @@ export default function App() {
 
   const handleSimulateTraffic = async (cid: string) => {
     try {
-      await fetch(`/api/candidates/${cid}/simulate`, {
+      await apiFetch(`/api/candidates/${cid}/simulate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -217,7 +245,7 @@ export default function App() {
     setControlBusy(true);
     setControlError('');
     try {
-      const res = await fetch('/api/runtime-policy', {
+      const res = await apiFetch('/api/runtime-policy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -241,7 +269,7 @@ export default function App() {
     setControlBusy(true);
     setControlError('');
     try {
-      const res = await fetch('/api/rl/train', {
+      const res = await apiFetch('/api/rl/train', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ epochs: 20, learning_rate: 0.01 }),
@@ -261,7 +289,7 @@ export default function App() {
     setControlError('');
     setAutopilotResult(null);
     try {
-      const res = await fetch('/api/autopilot/run', {
+      const res = await apiFetch('/api/autopilot/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -439,6 +467,16 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+        {dataError && (
+          <div role="alert" className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <p className="font-semibold">Controller unavailable</p>
+            <p className="mt-1">Your S24 controller must be running to load live data. {dataError}</p>
+            <div className="mt-3 flex flex-wrap gap-4">
+              <a href="http://127.0.0.1:3000" className="underline">Open local dashboard</a>
+              <button onClick={fetchData} className="underline">Retry connection</button>
+            </div>
+          </div>
+        )}
         {/* TAB 1: REVIEW DESK */}
         {activeTab === 'review' && (
           <div className="space-y-6">
@@ -620,6 +658,19 @@ export default function App() {
         {/* TAB 2: VIDEO & MEDIA STUDIO */}
         {activeTab === 'media' && (
           <div className="space-y-6">
+            {computeStatus && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {(['chat', 'image', 'voice', 'video'] as const).map(lane => (
+                  <div key={lane} className="bg-[#1a1424] rounded-xl p-3 border border-[#2e233d] text-xs">
+                    <span className="font-semibold capitalize">{lane}</span>
+                    <p className={computeStatus[lane]?.ready ? 'text-emerald-300' : 'text-amber-200'}>
+                      {computeStatus[lane]?.ready ? 'Ready' : lane === 'video' ? 'Notebook batch' : 'Setup needed'}
+                    </p>
+                    <p className="text-gray-400 mt-1">{computeStatus[lane]?.reason || computeStatus[lane]?.provider}</p>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="bg-[#1a1424] p-5 rounded-2xl border border-[#2e233d] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h2 className="text-xl font-bold flex items-center gap-2">
@@ -749,27 +800,37 @@ export default function App() {
                             <div className="bg-[#140f20] p-2.5 rounded-lg border border-purple-500/20 text-[11px] font-mono space-y-1">
                               <div className="flex items-center justify-between text-emerald-400 font-semibold">
                                 <span>Technical QA Score</span>
-                                <span>{(job.qa_report.score * 100).toFixed(0)}% PASSED</span>
+                                <span>{(job.qa_report.score * 100).toFixed(0)}% {job.qa_report.passed ? 'PASSED' : 'FAILED'}</span>
                               </div>
                               <div className="grid grid-cols-2 gap-1 text-[10px] text-gray-400">
-                                <div>✓ 1080x1920 (9:16)</div>
-                                <div>✓ Stereo AAC audio</div>
-                                <div>✓ 30 FPS H.264</div>
-                                <div>✓ Integrity valid</div>
+                                {Object.entries(job.qa_report.checks || {}).map(([name, passed]) => (
+                                  <div key={name} className={passed ? 'text-emerald-300' : 'text-rose-300'}>
+                                    {passed ? '✓' : '×'} {name.replaceAll('_', ' ')}
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           )}
 
                           <div className="text-[11px] font-mono text-gray-400 space-y-0.5">
-                            <div>Generation: ${((job.generation_cost_cents || 30) / 100).toFixed(2)}</div>
-                            <div>Render &amp; FFmpeg: ${((job.render_cost_cents || 10) / 100).toFixed(2)}</div>
+                            <div>Generation: ${((job.generation_cost_cents ?? 0) / 100).toFixed(2)}</div>
+                            <div>Render &amp; FFmpeg: ${((job.render_cost_cents ?? 0) / 100).toFixed(2)}</div>
                           </div>
                         </div>
                       </div>
                     </div>
 
                     {/* Media Actions */}
+                    {job.error_message && (
+                      <p className="text-xs text-amber-200 whitespace-pre-wrap break-words">{job.error_message}</p>
+                    )}
                     <div className="pt-3 border-t border-[#2a203b] flex items-center justify-between gap-2">
+                      {['planned', 'render_failed'].includes(job.status) && (
+                        <button onClick={() => handleRetryMediaJob(job.id)} disabled={controlBusy}
+                          className="px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-200 text-xs disabled:opacity-50">
+                          Retry render
+                        </button>
+                      )}
                       {job.status === 'review_ready' && (
                         <div className="flex items-center gap-2 w-full justify-end">
                           <button

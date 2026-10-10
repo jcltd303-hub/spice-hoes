@@ -85,13 +85,13 @@ class MixtureOfAgents:
         self.provider = provider
         self.store = store
         self.knowledge = KnowledgeBase(store, embedder=embedder,
-                                       verified_experiments_only=bool(getattr(provider, "restrict_to_azure", False)))
+                                       verified_experiments_only=bool(getattr(provider, "verified_revenue_only", False)))
         self.experts = tuple(experts)
         if len(self.experts) < 2:
             raise ValueError("MoA requires at least two experts")
 
     def _fallback_models(self, role: str) -> tuple[str, ...]:
-        if getattr(self.provider, "restrict_to_azure", False):
+        if getattr(self.provider, "local_compute", False):
             return ()
         role_key = f"MOA_{role.upper()}_FALLBACK_MODELS"
         raw = os.getenv(role_key, os.getenv("MOA_FALLBACK_MODELS", ""))
@@ -100,8 +100,8 @@ class MixtureOfAgents:
         return DEFAULT_FALLBACK_MODELS
 
     def _role_model(self, role: str, default: str) -> str:
-        if getattr(self.provider, "restrict_to_azure", False):
-            return os.getenv(f"AZURE_MOA_DEPLOYMENT_{role.upper()}", self.provider.model).strip() or self.provider.model
+        if getattr(self.provider, "local_compute", False):
+            return self.provider.model
         return os.getenv(f"MOA_MODEL_{role.upper()}", default).strip() or default
 
     def _chat_json(self, system: str, user: str, temperature: float,
@@ -169,6 +169,8 @@ class MixtureOfAgents:
         query = objective + (" " + json.dumps(persona, sort_keys=True) if persona else "")
         context, citations = self.knowledge.context(query)
         project_context = context or "(none)"
+        if getattr(self.provider, "local_compute", False):
+            project_context = project_context[:3000]
         persona_json = json.dumps(persona or {}, sort_keys=True)
 
         shared = (
@@ -194,7 +196,7 @@ class MixtureOfAgents:
                     system,
                     shared,
                     expert.temperature,
-                    expert.max_tokens,
+                    min(expert.max_tokens, 384) if getattr(self.provider, "local_compute", False) else expert.max_tokens,
                     requested_model,
                     self._fallback_models(expert.name),
                     expert.supports_response_format,
@@ -228,6 +230,7 @@ class MixtureOfAgents:
                 }
 
         workers = max(1, min(max_workers, len(self.experts)))
+        workers = min(workers, getattr(self.provider, "max_concurrent_requests", workers))
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
             opinions = list(pool.map(ask, self.experts))
 
@@ -253,7 +256,8 @@ class MixtureOfAgents:
             "You are the final decision aggregator. Resolve disagreement and stay strictly on the objective.",
             synthesis_prompt,
             0.15,
-            int(os.getenv("MOA_AGGREGATOR_MAX_TOKENS", "1800")),
+            min(int(os.getenv("MOA_AGGREGATOR_MAX_TOKENS", "1800")), 768)
+            if getattr(self.provider, "local_compute", False) else int(os.getenv("MOA_AGGREGATOR_MAX_TOKENS", "1800")),
             aggregator_model,
             self._fallback_models("aggregator"),
             False,
@@ -262,7 +266,7 @@ class MixtureOfAgents:
             raise ProviderError("MoA aggregator returned invalid JSON")
 
         result = {
-            "architecture": "moa-v3-azure" if getattr(self.provider, "restrict_to_azure", False) else "moa-v3-heterogeneous-openrouter",
+            "architecture": "moa-v3-local" if getattr(self.provider, "local_compute", False) else "moa-v3-heterogeneous-openrouter",
             "provider": getattr(self.provider, "model_name", type(self.provider).__name__),
             "objective": objective,
             "persona_id": (persona or {}).get("id"),

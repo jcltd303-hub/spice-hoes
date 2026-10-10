@@ -10,8 +10,21 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 const isProd = process.env.NODE_ENV === 'production';
+const API_HOST = process.env.SPICE_API_HOST || '127.0.0.1';
 
-app.use(cors());
+const UI_ORIGINS = new Set([
+  `http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`,
+  ...(process.env.SPICE_UI_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean),
+]);
+app.use('/api', (req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && !UI_ORIGINS.has(origin)) {
+    res.status(403).json({ error: 'UI origin is not configured for this local controller' });
+    return;
+  }
+  next();
+});
+app.use(cors({ origin: (origin, callback) => callback(null, !origin || UI_ORIGINS.has(origin)) }));
 app.use(express.json({ limit: '2mb' }));
 
 function sendCoreError(res: express.Response, err: unknown) {
@@ -64,6 +77,14 @@ app.get('/api/health', async (_req, res) => {
   try {
     const core = await runCore<Record<string, unknown>>('health');
     res.json({ ...core, node_uptime: process.uptime() });
+  } catch (err) {
+    sendCoreError(res, err);
+  }
+});
+
+app.get('/api/compute/status', async (_req, res) => {
+  try {
+    res.json(await runCore('compute_status'));
   } catch (err) {
     sendCoreError(res, err);
   }
@@ -362,8 +383,8 @@ async function startServer() {
     });
   }
 
-  app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`Spice Hoes control plane running on http://0.0.0.0:${PORT}`);
+  app.listen(Number(PORT), API_HOST, () => {
+    console.log(`Spice Hoes control plane running on http://${API_HOST}:${PORT}`);
   });
 }
 

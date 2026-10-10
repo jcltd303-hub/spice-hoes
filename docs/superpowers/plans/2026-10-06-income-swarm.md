@@ -12,7 +12,7 @@
 
 ## Global constraints
 
-- Production model compute stays on configured Azure endpoints or S24 Go/QNN.
+- Production model compute stays on configured local llama.cpp endpoints and S24 Go/QNN.
 - No fictional revenue, fabricated post URLs, leaked credentials, or customer PII.
 - Owner controls budget and auto-release configuration; models cannot modify them.
 - No live posting or spending without working configured accounts and offer.
