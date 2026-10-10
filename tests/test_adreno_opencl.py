@@ -17,10 +17,23 @@ DRIVER = r'''
 #include <string.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/resource.h>
 typedef void * id;
 int clGetPlatformIDs(unsigned n, id *out, unsigned *count) {
+#ifdef REQUIRE_SYSTEM_FIRST
+    /* Exercise the observed Android/Termux boundary without loading Android
+       system binaries into this host process. */
+    const char *search = getenv("LD_LIBRARY_PATH");
+    const char *prefix = getenv("PREFIX");
+    char termux_lib[4096];
+    if (!search || !prefix) return -1001;
+    snprintf(termux_lib, sizeof(termux_lib), "%s/lib", prefix);
+    const char *system = strstr(search, "/system/lib64");
+    const char *termux = strstr(search, termux_lib);
+    if (!system || !termux || system > termux) return -1001;
+#endif
 #ifdef NATIVE_ERROR
     fputs("fixture: native driver initialization failed\n", stderr);
     fputs("fixture: native stdout is not JSON\n", stdout);
@@ -153,7 +166,7 @@ class AdrenoOpenCLTests(unittest.TestCase):
         driver = self.build_driver('-DNO_PLATFORM')
         packaged = self.prefix / 'lib/libOpenCL.so'
         shutil.copy2(driver, packaged)
-        self.build_driver()
+        self.build_driver('-DREQUIRE_SYSTEM_FIRST')
         self.env['LD_LIBRARY_PATH'] = str(self.prefix / 'lib')
         icd_dir = self.prefix / 'etc/OpenCL/vendors'
         icd_dir.mkdir(parents=True)
@@ -311,6 +324,16 @@ class AdrenoOpenCLTests(unittest.TestCase):
         self.assertTrue((current / 'verified').exists())
         self.assertEqual((current / 'lib/libOpenCL_adreno.so').read_bytes(), sidecar.read_bytes())
         self.assertEqual(loader.read_bytes(), b'leave-package-loader-alone')
+
+    def test_setup_enumerates_with_system_libraries_before_termux_wrappers(self):
+        self.build_driver('-DREQUIRE_SYSTEM_FIRST')
+        self.env['LD_LIBRARY_PATH'] = str(self.prefix / 'lib')
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        current = self.root / 'runtime/adreno-opencl/current'
+        report = json.loads((current / 'platform.json').read_text())
+        self.assertTrue(report['ready'])
+        self.assertEqual(report['stage'], 'gpu-enumerated')
 
     def test_failed_reprobe_keeps_previous_working_install(self):
         self.build_driver()

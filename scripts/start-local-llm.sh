@@ -57,7 +57,9 @@ if [[ "$SPICE_TASK_BACKEND" == opencl || ( "$SPICE_TASK_BACKEND" == auto && ( -z
       echo 'The installed Adreno driver differs from the phone vendor libraries. Run bash scripts/setup-adreno-opencl.sh again.' >&2
       exit 3
     fi
-    export LD_LIBRARY_PATH="$SPICE_TASK_OPENCL/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}${PREFIX:+:$PREFIX/lib}:/vendor/lib64:/vendor/lib64/egl:/system/lib64"
+    # Keep Android HAL libraries ahead of Termux wrappers, while retaining the
+    # selected llama build's private libraries before other Termux libraries.
+    export LD_LIBRARY_PATH="$SPICE_TASK_OPENCL/lib:/vendor/lib64:/vendor/lib64/egl:/system/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}${PREFIX:+:$PREFIX/lib}"
     echo 'Using isolated Adreno OpenCL libraries; GPU enumeration was checked during setup.'
   fi
 fi
