@@ -169,10 +169,9 @@ def compare(env, timeout):
     files, icds = inventory(vendor, prefix)
     report = {'purpose': 'GPU enumeration and driver diagnostics; kernels/inference untested.',
               'vendor_files': files, 'icd_files': icds, 'copy_errors': [], 'probes': []}
-    paths = [str(vendor), str(vendor / 'egl')]
+    paths = [str(vendor), str(vendor / 'egl'), '/system/lib64']
     if prefix:
         paths.append(str(Path(prefix) / 'lib'))
-    paths.append('/system/lib64')
     search = ':'.join(paths)
     if env.get('LD_LIBRARY_PATH'):
         search += ':' + env['LD_LIBRARY_PATH']
@@ -187,10 +186,7 @@ def compare(env, timeout):
         copied = Path(directory) / 'libOpenCL.so'
         if copied.exists():
             (Path(directory) / 'libOpenCL.so.1').symlink_to('libOpenCL.so')
-        isolated_paths = [directory]
-        if prefix:
-            isolated_paths.append(str(Path(prefix) / 'lib'))
-        isolated_search = ':'.join(isolated_paths + [str(vendor), str(vendor / 'egl'), '/system/lib64'])
+        isolated_search = ':'.join([directory] + paths)
         if env.get('LD_LIBRARY_PATH'):
             isolated_search += ':' + env['LD_LIBRARY_PATH']
         candidates = [('packaged', 'libOpenCL.so', env.get('LD_LIBRARY_PATH', '')),

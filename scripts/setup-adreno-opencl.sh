@@ -25,7 +25,8 @@ for SPICE_TASK_NAME in libOpenCL.so libOpenCL_adreno.so libOpenCL_Adreno.so libC
 done
 ln -s libOpenCL.so "$SPICE_TASK_STAGE/lib/libOpenCL.so.1"
 sha256sum -- "${SPICE_TASK_SOURCES[@]}" > "$SPICE_TASK_STAGE/SOURCE_SHA256SUMS"
-SPICE_TASK_SEARCH="$SPICE_TASK_STAGE/lib:$PREFIX/lib:$SPICE_TASK_VENDOR:$SPICE_TASK_VENDOR/egl:/system/lib64"
+# Android HAL dependencies must resolve before same-named Termux wrappers.
+SPICE_TASK_SEARCH="$SPICE_TASK_STAGE/lib:$SPICE_TASK_VENDOR:$SPICE_TASK_VENDOR/egl:/system/lib64:$PREFIX/lib"
 printf 'Probing the phone OpenCL driver with isolated libraries from %s\n' "$SPICE_TASK_VENDOR"
 if LD_LIBRARY_PATH="$SPICE_TASK_SEARCH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     "${PYTHON_BIN:-python3}" scripts/diagnose-adreno-opencl.py \

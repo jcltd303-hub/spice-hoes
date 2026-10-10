@@ -28,7 +28,15 @@ class S24LauncherTests(unittest.TestCase):
 import json, os, sys
 from pathlib import Path
 if sys.argv[1:] == ['--list-devices']:
-    Path(os.environ['TEST_PROBES']).write_text('probed')
+    Path(os.environ['TEST_PROBES']).write_text(json.dumps({{
+        'library_path': os.environ.get('LD_LIBRARY_PATH', '')
+    }}))
+    if os.environ.get('TEST_REQUIRE_SYSTEM_FIRST'):
+        paths = os.environ.get('LD_LIBRARY_PATH', '').split(':')
+        termux = os.environ['PREFIX'] + '/lib'
+        if '/system/lib64' not in paths or paths.index('/system/lib64') > paths.index(termux):
+            print('ggml_opencl: platform IDs not available.\\nAvailable devices:\\n  Vulkan0: Adreno 750')
+            raise SystemExit(0)
     print(os.environ['TEST_DEVICES'])
     raise SystemExit(int(os.environ.get('TEST_PROBE_EXIT', '0')))
 Path(os.environ['TEST_CAPTURE']).write_text(json.dumps({{
@@ -146,6 +154,38 @@ Path(os.environ['TEST_CAPTURE']).write_text(json.dumps({{
                              LD_LIBRARY_PATH='/termux/lib')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(json.loads(self.capture.read_text())['library_path'].startswith(f'{profile}/lib:'))
+
+    def test_opencl_system_priority_survives_probe_and_server_exec(self):
+        profile, source = self.install_opencl_profile()
+        result = self.launch(SPICE_LLM_BACKEND='opencl', PREFIX='/termux',
+                             TEST_REQUIRE_SYSTEM_FIRST='1',
+                             TEST_DEVICES='Available devices:\n  GPUOpenCL: Adreno 750',
+                             LD_LIBRARY_PATH='/termux/lib:/custom/plugins')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        probe = json.loads(self.probes.read_text())['library_path']
+        started = json.loads(self.capture.read_text())['library_path']
+        self.assertEqual(probe, started)
+        self.assertEqual(started.split(':')[:4], [str(profile / 'lib'), '/vendor/lib64',
+                                               '/vendor/lib64/egl', '/system/lib64'])
+        self.assertIn('/custom/plugins', started.split(':'))
+
+    def test_native_opencl_keeps_its_backend_libraries_ahead_of_termux(self):
+        self.install_opencl_profile()
+        native_bin = self.root / 'runtime/llama-snapdragon/bin/llama-server'
+        native_bin.parent.mkdir(parents=True)
+        shutil.copy2(self.bin, native_bin)
+        native_lib = native_bin.parent.parent / 'lib'
+        native_lib.mkdir()
+        result = self.launch(SPICE_LLM_BIN='', SPICE_LLM_BACKEND='auto', PREFIX='/termux',
+                             TEST_REQUIRE_SYSTEM_FIRST='1',
+                             TEST_DEVICES='Available devices:\n  GPUOpenCL: Adreno 750',
+                             LD_LIBRARY_PATH='/termux/lib')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        paths = json.loads(self.capture.read_text())['library_path'].split(':')
+        args = self.args()
+        self.assertEqual(args[args.index('--device') + 1], 'GPUOpenCL')
+        self.assertLess(paths.index('/system/lib64'), paths.index(str(native_lib)))
+        self.assertLess(paths.index(str(native_lib)), paths.index('/termux/lib'))
 
     def test_stale_vendor_profile_stops_before_probing_gpu(self):
         profile, source = self.install_opencl_profile()
