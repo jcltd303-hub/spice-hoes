@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import shutil
 import subprocess
@@ -125,6 +126,52 @@ Path(os.environ['TEST_CAPTURE']).write_text(json.dumps({{
         native_lib = self.root / 'runtime/llama-snapdragon/lib'
         native_lib.mkdir(parents=True)
         result = self.launch(SPICE_LLM_GPU_LAYERS='0', LD_LIBRARY_PATH='/termux/lib')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(self.capture.read_text())['library_path'], '/termux/lib')
+
+    def install_opencl_profile(self):
+        profile = self.root / 'runtime/adreno-opencl/current'
+        (profile / 'lib').mkdir(parents=True)
+        (profile / 'verified').touch()
+        source = self.root / 'vendor-opencl.so'
+        source.write_bytes(b'phone-vendor-driver')
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        (profile / 'SOURCE_SHA256SUMS').write_text(f'{digest}  {source}\n')
+        return profile, source
+
+    def test_opencl_uses_verified_isolated_vendor_libraries(self):
+        profile, source = self.install_opencl_profile()
+        result = self.launch(SPICE_LLM_BACKEND='opencl', PREFIX='/termux',
+                             TEST_DEVICES='Available devices:\n  GPUOpenCL: Adreno 750',
+                             LD_LIBRARY_PATH='/termux/lib')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(json.loads(self.capture.read_text())['library_path'].startswith(f'{profile}/lib:'))
+
+    def test_stale_vendor_profile_stops_before_probing_gpu(self):
+        profile, source = self.install_opencl_profile()
+        source.write_bytes(b'new-ROM-driver')
+        result = self.launch(SPICE_LLM_BACKEND='opencl')
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertIn('setup-adreno-opencl.sh', result.stderr)
+        self.assertFalse(self.probes.exists())
+        self.assertFalse(self.capture.exists())
+
+    def test_cpu_bypasses_a_stale_vendor_profile(self):
+        profile, source = self.install_opencl_profile()
+        source.write_bytes(b'new-ROM-driver')
+        result = self.launch(SPICE_LLM_BACKEND='cpu', LD_LIBRARY_PATH='/termux/lib')
+        self.assert_cpu(result)
+        self.assertEqual(json.loads(self.capture.read_text())['library_path'], '/termux/lib')
+
+    def test_platform_failure_points_to_adreno_setup(self):
+        result = self.launch(SPICE_LLM_BACKEND='opencl', TEST_DEVICES=(
+            'ggml_opencl: platform IDs not available.\nAvailable devices:\n  Vulkan0: Adreno 750'))
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertIn('setup-adreno-opencl.sh', result.stderr)
+
+    def test_explicit_vulkan_does_not_activate_opencl_profile(self):
+        profile, source = self.install_opencl_profile()
+        result = self.launch(SPICE_LLM_BACKEND='vulkan', LD_LIBRARY_PATH='/termux/lib')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(self.capture.read_text())['library_path'], '/termux/lib')
 

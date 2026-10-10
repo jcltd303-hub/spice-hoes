@@ -50,6 +50,17 @@ if [[ -n "$SPICE_TASK_LIB" && -d "$SPICE_TASK_LIB" ]]; then
   export ADSP_LIBRARY_PATH="$SPICE_TASK_LIB;/vendor/lib/rfsa/adsp;/vendor/dsp/cdsp;/dsp"
   export DSP_LIBRARY_PATH="$ADSP_LIBRARY_PATH"
 fi
+SPICE_TASK_OPENCL="$SPICE_TASK_ROOT/runtime/adreno-opencl/current"
+if [[ "$SPICE_TASK_BACKEND" == opencl || ( "$SPICE_TASK_BACKEND" == auto && ( -z "$SPICE_TASK_DEVICE" || "$SPICE_TASK_DEVICE" == GPUOpenCL* ) ) ]]; then
+  if [[ -f "$SPICE_TASK_OPENCL/verified" ]]; then
+    if [[ ! -s "$SPICE_TASK_OPENCL/SOURCE_SHA256SUMS" ]] || ! sha256sum --check --status "$SPICE_TASK_OPENCL/SOURCE_SHA256SUMS"; then
+      echo 'The installed Adreno driver differs from the phone vendor libraries. Run bash scripts/setup-adreno-opencl.sh again.' >&2
+      exit 3
+    fi
+    export LD_LIBRARY_PATH="$SPICE_TASK_OPENCL/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}${PREFIX:+:$PREFIX/lib}:/vendor/lib64:/vendor/lib64/egl:/system/lib64"
+    echo 'Using isolated Adreno OpenCL libraries; GPU enumeration was checked during setup.'
+  fi
+fi
 if [[ "$SPICE_TASK_BACKEND" != cpu ]]; then
   if ! SPICE_TASK_DEVICES="$("$SPICE_TASK_BIN" --list-devices 2>&1)"; then
     printf '%s\n' "$SPICE_TASK_DEVICES" >&2
@@ -75,7 +86,11 @@ if [[ "$SPICE_TASK_BACKEND" != cpu ]]; then
   fi
   [[ -n "$SPICE_TASK_DEVICE" ]] || {
     if [[ "$SPICE_TASK_BACKEND" == opencl ]]; then
-      echo 'No OpenCL device reported. Install llama-cpp-backend-opencl and opencl-vendor-driver, or use the Snapdragon artifact.' >&2
+      if [[ "$SPICE_TASK_DEVICES" == *'platform IDs not available'* ]]; then
+        echo 'OpenCL backend loaded, but the driver could not enumerate a platform. Run bash scripts/setup-adreno-opencl.sh for isolated Adreno libraries and a native probe.' >&2
+      else
+        echo 'No OpenCL device reported. Install llama-cpp-backend-opencl or use the Snapdragon artifact, then run bash scripts/setup-adreno-opencl.sh.' >&2
+      fi
     else
       printf 'No %s GPU/NPU device reported. Check the backend and driver.\n' "$SPICE_TASK_BACKEND" >&2
     fi

@@ -44,6 +44,7 @@ data/references/lila_hart/*
 .env.s24
 models/llm/
 runtime/llama-snapdragon/
+runtime/adreno-opencl/
 
 /node_modules
 .kotlin/

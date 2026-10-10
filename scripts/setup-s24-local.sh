@@ -8,7 +8,7 @@ if apt-cache show llama-cpp-backend-vulkan >/dev/null 2>&1; then
   pkg install -y llama-cpp-backend-vulkan
 fi
 if apt-cache show llama-cpp-backend-opencl >/dev/null 2>&1; then
-  pkg install -y llama-cpp-backend-opencl opencl-vendor-driver
+  pkg install -y llama-cpp-backend-opencl
 else
   echo 'OpenCL backend package unavailable in this mirror; update Termux packages or use the Snapdragon artifact.' >&2
 fi
@@ -36,5 +36,6 @@ fi
 echo 'Local tools installed. Set SPICE_LLM_MODEL to your GGUF or pass SPICE_LLM_MODEL_URL during setup.'
 echo 'Start the model: bash scripts/start-local-llm.sh'
 echo 'The launcher prefers Adreno OpenCL. For explicit CPU recovery: SPICE_LLM_BACKEND=cpu bash scripts/start-local-llm.sh'
+echo 'If OpenCL says platform IDs not available: bash scripts/setup-adreno-opencl.sh'
 echo 'Open the updated Android companion for offline voice; keep it visible for microphone turns.'
 echo 'Then: bash scripts/s24-doctor.sh'
