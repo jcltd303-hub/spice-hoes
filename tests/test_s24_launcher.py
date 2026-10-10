@@ -215,6 +215,203 @@ Path(os.environ['TEST_CAPTURE']).write_text(json.dumps({{
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(self.capture.read_text())['library_path'], '/termux/lib')
 
+    def build_native_runtime_fixture(self, binary, runtime_dir, profile):
+        """Exercise a real ELF relocation, with the phone's missing ABI symbol."""
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        runtime_source = self.root / 'runtime.c'
+        runtime_source.write_text(r'''
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+long spice_vtable[] __asm__("_ZTVNSt6__ndk117bad_function_callE") = {750};
+__attribute__((constructor)) static void record_runtime_load(void) {
+    const char *path = getenv("TEST_RUNTIME_LOADS");
+    if (!path) return;
+    char exe[4096];
+    ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    if (n < 0) return;
+    exe[n] = 0;
+    FILE *f = fopen(path, "a");
+    if (f) { fprintf(f, "%s\n", exe); fclose(f); }
+}
+''')
+        runtime = runtime_dir / 'libc++_shared.so'
+        subprocess.run(['cc', '-shared', '-fPIC', '-Wl,-soname,libc++_shared.so',
+                        str(runtime_source), '-o', str(runtime)], check=True, capture_output=True)
+        wrong_source = self.root / 'wrong-runtime.c'
+        wrong_source.write_text('int incompatible_runtime(void) { return 0; }\n')
+        subprocess.run(['cc', '-shared', '-fPIC', '-Wl,-soname,libc++_shared.so',
+                        str(wrong_source), '-o', str(profile / 'lib/libc++_shared.so')],
+                       check=True, capture_output=True)
+        impl_source = self.root / 'llama-impl.c'
+        impl_source.write_text(r'''
+#define _GNU_SOURCE
+#include <dlfcn.h>
+extern long spice_vtable[] __asm__("_ZTVNSt6__ndk117bad_function_callE");
+const char *spice_runtime_provider(void) {
+    Dl_info info;
+    if (spice_vtable[0] != 750 || !dladdr(spice_vtable, &info)) return "invalid";
+    return info.dli_fname;
+}
+''')
+        subprocess.run(['cc', '-shared', '-fPIC', '-Wl,-z,now',
+                        '-Wl,-soname,libllama-server-impl.so', str(impl_source),
+                        '-L' + str(runtime_dir), '-l:libc++_shared.so', '-ldl',
+                        '-o', str(runtime_dir / 'libllama-server-impl.so')],
+                       check=True, capture_output=True)
+        binary_source = self.root / 'llama-server.c'
+        binary_source.write_text(r'''
+#include <dlfcn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+extern const char *spice_runtime_provider(void);
+int main(int argc, char **argv) {
+    int probe = argc == 2 && !strcmp(argv[1], "--list-devices");
+    const char *paths = getenv("LD_LIBRARY_PATH");
+    const char *preload = getenv("LD_PRELOAD");
+    FILE *f = fopen(getenv(probe ? "TEST_PROBES" : "TEST_CAPTURE"), "w");
+    if (!f) return 2;
+    fprintf(f, "{\"runtime\":\"%s\",\"library_path\":\"%s\","
+            "\"preload\":\"%s\",\"exec_hook\":%d}",
+            spice_runtime_provider(), paths ? paths : "", preload ? preload : "",
+            dlsym(RTLD_DEFAULT, "spice_exec_hook") != NULL);
+    fclose(f);
+    if (probe) puts("Available devices:\n  GPUOpenCL: Adreno 750");
+    return 0;
+}
+''')
+        subprocess.run(['cc', '-Wl,-z,now', str(binary_source), '-L' + str(runtime_dir),
+                        '-Wl,-rpath,' + str(runtime_dir), '-Wl,-rpath-link,' + str(runtime_dir),
+                        '-l:libllama-server-impl.so', '-ldl', '-o', str(binary)],
+                       check=True, capture_output=True)
+        return runtime
+
+    @unittest.skipUnless(sys.platform == 'linux' and shutil.which('cc'),
+                         'native linker fixture requires Linux and a C compiler')
+    def test_package_opencl_resolves_ndk_abi_without_changing_hal_priority(self):
+        profile, source = self.install_opencl_profile()
+        prefix = self.root / 'termux'
+        binary = prefix / 'bin/llama-server'
+        runtime = self.build_native_runtime_fixture(binary, prefix / 'lib', profile)
+        hook_source = self.root / 'exec-hook.c'
+        hook_source.write_text('int spice_exec_hook(void) { return 1; }\n')
+        hook = prefix / 'lib/libtermux-exec.so'
+        subprocess.run(['cc', '-shared', '-fPIC', str(hook_source), '-o', str(hook)],
+                       check=True, capture_output=True)
+        loads = self.root / 'runtime-loads'
+
+        # Prove that the shadow runtime fails before the executable reaches main.
+        broken = subprocess.run([str(binary), '--list-devices'], env={**self.env,
+            'LD_LIBRARY_PATH': f'{profile}/lib:{prefix}/lib'}, text=True,
+            capture_output=True, timeout=10)
+        self.assertNotEqual(broken.returncode, 0)
+        self.assertIn('_ZTVNSt6__ndk117bad_function_callE', broken.stderr)
+        self.assertFalse(self.probes.exists())
+
+        result = self.launch(SPICE_LLM_BIN=str(binary), SPICE_LLM_BACKEND='opencl',
+                             PREFIX=str(prefix), LD_LIBRARY_PATH=str(prefix / 'lib'),
+                             LD_PRELOAD=str(hook), TEST_RUNTIME_LOADS=str(loads))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        probe = json.loads(self.probes.read_text())
+        server = json.loads(self.capture.read_text())
+        for record in (probe, server):
+            self.assertEqual(Path(record['runtime']).resolve(), runtime.resolve())
+            self.assertEqual(record['exec_hook'], 1, 'retain the existing Termux exec hook')
+        self.assertEqual(probe, server, 'use the same runtime for probing and inference')
+        paths = server['library_path'].split(':')
+        self.assertLess(paths.index('/system/lib64'), paths.index(str(prefix / 'lib')))
+        self.assertEqual(loads.read_text().splitlines(), [str(binary), str(binary)],
+                         'preload the C++ runtime only into llama-server')
+
+    @unittest.skipUnless(sys.platform == 'linux' and shutil.which('cc'),
+                         'native linker fixture requires Linux and a C compiler')
+    def test_native_opencl_resolves_its_bundled_ndk_runtime(self):
+        profile, source = self.install_opencl_profile()
+        binary = self.root / 'runtime/llama-snapdragon/bin/llama-server'
+        runtime = self.build_native_runtime_fixture(binary, binary.parent.parent / 'lib', profile)
+        prefix = self.root / 'termux'
+        (prefix / 'lib').mkdir(parents=True)
+        shutil.copy2(profile / 'lib/libc++_shared.so', prefix / 'lib')
+        result = self.launch(SPICE_LLM_BIN='', SPICE_LLM_BACKEND='auto',
+                             PREFIX=str(prefix), LD_LIBRARY_PATH=str(prefix / 'lib'))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for record in (json.loads(self.probes.read_text()), json.loads(self.capture.read_text())):
+            self.assertEqual(Path(record['runtime']).resolve(), runtime.resolve())
+
+    @unittest.skipUnless(sys.platform == 'linux' and shutil.which('cc'),
+                         'native linker fixture requires Linux and a C compiler')
+    def test_private_runtime_preloads_from_a_project_path_with_spaces(self):
+        project = self.root / 'project with spaces'
+        (project / 'scripts').mkdir(parents=True)
+        shutil.copy2(ROOT / 'scripts/start-local-llm.sh', project / 'scripts')
+        self.root = project
+        self.capture = project / 'launch.json'
+        self.probes = project / 'probes'
+        self.env.update(TEST_CAPTURE=str(self.capture), TEST_PROBES=str(self.probes))
+        profile, source = self.install_opencl_profile()
+        binary = project / 'llama-server'
+        private = project / 'private libs'
+        runtime = self.build_native_runtime_fixture(binary, private, profile)
+        for _ in range(2):  # Reuse the alias on a later server startup.
+            result = self.launch(SPICE_LLM_BIN=str(binary), SPICE_LLM_LIB_DIR=str(private),
+                                 SPICE_LLM_BACKEND='opencl')
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for record in (json.loads(self.probes.read_text()), json.loads(self.capture.read_text())):
+                self.assertEqual(Path(record['runtime']).resolve(), runtime.resolve())
+
+    @unittest.skipUnless(sys.platform == 'linux' and shutil.which('cc'),
+                         'native linker fixture requires Linux and a C compiler')
+    def test_runtime_alias_rejects_directory_destinations(self):
+        profile, source = self.install_opencl_profile()
+        for directory_symlink in (False, True):
+            with self.subTest(directory_symlink=directory_symlink):
+                private = self.root / f'private libs {directory_symlink}'
+                binary = self.root / f'llama-server-{directory_symlink}'
+                runtime = self.build_native_runtime_fixture(binary, private, profile)
+                digest = hashlib.sha256(str(runtime).encode()).hexdigest()
+                cache = self.root / 'runtime/llama-cxx' / digest
+                cache.mkdir(parents=True)
+                destination = cache / 'libc++_shared.so'
+                if directory_symlink:
+                    existing = self.root / 'existing directory'
+                    existing.mkdir()
+                    destination.symlink_to(existing, target_is_directory=True)
+                else:
+                    destination.mkdir()
+                    existing = destination
+                sentinel = existing / 'keep.txt'
+                sentinel.write_text('existing content')
+
+                result = self.launch(SPICE_LLM_BIN=str(binary), SPICE_LLM_LIB_DIR=str(private),
+                                     SPICE_LLM_BACKEND='opencl')
+                self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+                self.assertIn('Cannot prepare llama C++ runtime alias', result.stderr)
+                self.assertFalse(self.probes.exists())
+                self.assertFalse(self.capture.exists())
+                self.assertEqual(list(existing.iterdir()), [sentinel])
+                self.assertEqual(sentinel.read_text(), 'existing content')
+
+    @unittest.skipUnless(sys.platform == 'linux' and shutil.which('cc'),
+                         'native linker fixture requires Linux and a C compiler')
+    def test_cpu_does_not_replace_the_callers_preload(self):
+        profile, source = self.install_opencl_profile()
+        binary = self.root / 'runtime/llama-snapdragon/bin/llama-server'
+        runtime = self.build_native_runtime_fixture(binary, binary.parent.parent / 'lib', profile)
+        hook_source = self.root / 'exec-hook.c'
+        hook_source.write_text('int spice_exec_hook(void) { return 1; }\n')
+        hook = self.root / 'libtermux-exec.so'
+        subprocess.run(['cc', '-shared', '-fPIC', str(hook_source), '-o', str(hook)],
+                       check=True, capture_output=True)
+        result = self.launch(SPICE_LLM_BIN='', SPICE_LLM_BACKEND='cpu', LD_PRELOAD=str(hook))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        record = json.loads(self.capture.read_text())
+        self.assertEqual(record['preload'], str(hook))
+        self.assertEqual(record['exec_hook'], 1)
+        self.assertEqual(Path(record['runtime']).resolve(), runtime.resolve())
+        self.assertFalse(self.probes.exists())
+
 
 if __name__ == '__main__':
     unittest.main()
