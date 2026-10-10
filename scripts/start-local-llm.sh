@@ -51,6 +51,7 @@ if [[ -n "$SPICE_TASK_LIB" && -d "$SPICE_TASK_LIB" ]]; then
   export DSP_LIBRARY_PATH="$ADSP_LIBRARY_PATH"
 fi
 SPICE_TASK_OPENCL="$SPICE_TASK_ROOT/runtime/adreno-opencl/current"
+SPICE_TASK_SERVER_PRELOAD="${LD_PRELOAD:-}"
 if [[ "$SPICE_TASK_BACKEND" == opencl || ( "$SPICE_TASK_BACKEND" == auto && ( -z "$SPICE_TASK_DEVICE" || "$SPICE_TASK_DEVICE" == GPUOpenCL* ) ) ]]; then
   if [[ -f "$SPICE_TASK_OPENCL/verified" ]]; then
     if [[ ! -s "$SPICE_TASK_OPENCL/SOURCE_SHA256SUMS" ]] || ! sha256sum --check --status "$SPICE_TASK_OPENCL/SOURCE_SHA256SUMS"; then
@@ -61,10 +62,22 @@ if [[ "$SPICE_TASK_BACKEND" == opencl || ( "$SPICE_TASK_BACKEND" == auto && ( -z
     # selected llama build's private libraries before other Termux libraries.
     export LD_LIBRARY_PATH="$SPICE_TASK_OPENCL/lib:/vendor/lib64:/vendor/lib64/egl:/system/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}${PREFIX:+:$PREFIX/lib}"
     echo 'Using isolated Adreno OpenCL libraries; GPU enumeration was checked during setup.'
+    # Select only this build's NDK C++ runtime without moving every Termux
+    # library ahead of Android's HAL dependencies. Keep existing exec hooks.
+    SPICE_TASK_CXX=''
+    if [[ -n "$SPICE_TASK_LIB" && -r "$SPICE_TASK_LIB/libc++_shared.so" ]]; then
+      SPICE_TASK_CXX="$(cd -- "$SPICE_TASK_LIB" && pwd)/libc++_shared.so"
+    elif [[ -n "${PREFIX:-}" && "$SPICE_TASK_BIN" == "$PREFIX/bin/"* && -r "$PREFIX/lib/libc++_shared.so" ]]; then
+      SPICE_TASK_CXX="$PREFIX/lib/libc++_shared.so"
+    fi
+    if [[ -n "$SPICE_TASK_CXX" ]]; then
+      SPICE_TASK_SERVER_PRELOAD="$SPICE_TASK_CXX${LD_PRELOAD:+:$LD_PRELOAD}"
+      printf 'Using llama C++ runtime: %s\n' "$SPICE_TASK_CXX"
+    fi
   fi
 fi
 if [[ "$SPICE_TASK_BACKEND" != cpu ]]; then
-  if ! SPICE_TASK_DEVICES="$("$SPICE_TASK_BIN" --list-devices 2>&1)"; then
+  if ! SPICE_TASK_DEVICES="$(LD_PRELOAD="$SPICE_TASK_SERVER_PRELOAD" "$SPICE_TASK_BIN" --list-devices 2>&1)"; then
     printf '%s\n' "$SPICE_TASK_DEVICES" >&2
     echo 'Device probing failed. Recover with SPICE_LLM_BACKEND=cpu bash scripts/start-local-llm.sh.' >&2
     exit 3
@@ -115,4 +128,5 @@ else
   fi
 fi
 echo 'Starting local model; keep this Termux session or supervise it with your service manager.'
+export LD_PRELOAD="$SPICE_TASK_SERVER_PRELOAD"
 exec "$SPICE_TASK_BIN" "${SPICE_TASK_ARGS[@]}"

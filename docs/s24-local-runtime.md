@@ -100,6 +100,24 @@ LD_LIBRARY_PATH="/vendor/lib64:/vendor/lib64/egl:/system/lib64:$PREFIX/lib" \
 
 This is a single-process diagnostic and does not activate a runtime or overwrite the previous comparison report. After updating the project, run `setup-adreno-opencl.sh` and the OpenCL startup command above to install and select the isolated profile. Successful kernel compilation, GGUF loading, an offload report, and a real chat response are the remaining inference checks. Keep the system binder/nativewindow files intact.
 
+### OpenCL setup succeeds but llama-server cannot link its C++ runtime
+
+The subsequent phone report reached `gpu-enumerated` during setup, then the Termux `llama-server` failed before device probing with `cannot locate symbol "_ZTVNSt6__ndk117bad_function_callE"` from `libllama-server-impl.so`. This is the vtable for `std::__ndk1::bad_function_call`, an NDK C++ ABI symbol. Android's [NDK C++ guide](https://developer.android.com/ndk/guides/cpp-support#shared_runtimes) distinguishes the NDK runtime from the OS runtime, and Termux's [libc++ package](https://github.com/termux/termux-packages/blob/master/packages/libc%2B%2B/build.sh) installs `libc++_shared.so` in `$PREFIX/lib`. Searching vendor/system directories first can expose another runtime with the same name. The error alone does not identify the selected file.
+
+With a verified OpenCL profile active, the launcher now preloads the selected build's `libc++_shared.so` into the server's device probe and final server process. It uses the selected build's private `SPICE_LLM_LIB_DIR` when that directory supplies the runtime, or `$PREFIX/lib/libc++_shared.so` for a selected Termux binary under `$PREFIX/bin/`. It prints the runtime path and preserves existing `LD_PRELOAD` hooks. It does not inject a Termux runtime into an unrelated custom binary, preload C++ into setup/hash/shell utilities, or move Termux's HAL wrappers ahead of Android libraries. CPU and explicit Vulkan startup preserve the caller's preload configuration.
+
+If your isolated setup already enumerated Adreno 750, keep that verified profile and update only the launcher:
+
+```bash
+cd ~/spice-hoes
+git pull --ff-only
+SPICE_LLM_BIN="$(command -v llama-server)" SPICE_LLM_DEVICE= \
+  SPICE_LLM_BACKEND=opencl SPICE_LLM_GPU_LAYERS=99 \
+  bash scripts/start-local-llm.sh
+```
+
+Expect `Using llama C++ runtime: .../usr/lib/libc++_shared.so` for the Termux package. Native ELF regression tests reproduce the reported missing symbol with a shadow runtime and verify the corrected linkage; they do not execute phone GPU kernels. The phone still needs to list its OpenCL device, compile kernels, load the GGUF, report offloaded layers, and return an answer. If the same symbol error persists despite the printed package runtime, retain the output and inspect that package's installed runtime/dependencies before changing the working driver profile.
+
 In a second Termux session, verify the model independently of the other local services:
 
 ```bash
