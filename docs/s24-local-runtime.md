@@ -106,6 +106,8 @@ The subsequent phone report reached `gpu-enumerated` during setup, then the Term
 
 With a verified OpenCL profile active, the launcher now preloads the selected build's `libc++_shared.so` into the server's device probe and final server process. It uses the selected build's private `SPICE_LLM_LIB_DIR` when that directory supplies the runtime, or `$PREFIX/lib/libc++_shared.so` for a selected Termux binary under `$PREFIX/bin/`. It prints the runtime path and preserves existing `LD_PRELOAD` hooks. It does not inject a Termux runtime into an unrelated custom binary, preload C++ into setup/hash/shell utilities, or move Termux's HAL wrappers ahead of Android libraries. CPU and explicit Vulkan startup preserve the caller's preload configuration.
 
+For a private runtime path containing spaces, it creates a runtime-only symlink directory under ignored `runtime/llama-cxx/`, puts that directory first in the library search, and preloads `libc++_shared.so` by filename. Android's [linker parser](https://android.googlesource.com/platform/bionic/+/refs/heads/main/linker/linker_main.cpp) treats spaces as separators in `LD_PRELOAD`, while `LD_LIBRARY_PATH` uses colons. The alias directory contains only the selected C++ runtime, so Android HAL dependencies retain their priority.
+
 If your isolated setup already enumerated Adreno 750, keep that verified profile and update only the launcher:
 
 ```bash

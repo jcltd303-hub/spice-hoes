@@ -60,20 +60,36 @@ if [[ "$SPICE_TASK_BACKEND" == opencl || ( "$SPICE_TASK_BACKEND" == auto && ( -z
     fi
     # Keep Android HAL libraries ahead of Termux wrappers, while retaining the
     # selected llama build's private libraries before other Termux libraries.
-    export LD_LIBRARY_PATH="$SPICE_TASK_OPENCL/lib:/vendor/lib64:/vendor/lib64/egl:/system/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}${PREFIX:+:$PREFIX/lib}"
     echo 'Using isolated Adreno OpenCL libraries; GPU enumeration was checked during setup.'
     # Select only this build's NDK C++ runtime without moving every Termux
     # library ahead of Android's HAL dependencies. Keep existing exec hooks.
     SPICE_TASK_CXX=''
+    SPICE_TASK_CXX_SEARCH=''
     if [[ -n "$SPICE_TASK_LIB" && -r "$SPICE_TASK_LIB/libc++_shared.so" ]]; then
       SPICE_TASK_CXX="$(cd -- "$SPICE_TASK_LIB" && pwd)/libc++_shared.so"
     elif [[ -n "${PREFIX:-}" && "$SPICE_TASK_BIN" == "$PREFIX/bin/"* && -r "$PREFIX/lib/libc++_shared.so" ]]; then
       SPICE_TASK_CXX="$PREFIX/lib/libc++_shared.so"
     fi
     if [[ -n "$SPICE_TASK_CXX" ]]; then
-      SPICE_TASK_SERVER_PRELOAD="$SPICE_TASK_CXX${LD_PRELOAD:+:$LD_PRELOAD}"
+      SPICE_TASK_CXX_PRELOAD="$SPICE_TASK_CXX"
+      if [[ "$SPICE_TASK_CXX" == *[[:space:]:]* ]]; then
+        # LD_PRELOAD splits spaces even in quoted paths. Search a directory
+        # containing only this runtime, then preload its plain filename.
+        SPICE_TASK_CXX_HASH="$(printf '%s' "$SPICE_TASK_CXX" | sha256sum)"
+        SPICE_TASK_CXX_CACHE="$SPICE_TASK_ROOT/runtime/llama-cxx/${SPICE_TASK_CXX_HASH%% *}"
+        mkdir -p -- "$SPICE_TASK_CXX_CACHE"
+        if ! ln -s -- "$SPICE_TASK_CXX" "$SPICE_TASK_CXX_CACHE/libc++_shared.so" 2>/dev/null &&
+           ! [[ -L "$SPICE_TASK_CXX_CACHE/libc++_shared.so" && "$(readlink -- "$SPICE_TASK_CXX_CACHE/libc++_shared.so")" == "$SPICE_TASK_CXX" ]]; then
+          printf 'Cannot prepare llama C++ runtime alias: %s\n' "$SPICE_TASK_CXX_CACHE" >&2
+          exit 3
+        fi
+        SPICE_TASK_CXX_SEARCH="$SPICE_TASK_CXX_CACHE:"
+        SPICE_TASK_CXX_PRELOAD=libc++_shared.so
+      fi
+      SPICE_TASK_SERVER_PRELOAD="$SPICE_TASK_CXX_PRELOAD${LD_PRELOAD:+:$LD_PRELOAD}"
       printf 'Using llama C++ runtime: %s\n' "$SPICE_TASK_CXX"
     fi
+    export LD_LIBRARY_PATH="${SPICE_TASK_CXX_SEARCH}$SPICE_TASK_OPENCL/lib:/vendor/lib64:/vendor/lib64/egl:/system/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}${PREFIX:+:$PREFIX/lib}"
   fi
 fi
 if [[ "$SPICE_TASK_BACKEND" != cpu ]]; then

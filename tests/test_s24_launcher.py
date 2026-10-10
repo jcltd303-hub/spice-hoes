@@ -342,6 +342,27 @@ int main(int argc, char **argv) {
 
     @unittest.skipUnless(sys.platform == 'linux' and shutil.which('cc'),
                          'native linker fixture requires Linux and a C compiler')
+    def test_private_runtime_preloads_from_a_project_path_with_spaces(self):
+        project = self.root / 'project with spaces'
+        (project / 'scripts').mkdir(parents=True)
+        shutil.copy2(ROOT / 'scripts/start-local-llm.sh', project / 'scripts')
+        self.root = project
+        self.capture = project / 'launch.json'
+        self.probes = project / 'probes'
+        self.env.update(TEST_CAPTURE=str(self.capture), TEST_PROBES=str(self.probes))
+        profile, source = self.install_opencl_profile()
+        binary = project / 'llama-server'
+        private = project / 'private libs'
+        runtime = self.build_native_runtime_fixture(binary, private, profile)
+        for _ in range(2):  # Reuse the alias on a later server startup.
+            result = self.launch(SPICE_LLM_BIN=str(binary), SPICE_LLM_LIB_DIR=str(private),
+                                 SPICE_LLM_BACKEND='opencl')
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for record in (json.loads(self.probes.read_text()), json.loads(self.capture.read_text())):
+                self.assertEqual(Path(record['runtime']).resolve(), runtime.resolve())
+
+    @unittest.skipUnless(sys.platform == 'linux' and shutil.which('cc'),
+                         'native linker fixture requires Linux and a C compiler')
     def test_cpu_does_not_replace_the_callers_preload(self):
         profile, source = self.install_opencl_profile()
         binary = self.root / 'runtime/llama-snapdragon/bin/llama-server'
