@@ -25,6 +25,11 @@ import { Persona, Candidate, PersonaStats, PolicyRecommendation, SystemEvent } f
 
 const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const apiFetch = (url: string, init?: RequestInit) => fetch(`${apiBase}${url}`, init);
+const apiRead = async (url: string) => {
+  const response = await apiFetch(url, { signal: AbortSignal.timeout(20000) });
+  if (!response.ok) throw new Error(`Controller request failed (HTTP ${response.status})`);
+  return response.json();
+};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'review' | 'media' | 'scheduler' | 'personas' | 'engine' | 'ledger' | 'events'>('review');
@@ -53,6 +58,7 @@ export default function App() {
   const [autopilotResult, setAutopilotResult] = useState<any | null>(null);
   const [controlBusy, setControlBusy] = useState(false);
   const [controlError, setControlError] = useState('');
+  const [dataError, setDataError] = useState('');
   const [loading, setLoading] = useState(true);
 
   // Review form state
@@ -65,20 +71,21 @@ export default function App() {
 
   const fetchData = async () => {
     try {
-      const [pRes, cRes, sRes, rRes, thompsonRes, eRes, mRes, schRes, policyRes, rlRes, autopilotRes, doctorRes, capabilitiesRes] = await Promise.all([
-        apiFetch('/api/personas').then(r => r.json()),
-        apiFetch('/api/candidates').then(r => r.json()),
-        apiFetch('/api/stats').then(r => r.json()),
-        apiFetch('/api/recommend').then(r => r.json()),
-        apiFetch('/api/recommend/thompson').then(r => r.json()),
-        apiFetch('/api/events?limit=50').then(r => r.json()),
-        apiFetch('/api/media-jobs').then(r => r.json()),
-        apiFetch('/api/schedules').then(r => r.json()),
-        apiFetch('/api/runtime-policy').then(r => r.json()),
-        apiFetch('/api/rl/status').then(r => r.json()),
-        apiFetch('/api/autopilot/status').then(r => r.json()),
-        apiFetch('/api/doctor').then(r => r.json()),
-        apiFetch('/api/capabilities').then(r => r.json()),
+      const [pRes, cRes, sRes, rRes, thompsonRes, eRes, mRes, schRes, policyRes, rlRes, autopilotRes, doctorRes, capabilitiesRes, compute] = await Promise.all([
+        apiRead('/api/personas'),
+        apiRead('/api/candidates'),
+        apiRead('/api/stats'),
+        apiRead('/api/recommend'),
+        apiRead('/api/recommend/thompson'),
+        apiRead('/api/events?limit=50'),
+        apiRead('/api/media-jobs'),
+        apiRead('/api/schedules'),
+        apiRead('/api/runtime-policy'),
+        apiRead('/api/rl/status'),
+        apiRead('/api/autopilot/status'),
+        apiRead('/api/doctor'),
+        apiRead('/api/capabilities'),
+        apiRead('/api/compute/status'),
       ]);
       setPersonas(pRes || []);
       setCandidates(cRes || []);
@@ -93,10 +100,11 @@ export default function App() {
       setAutopilotStatus(autopilotRes?.error ? null : autopilotRes);
       setDoctorStatus(doctorRes?.error ? null : doctorRes);
       setCapabilities(capabilitiesRes?.error ? null : capabilitiesRes);
-      const compute = await apiFetch('/api/compute/status').then(r => r.json());
       setComputeStatus(compute?.error ? null : compute);
+      setDataError('');
     } catch (err) {
-      console.error('Error fetching data:', err);
+      setDataError((err as Error).message || 'Could not load controller data');
+      setComputeStatus(null);
     } finally {
       setLoading(false);
     }
@@ -459,6 +467,16 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+        {dataError && (
+          <div role="alert" className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <p className="font-semibold">Controller unavailable</p>
+            <p className="mt-1">Your S24 controller must be running to load live data. {dataError}</p>
+            <div className="mt-3 flex flex-wrap gap-4">
+              <a href="http://127.0.0.1:3000" className="underline">Open local dashboard</a>
+              <button onClick={fetchData} className="underline">Retry connection</button>
+            </div>
+          </div>
+        )}
         {/* TAB 1: REVIEW DESK */}
         {activeTab === 'review' && (
           <div className="space-y-6">

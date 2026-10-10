@@ -56,7 +56,7 @@ SPICE_LLM_DEVICE=HTP0 SPICE_LLM_MODEL="$HOME/models/compatible-q4_0.gguf" \
   bash scripts/start-local-llm.sh
 ```
 
-Use the exact `HTP...` name printed by `--list-devices`. Quantization/operator compatibility differs from Vulkan; use a supported model (upstream examples use Q4_0/Q8_0) and confirm offload in the startup log. This optional build and hardware throughput are not verified by the repository's desktop tests. Existing QNN diffusion and face embedding remain the established NPU lane.
+Use the exact `HTP...` name printed by `--list-devices`. Quantization/operator compatibility differs from Vulkan; use a supported model (upstream examples use Q4_0/Q8_0) and confirm offload in the startup log. The optional cross-build passed GitHub CI; actual phone offload and hardware throughput still require device verification. Set `SPICE_LLM_BUILD_RUN` to a successful run ID if a newer main-branch build is still pending. Existing QNN diffusion and face embedding remain the established NPU lane.
 
 ## Android voice companion
 

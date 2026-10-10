@@ -64,10 +64,10 @@
 - [x] Connect native voice to Python media rendering and an interactive local CLI.
 - [x] Add machine-readable local compute diagnostics and copy/paste Termux instructions.
 - [x] Run Python, Go and web checks; inspect removal scan and branch diff.
-- [ ] Complete publication after independent review and release CI. The review findings are fixed; commit, PR and deployment are the final release steps.
+- [x] Perform an independent code review, fix material findings, commit and publish a reviewable branch/PR.
 
 ## Execution record
 
 The user's migration request authorizes implementation, and the earlier request to publish to Vercel authorizes the release. Work proceeded in an isolated checkout with independent Android and notebook tasks. The review identified voice pairing, portrait video bounds, keyless CLI routing and local readiness authentication gaps; all four were fixed with regressions. No external cloud account resources were deleted.
 
-Release verification: 378 Python tests, 62 Android JVM tests, Go tests and both binaries, and the web build passed. Shell and notebook syntax were checked. GitHub CI also built the final paired APK. Local UI/API smoke checks verified HTML delivery, compute status and browser origin restrictions. The existing optional static Space workflow's invalid secret condition was fixed, and actionlint validates all changed workflows. Final CI checks the APK signature/lint and the optional native LLM toolchain. S24 hardware throughput and actual CUDA inference require the phone and an attended GPU session; desktop checks do not establish them.
+Release verification: 378 Python tests, 62 Android JVM tests, Go tests and both binaries, and the web build passed. Shell and notebook syntax were checked. GitHub CI built, linted and signature-verified the paired APK, and cross-compiled the optional Hexagon v75/OpenCL LLM package. Local UI/API smoke checks verified HTML delivery, compute status and browser origin restrictions. The existing optional static Space workflow's invalid secret condition was fixed, and actionlint validates all changed workflows. The dashboard now reports controller connection failures explicitly and provides a retry/local dashboard link; its web build passed. Pull request #35 contains the migration, and production publication follows the final source checks. S24 hardware throughput and actual CUDA inference require the phone and an attended GPU session; these checks do not establish them.
