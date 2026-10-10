@@ -45,13 +45,39 @@ This passes `--device none --n-gpu-layers 0 --no-kv-offload --no-op-offload`. It
 
 ```bash
 pkg update
-pkg install -y llama-cpp llama-cpp-backend-opencl opencl-vendor-driver
+pkg install -y llama-cpp llama-cpp-backend-opencl
 SPICE_LLM_BIN="$(command -v llama-server)" SPICE_LLM_DEVICE= \
   SPICE_LLM_BACKEND=opencl SPICE_LLM_GPU_LAYERS=99 \
   bash scripts/start-local-llm.sh
 ```
 
-The launcher selects the reported `GPUOpenCL...` device and requests offload. The pinned Snapdragon build also includes OpenCL and can be selected by omitting `SPICE_LLM_BIN`. Upstream OpenCL documentation lists Adreno 750 and Q4_K/Q6_K support, so this path can use an existing Q4_K_M GGUF without converting it. A particular ROM, model architecture, or vendor driver may still fail; verify the startup log and a real model response. The first OpenCL startup compiles kernels and can take longer. If no OpenCL device appears after an Android/ROM update, reinstall `opencl-vendor-driver` so its copied vendor libraries match the current system. The launcher keeps a manually selected Termux binary separate from the Snapdragon artifact's libraries.
+The launcher selects the reported `GPUOpenCL...` device and requests offload. The pinned Snapdragon build also includes OpenCL and can be selected by omitting `SPICE_LLM_BIN`. Upstream OpenCL documentation lists Adreno 750 and Q4_K/Q6_K support, so this path can use an existing Q4_K_M GGUF without converting it. A particular ROM, model architecture, or vendor driver may still fail; verify the startup log and a real model response. The first OpenCL startup compiles kernels and can take longer. The launcher keeps a manually selected Termux binary separate from the Snapdragon artifact's libraries.
+
+### OpenCL backend loads but reports no platform
+
+`ggml_opencl: platform IDs not available` comes from `clGetPlatformIDs`, before GGUF loading or kernel compilation. Installing the llama.cpp backend does not establish that the Android driver can initialize in Termux. The Termux maintainer describes `opencl-vendor-driver` as not supporting Adreno in [this investigation](https://github.com/termux/termux-packages/issues/27640). Some Qualcomm versions use a loader `libOpenCL.so` that opens a separate `libOpenCL_adreno.so` at runtime; copying declared dependencies alone can miss it. Reports for Adreno 830 describe copying both libraries. That is evidence for a recovery attempt, not proof of success on every S24 ROM.
+
+The project includes an isolated setup using the libraries already installed on your phone:
+
+```bash
+bash scripts/setup-adreno-opencl.sh && \
+  SPICE_LLM_BIN="$(command -v llama-server)" SPICE_LLM_DEVICE= \
+  SPICE_LLM_BACKEND=opencl SPICE_LLM_GPU_LAYERS=99 \
+  bash scripts/start-local-llm.sh
+```
+
+It copies the vendor entry point and available Adreno implementation/helper libraries into ignored `runtime/adreno-opencl/` releases. It leaves Termux's package-managed loader and the system libraries intact. A fresh child process probes the actual OpenCL API, prints platform/GPU/driver names or an exact error, and times out after 30 seconds. Only a successful GPU enumeration activates a release; a failed attempt keeps the earlier installation. The launcher uses its library path only for OpenCL/auto selection, checks hashes against the phone's original files, and stops with a setup instruction if an Android update changed them. CPU mode bypasses this installation entirely.
+
+The JSON `ready` flag describes GPU enumeration, not tested kernels or model inference. `stage: load-library` includes the linker's missing library/symbol error. `stage: platforms` with `code: -1001` means the driver still cannot enumerate a platform. `stage: gpu-devices` means no usable GPU was found or its information query failed. Timeout/signal exit statuses point to a driver hang/crash. Preserve that output before trying more backend changes. A model download or quantization change cannot repair a failed platform-enumeration call.
+
+To compare the unmodified vendor entry point directly:
+
+```bash
+LD_LIBRARY_PATH="/vendor/lib64:/vendor/lib64/egl:$PREFIX/lib:/system/lib64" \
+  timeout 30s python3 scripts/probe-opencl.py --library /vendor/lib64/libOpenCL.so
+```
+
+Run `setup-adreno-opencl.sh` again after a ROM update. It refreshes an isolated release only if the new driver enumerates a GPU. If enumeration remains unavailable, keep the local model running with `SPICE_LLM_BACKEND=cpu` and use the printed driver error for the next diagnosis.
 
 In a second Termux session, verify the model independently of the other local services:
 
