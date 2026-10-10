@@ -28,14 +28,17 @@ sha256sum -- "${SPICE_TASK_SOURCES[@]}" > "$SPICE_TASK_STAGE/SOURCE_SHA256SUMS"
 SPICE_TASK_SEARCH="$SPICE_TASK_STAGE/lib:$PREFIX/lib:$SPICE_TASK_VENDOR:$SPICE_TASK_VENDOR/egl:/system/lib64"
 printf 'Probing the phone OpenCL driver with isolated libraries from %s\n' "$SPICE_TASK_VENDOR"
 if LD_LIBRARY_PATH="$SPICE_TASK_SEARCH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    timeout 30s "${PYTHON_BIN:-python3}" scripts/probe-opencl.py \
-    --library libOpenCL.so > "$SPICE_TASK_STAGE/platform.json"; then
+    "${PYTHON_BIN:-python3}" scripts/diagnose-adreno-opencl.py \
+    --library libOpenCL.so --output "$SPICE_TASK_STAGE/platform.json" \
+    > /dev/null; then
   cat "$SPICE_TASK_STAGE/platform.json"
 else
   SPICE_TASK_STATUS=$?
   cat "$SPICE_TASK_STAGE/platform.json"
+  cp -- "$SPICE_TASK_STAGE/platform.json" "$SPICE_TASK_INSTALL/last-setup-failure.json"
   printf 'OpenCL probe failed (exit %s); the existing installation was kept.\n' "$SPICE_TASK_STATUS" >&2
-  echo 'Missing-library/symbol errors require the exact named dependency; error -1001 means no platform enumerated. A timeout or signal indicates driver failure.' >&2
+  printf 'Evidence saved: %s/last-setup-failure.json\n' "$SPICE_TASK_INSTALL" >&2
+  echo 'Compare loader paths and capture process-scoped driver logs: python3 scripts/diagnose-adreno-opencl.py' >&2
   echo 'Use SPICE_LLM_BACKEND=cpu bash scripts/start-local-llm.sh for now.' >&2
   exit 3
 fi

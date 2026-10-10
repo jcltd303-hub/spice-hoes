@@ -66,18 +66,22 @@ bash scripts/setup-adreno-opencl.sh && \
   bash scripts/start-local-llm.sh
 ```
 
-It copies the vendor entry point and available Adreno implementation/helper libraries into ignored `runtime/adreno-opencl/` releases. It leaves Termux's package-managed loader and the system libraries intact. A fresh child process probes the actual OpenCL API, prints platform/GPU/driver names or an exact error, and times out after 30 seconds. Only a successful GPU enumeration activates a release; a failed attempt keeps the earlier installation. The launcher uses its library path only for OpenCL/auto selection, checks hashes against the phone's original files, and stops with a setup instruction if an Android update changed them. CPU mode bypasses this installation entirely.
+It copies the vendor entry point and available Adreno implementation/helper libraries into ignored `runtime/adreno-opencl/` releases. It leaves Termux's package-managed loader and the system libraries intact. A fresh child process probes the actual OpenCL API, prints platform/GPU/driver names or an exact error, and times out after 30 seconds. The parent preserves native stdout/stderr and checkpoints identifying the mapped library that owns `clGetPlatformIDs`, even if a native call crashes or hangs. A failed attempt saves `runtime/adreno-opencl/last-setup-failure.json` after cleaning up the temporary copy. Only a successful GPU enumeration activates a release; a failed attempt keeps the earlier installation. The launcher uses its library path only for OpenCL/auto selection, checks hashes against the phone's original files, and stops with a setup instruction if an Android update changed them. CPU mode bypasses this installation entirely.
 
 The JSON `ready` flag describes GPU enumeration, not tested kernels or model inference. `stage: load-library` includes the linker's missing library/symbol error. `stage: platforms` with `code: -1001` means the driver still cannot enumerate a platform. `stage: gpu-devices` means no usable GPU was found or its information query failed. Timeout/signal exit statuses point to a driver hang/crash. Preserve that output before trying more backend changes. A model download or quantization change cannot repair a failed platform-enumeration call.
 
-To compare the unmodified vendor entry point directly:
+If the isolated setup still returns `-1001`, collect the missing driver evidence:
 
 ```bash
-LD_LIBRARY_PATH="/vendor/lib64:/vendor/lib64/egl:$PREFIX/lib:/system/lib64" \
-  timeout 30s python3 scripts/probe-opencl.py --library /vendor/lib64/libOpenCL.so
+git pull --ff-only
+python3 scripts/diagnose-adreno-opencl.py
 ```
 
-Run `setup-adreno-opencl.sh` again after a ROM update. It refreshes an isolated release only if the new driver enumerates a GPU. If enumeration remains unavailable, keep the local model running with `SPICE_LLM_BACKEND=cpu` and use the printed driver error for the next diagnosis.
+This comparison runs three separate processes: the normal `libOpenCL.so` search (`packaged`, which can be affected by an existing `LD_LIBRARY_PATH`), the absolute vendor entry point with vendor libraries first, and a temporary isolated copy using the setup search order. It records vendor file availability, copy errors, standard Android/Termux `.icd` records, selected loader path settings, resolved API/driver library paths, and each outcome. An inaccessible helper is reported without cancelling the remaining probes. It does not source project environment files, change a driver installation, activate a profile, or load the GGUF. Each probe has a 30-second limit. The printed report is also saved to `runtime/adreno-opencl/diagnostic.json`; exit status 1 means none of the three probes enumerated a GPU.
+
+On failed probes it attempts `logcat -d --pid=<probe PID>` starting at that process's creation time, then retains only matching PID records. This can expose Android linker or Adreno initialization errors absent from the terminal. Native output and logcat are drained through pipes, retaining only the final 8 KiB per stream in memory; no growing capture files are created. An unavailable PID filter or permission denial is reported without falling back to unfiltered logs. An empty log is inconclusive. [Android's logcat documentation](https://developer.android.com/tools/logcat) describes the native logging path; [the logcat source](https://android.googlesource.com/platform/system/logging/+/refs/heads/main/logcat/logcat.cpp) documents PID and timestamp filtering. For example, [a Termux Adreno investigation](https://github.com/termux/termux-packages/issues/23866) found an Android HAL symbol error only in logcat. That is a possible failure boundary, not an established diagnosis of this phone.
+
+Use these actual library paths and native messages to choose the next backend change. Keep the local model running with `SPICE_LLM_BACKEND=cpu` while gathering evidence in a second session. Run `setup-adreno-opencl.sh` again after a ROM update; it refreshes a release only if the new driver enumerates a GPU. A comparison that enumerates a GPU still needs successful kernel compilation, model loading, and a real response before hardware acceleration is established.
 
 In a second Termux session, verify the model independently of the other local services:
 
