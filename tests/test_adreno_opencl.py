@@ -6,6 +6,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from importlib.util import module_from_spec, spec_from_file_location
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +18,7 @@ DRIVER = r'''
 #include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <sys/resource.h>
 typedef void * id;
 int clGetPlatformIDs(unsigned n, id *out, unsigned *count) {
 #ifdef NATIVE_ERROR
@@ -26,6 +29,14 @@ int clGetPlatformIDs(unsigned n, id *out, unsigned *count) {
 #ifdef NOISY
     for (int i = 0; i < 20000; i++) fputs("driver diagnostic noise\n", stderr);
     fputs("final driver error\n", stderr);
+#endif
+#ifdef LIMITED_FLOOD
+    struct rlimit output_limit = {32768, 32768};
+    setrlimit(RLIMIT_FSIZE, &output_limit);
+    char block[4096];
+    memset(block, 'x', sizeof(block));
+    for (int i = 0; i < 4096; i++) fwrite(block, 1, sizeof(block), stderr);
+    fputs("\nfinal driver error\n", stderr);
 #endif
 #ifdef HANG
     sleep(60);
@@ -225,15 +236,40 @@ class AdrenoOpenCLTests(unittest.TestCase):
         self.assertIn('[earlier output truncated]', report['native_stderr'])
         self.assertIn('final driver error', report['native_stderr'])
 
+    def test_capture_does_not_write_unbounded_native_temporary_files(self):
+        library = self.build_driver('-DNO_PLATFORM', '-DLIMITED_FLOOD')
+        result, report = self.diagnose('--library', str(library))
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(report.get('code'), -1001,
+                         'A 16 MiB native stream hit RLIMIT_FSIZE instead of returning its API error')
+        self.assertIn('final driver error', report['native_stderr'])
+        self.assertLess(len(report['native_stderr']), 8300)
+
     def test_inaccessible_copy_is_reported_without_losing_other_probes(self):
         self.build_driver()
-        # A self-referencing phone-side symlink must not abort the whole collector.
-        (self.vendor / 'libCB.so').symlink_to('libCB.so')
-        result, report = self.diagnose()
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        script = self.root / 'scripts/diagnose-adreno-opencl.py'
+        spec = spec_from_file_location('adreno_diagnostics', script)
+        module = module_from_spec(spec)
+        spec.loader.exec_module(module)
+        blocked = self.vendor / 'libCB.so'
+        blocked.write_bytes(b'inaccessible helper')
+        original = Path.is_file
+
+        def denied(path):
+            if path == blocked:
+                raise PermissionError(13, 'Permission denied', str(path))
+            return original(path)
+
+        # Root-only containers cannot reproduce access checks by dropping uid.
+        # Inject only this filesystem denial; the three native probes run for real.
+        with patch.object(Path, 'is_file', denied):
+            try:
+                report = module.compare(self.env, 2)
+            except PermissionError as error:
+                self.fail(f'An inaccessible helper aborted the diagnostic: {error}')
         self.assertEqual(len(report['probes']), 3)
-        self.assertIn('libCB.so', json.dumps(report['vendor_files']))
-        self.assertTrue(any('error' in item for item in report['vendor_files']))
+        self.assertIn('libCB.so', json.dumps(report['copy_errors']))
+        self.assertIn('Permission denied', json.dumps(report['copy_errors']))
 
     def test_probe_reports_actual_platform_gpu_and_driver(self):
         result, report = self.probe(self.build_driver())

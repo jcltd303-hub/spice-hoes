@@ -5,7 +5,9 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -22,12 +24,65 @@ DRIVER_FILES = ('libOpenCL.so', 'libOpenCL_adreno.so', 'libOpenCL_Adreno.so', 'l
 LIMIT = 8192
 
 
-def tail(file):
-    file.seek(0, os.SEEK_END)
-    length = file.tell()
-    file.seek(max(0, length - LIMIT))
-    value = file.read().decode('utf-8', errors='replace')
-    return ('[earlier output truncated]\n' if length > LIMIT else '') + value
+def capture(command, env, timeout):
+    """Drain both pipes continuously, retaining only their last 8 KiB in memory."""
+    process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, start_new_session=True)
+    buffers = {'stdout': bytearray(), 'stderr': bytearray()}
+    counts = {'stdout': 0, 'stderr': 0}
+    deadline = time.monotonic() + timeout
+    exited_at = None
+    timed_out = False
+
+    def stop_group():
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    try:
+        with selectors.DefaultSelector() as selector:
+            for label, pipe in (('stdout', process.stdout), ('stderr', process.stderr)):
+                os.set_blocking(pipe.fileno(), False)
+                selector.register(pipe, selectors.EVENT_READ, label)
+            while process.poll() is None or selector.get_map():
+                now = time.monotonic()
+                if process.poll() is None and now >= deadline:
+                    timed_out = True
+                    stop_group()
+                    process.wait()
+                if process.poll() is not None:
+                    if exited_at is None:
+                        exited_at = now
+                    elif now - exited_at >= 1:
+                        # A driver helper holding a pipe must not outlive this probe.
+                        stop_group()
+                        break
+                for key, _ in selector.select(timeout=0.1):
+                    try:
+                        chunk = os.read(key.fd, 65536)
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        key.fileobj.close()
+                        continue
+                    label = key.data
+                    counts[label] += len(chunk)
+                    buffers[label].extend(chunk)
+                    del buffers[label][:-LIMIT]
+            process.wait()
+    finally:
+        if process.poll() is None:
+            stop_group()
+            process.wait()
+        process.stdout.close()
+        process.stderr.close()
+    result = {'pid': process.pid, 'exit_code': process.returncode, 'timed_out': timed_out}
+    for label, buffer in buffers.items():
+        prefix = '[earlier output truncated]\n' if counts[label] > LIMIT else ''
+        result[label] = prefix + buffer.decode('utf-8', errors='replace')
+    return result
 
 
 def collect_logcat(pid, started):
@@ -40,20 +95,14 @@ def collect_logcat(pid, started):
     env = os.environ.copy()
     env.pop('LD_LIBRARY_PATH', None)
     try:
-        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-            process = subprocess.Popen(command, env=env, stdout=stdout, stderr=stderr)
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-                return {'status': 'unavailable', 'error': 'PID-scoped logcat timed out.'}
-            if process.returncode:
-                return {'status': 'unavailable', 'error': tail(stderr) or
-                        f'PID-scoped logcat exited {process.returncode}.'}
-            text = tail(stdout)
+        result = capture(command, env, 5)
+        if result['timed_out']:
+            return {'status': 'unavailable', 'error': 'PID-scoped logcat timed out.'}
+        if result['exit_code']:
+            return {'status': 'unavailable', 'error': result['stderr'] or
+                    f"PID-scoped logcat exited {result['exit_code']}."}
         lines = []
-        for line in text.splitlines():
+        for line in result['stdout'].splitlines():
             match = re.match(r'^[VDIWEFA]/.+?\(\s*(\d+)\s*\):', line)
             if match and int(match.group(1)) == pid:
                 lines.append(line)
@@ -63,35 +112,26 @@ def collect_logcat(pid, started):
 
 
 def run_probe(library, env, timeout):
-    with tempfile.TemporaryDirectory(prefix='spice-opencl-probe-') as directory, \
-            tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+    with tempfile.TemporaryDirectory(prefix='spice-opencl-probe-') as directory:
         checkpoint = Path(directory) / 'result.json'
         started = time.time()
-        process = subprocess.Popen([sys.executable, str(ROOT / 'scripts/probe-opencl.py'),
-                                    '--library', library, '--result-file', str(checkpoint)],
-                                   env=env, stdout=stdout, stderr=stderr)
-        timed_out = False
-        try:
-            process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            process.kill()
-            process.wait()
+        result = capture([sys.executable, str(ROOT / 'scripts/probe-opencl.py'),
+                          '--library', library, '--result-file', str(checkpoint)], env, timeout)
         try:
             report = json.loads(checkpoint.read_text())
         except (OSError, ValueError):
             report = {'library': library, 'ready': False, 'stage': 'child-start', 'platforms': []}
-        report.update(pid=process.pid, exit_code=process.returncode, timed_out=timed_out,
-                      native_stdout=tail(stdout), native_stderr=tail(stderr))
-    if timed_out or process.returncode != 0:
+        report.update(pid=result['pid'], exit_code=result['exit_code'], timed_out=result['timed_out'],
+                      native_stdout=result['stdout'], native_stderr=result['stderr'])
+    if result['timed_out'] or result['exit_code'] != 0:
         report['ready'] = False
-        if timed_out:
+        if result['timed_out']:
             report['error'] = f'Native probe exceeded {timeout:g} seconds and was killed.'
-        elif process.returncode < 0:
-            report['error'] = f'Native probe terminated by signal {-process.returncode}.'
+        elif result['exit_code'] < 0:
+            report['error'] = f"Native probe terminated by signal {-result['exit_code']}."
         elif 'error' not in report:
-            report['error'] = f'Probe exited {process.returncode} before completing.'
-    report['android_logcat'] = collect_logcat(process.pid, started) if not report['ready'] else {
+            report['error'] = f"Probe exited {result['exit_code']} before completing."
+    report['android_logcat'] = collect_logcat(result['pid'], started) if not report['ready'] else {
         'status': 'not-collected', 'reason': 'GPU enumeration succeeded.'}
     return report
 
@@ -128,7 +168,7 @@ def compare(env, timeout):
     prefix = env.get('PREFIX', '')
     files, icds = inventory(vendor, prefix)
     report = {'purpose': 'GPU enumeration and driver diagnostics; kernels/inference untested.',
-              'vendor_files': files, 'icd_files': icds, 'probes': []}
+              'vendor_files': files, 'icd_files': icds, 'copy_errors': [], 'probes': []}
     paths = [str(vendor), str(vendor / 'egl')]
     if prefix:
         paths.append(str(Path(prefix) / 'lib'))
@@ -139,8 +179,11 @@ def compare(env, timeout):
     with tempfile.TemporaryDirectory(prefix='spice-adreno-copy-') as directory:
         for name in DRIVER_FILES:
             source = vendor / name
-            if source.is_file() and os.access(source, os.R_OK):
-                shutil.copy2(source, Path(directory) / name)
+            try:
+                if source.is_file():
+                    shutil.copy2(source, Path(directory) / name)
+            except OSError as error:
+                report['copy_errors'].append({'path': str(source), 'error': str(error)})
         copied = Path(directory) / 'libOpenCL.so'
         if copied.exists():
             (Path(directory) / 'libOpenCL.so.1').symlink_to('libOpenCL.so')
