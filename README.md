@@ -1,6 +1,6 @@
 # Spice Hoes experiment core
 
-> Canonical implementation map: [docs/architecture.md](docs/architecture.md). Older Local Dream/textual-inversion notes are benchmark or legacy paths unless that architecture document says otherwise.
+> Canonical implementation map: [docs/architecture.md](docs/architecture.md). The production image/face runtime uses the native core from our custom Local Dream fork. Older full-APK/Python-adapter and textual-inversion instructions describe optional benchmark paths.
 
 Runnable experiment loop for a portfolio of **fictional adult** AI influencers. The repo includes an append-only SQLite evidence ledger, versioned personas, a human approval gate, RAG project memory, a true mixture-of-agents (MoA) deliberation path, a gated Deep-Q learner for later-stage allocation, OpenAI-compatible MoA text inference, and a native S24 Go/QNN media-and-identity runtime.
 
@@ -421,6 +421,8 @@ spicemedia (Go)
   -> Qualcomm QNN / Hexagon HTP
 ```
 
+`spice-qnn-core` is built from the pinned native C++ source in our custom [Local Dream fork](https://github.com/jcltd303-hub/local-dream), then extracted from its build artifact. Go starts that core directly in Termux; launching the full Local Dream APK is unnecessary. The separate `llama-server` service handles GGUF text/chat models and does not use the Local Dream core. See [S24 local services](docs/s24-local-runtime.md).
+
 Face identity uses SCRFD detection + five-point alignment + ArcFace embeddings. The Go runtime exposes `detect`, `embed`, `identity`, `quality`, `generate`, and `health`.
 
 Configure the Go media lane:
@@ -458,4 +460,4 @@ Check the runtime:
 echo '{}' | ./bin/spicemedia health
 ```
 
-Local Dream may remain installed as an optional benchmark/legacy baseline; it is not required by the Go/QNN runtime and is not the canonical production path. See `docs/architecture.md`.
+The full Local Dream APK and older Python HTTP adapter remain optional comparison interfaces. The custom fork's native core is part of the canonical Go/QNN production path. See `docs/architecture.md`.

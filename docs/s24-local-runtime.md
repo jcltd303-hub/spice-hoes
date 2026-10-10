@@ -2,6 +2,8 @@
 
 The phone runs the controller, MoA planning, evidence retrieval, image generation, identity checks, offline speech, FFmpeg assembly, and publishing queue. Larger video/lip-sync jobs use an attended free GPU notebook. No hosted model or storage subscription is required by the default configuration.
 
+The production Go/QNN image and face lane uses the native core built from our custom [Local Dream fork](https://github.com/jcltd303-hub/local-dream), packaged as `runtime/bin/spice-qnn-core`. Go starts that executable directly; the full Local Dream APK and older Python HTTP adapter are optional interfaces. GGUF text/chat uses the separate `llama-server` service. OpenCL/Vulkan errors from that text service do not establish a failure in Local Dream's QNN image/face lane. The pinned source and extraction steps are in the [QNN runtime workflow](../.github/workflows/spice-qnn-runtime.yml).
+
 | Work | Local execution path |
 | --- | --- |
 | Planning, campaign copy, engagement drafts | llama.cpp GGUF on Adreno OpenCL; Vulkan or experimental Hexagon selectable |
@@ -82,6 +84,21 @@ This comparison runs three separate processes: the normal `libOpenCL.so` search 
 On failed probes it attempts `logcat -d --pid=<probe PID>` starting at that process's creation time, then retains only matching PID records. This can expose Android linker or Adreno initialization errors absent from the terminal. Native output and logcat are drained through pipes, retaining only the final 8 KiB per stream in memory; no growing capture files are created. An unavailable PID filter or permission denial is reported without falling back to unfiltered logs. An empty log is inconclusive. [Android's logcat documentation](https://developer.android.com/tools/logcat) describes the native logging path; [the logcat source](https://android.googlesource.com/platform/system/logging/+/refs/heads/main/logcat/logcat.cpp) documents PID and timestamp filtering. For example, [a Termux Adreno investigation](https://github.com/termux/termux-packages/issues/23866) found an Android HAL symbol error only in logcat. That is a possible failure boundary, not an established diagnosis of this phone.
 
 Use these actual library paths and native messages to choose the next backend change. Keep the local model running with `SPICE_LLM_BACKEND=cpu` while gathering evidence in a second session. Run `setup-adreno-opencl.sh` again after a ROM update; it refreshes a release only if the new driver enumerates a GPU. A comparison that enumerates a GPU still needs successful kernel compilation, model loading, and a real response before hardware acceleration is established.
+
+### Adreno HAL reports a binder dependency name mismatch
+
+The S24 report from 2026-10-10 shows both direct-vendor and isolated-copy probes failing in the `sphal` namespace while loading `libCB.so`: `cannot find "libbinder_ndk.so" from verneed[2] in DT_NEEDED list for "/system/lib64/libnativewindow.so"`. In [Android's linker](https://android.googlesource.com/platform/bionic/+/refs/heads/android16-release/linker/linker.cpp), `VersionTracker::init_verneed` emits this message when none of the loaded dependency children has the required SONAME. This differs from a missing-library-file error; the report does not prove that the binder file is absent or the ROM is broken.
+
+Termux's [libandroid-stub package](https://github.com/termux/termux-packages/blob/master/packages/libandroid-stub/build.sh) also supplies a `libbinder_ndk.so` wrapper. The earlier vendor probes searched `$PREFIX/lib` before `/system/lib64`. A wrapper collision is a hypothesis, not yet confirmed on this phone. Compare the same absolute vendor entry point with the system directory ahead of Termux's directory:
+
+```bash
+LD_LIBRARY_PATH="/vendor/lib64:/vendor/lib64/egl:/system/lib64:$PREFIX/lib" \
+  python3 scripts/diagnose-adreno-opencl.py \
+  --library /vendor/lib64/libOpenCL.so \
+  --output runtime/adreno-opencl/system-first.json
+```
+
+This is a single-process diagnostic with a different dependency search order. It does not activate a runtime or overwrite the previous comparison report. Preserve its JSON and native/logcat errors. Do not copy, replace, or patch system binder/nativewindow libraries based on the original message. A successful enumeration still requires a separate inference check; a failed comparison needs the selected binder library's identity and ELF metadata before choosing a runtime change.
 
 In a second Termux session, verify the model independently of the other local services:
 
