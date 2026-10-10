@@ -4,7 +4,7 @@ The phone runs the controller, MoA planning, evidence retrieval, image generatio
 
 | Work | Local execution path |
 | --- | --- |
-| Planning, campaign copy, engagement drafts | llama.cpp GGUF on Adreno Vulkan; optional experimental Hexagon/OpenCL build |
+| Planning, campaign copy, engagement drafts | llama.cpp GGUF on Adreno OpenCL; Vulkan or experimental Hexagon selectable |
 | Still images | Existing standalone QNN HTP model packs or stable-diffusion.cpp Vulkan |
 | Face detection and embeddings | Existing compiled SCRFD/ArcFace QNN artifacts |
 | Speech output | Updated Android companion with offline TextToSpeech voices |
@@ -29,7 +29,43 @@ SPICE_LLM_MODEL_URL='https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/reso
 bash scripts/start-local-llm.sh
 ```
 
-The launcher prints devices before starting, requests offload, binds `127.0.0.1:8083`, uses a 4096-token context, and limits the server to one concurrent sequence. Use a second Termux session for the controller. If no GPU/NPU is visible it stops with a driver/backend instruction; explicitly set `SPICE_LLM_GPU_LAYERS=0` for CPU execution. A reported service being ready does not establish tokens per second or the percentage of operations offloaded.
+The launcher prints devices before accelerated startup, prefers OpenCL, then Hexagon, then Vulkan, binds `127.0.0.1:8083`, uses a 4096-token context, and limits the server to one concurrent sequence. `SPICE_LLM_BACKEND` selects `auto`, `cpu`, `opencl`, `vulkan`, or `hexagon`. `SPICE_LLM_DEVICE` can select an exact device name; clear it when changing backend. Exported launcher settings override `.env.swarm` and `.env.s24`. Use a second Termux session for the controller. Missing requested acceleration stops with a driver/backend instruction instead of silently selecting another backend. `SPICE_LLM_BACKEND=cpu`, `SPICE_LLM_DEVICE=none`, or `SPICE_LLM_GPU_LAYERS=0` disables all offload and skips device probing. A reported service being ready does not establish tokens per second or the percentage of operations offloaded.
+
+## Recovering from the Adreno Q4_K Vulkan crash
+
+`mul_mat_vec_q4_k_f32_f32: vk::Device::createComputePipeline: ErrorUnknown` means Vulkan failed to compile a compute pipeline. Listing `Vulkan0: Adreno 750` only proves device enumeration. Upstream reports describe Qualcomm driver failures for this shader; they do not establish the exact driver version on your phone. The tokenizer warning about `</s>` is a separate message. Do not use `--n-gpu-layers 0` alone as CPU recovery: llama.cpp can still offload other operations unless the device and operation/KV offload are disabled.
+
+Start your existing model on CPU:
+
+```bash
+SPICE_LLM_BACKEND=cpu bash scripts/start-local-llm.sh
+```
+
+This passes `--device none --n-gpu-layers 0 --no-kv-offload --no-op-offload`. It does not enumerate GPU/NPU devices. To use the Adreno GPU through OpenCL instead, stop the CPU server with Ctrl-C, then:
+
+```bash
+pkg update
+pkg install -y llama-cpp llama-cpp-backend-opencl opencl-vendor-driver
+SPICE_LLM_BIN="$(command -v llama-server)" SPICE_LLM_DEVICE= \
+  SPICE_LLM_BACKEND=opencl SPICE_LLM_GPU_LAYERS=99 \
+  bash scripts/start-local-llm.sh
+```
+
+The launcher selects the reported `GPUOpenCL...` device and requests offload. The pinned Snapdragon build also includes OpenCL and can be selected by omitting `SPICE_LLM_BIN`. Upstream OpenCL documentation lists Adreno 750 and Q4_K/Q6_K support, so this path can use an existing Q4_K_M GGUF without converting it. A particular ROM, model architecture, or vendor driver may still fail; verify the startup log and a real model response. The first OpenCL startup compiles kernels and can take longer. If no OpenCL device appears after an Android/ROM update, reinstall `opencl-vendor-driver` so its copied vendor libraries match the current system. The launcher keeps a manually selected Termux binary separate from the Snapdragon artifact's libraries.
+
+In a second Termux session, verify the model independently of the other local services:
+
+```bash
+curl -fsS http://127.0.0.1:8083/health
+curl -fsS http://127.0.0.1:8083/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"spice-local","messages":[{"role":"user","content":"Say hello in one short sentence."}],"max_tokens":32}'
+bash scripts/s24-doctor.sh
+```
+
+Sources: [Qualcomm Q4_K Vulkan pipeline failure](https://github.com/ggml-org/llama.cpp/issues/28635), [S24 Vulkan compatibility investigation and remaining Q4_K limitations](https://github.com/ggml-org/llama.cpp/pull/29165), [pinned OpenCL support](https://github.com/ggml-org/llama.cpp/blob/08246a28f6000100433d297c4e037c02e9d2d464/docs/backend/OPENCL.md), and [Termux vendor driver packaging](https://github.com/termux/termux-packages/tree/master/packages/opencl-vendor-driver). The upstream Vulkan investigation is still experimental; this project does not apply that unmerged patch or claim phone hardware validation.
+
+## Controller planning checks
 
 ```bash
 set -a

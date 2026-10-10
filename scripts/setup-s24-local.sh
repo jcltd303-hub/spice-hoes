@@ -7,6 +7,11 @@ pkg install -y python python-pillow git curl ffmpeg llama-cpp vulkan-loader-andr
 if apt-cache show llama-cpp-backend-vulkan >/dev/null 2>&1; then
   pkg install -y llama-cpp-backend-vulkan
 fi
+if apt-cache show llama-cpp-backend-opencl >/dev/null 2>&1; then
+  pkg install -y llama-cpp-backend-opencl opencl-vendor-driver
+else
+  echo 'OpenCL backend package unavailable in this mirror; update Termux packages or use the Snapdragon artifact.' >&2
+fi
 python3 -m pip install 'PyYAML>=6,<7' 'rich>=13.9,<15'
 mkdir -p models/llm data/public-media data/swarm-logs
 [[ -f .env.swarm ]] || cp config/swarm.env.example .env.swarm
@@ -30,5 +35,6 @@ PY
 fi
 echo 'Local tools installed. Set SPICE_LLM_MODEL to your GGUF or pass SPICE_LLM_MODEL_URL during setup.'
 echo 'Start the model: bash scripts/start-local-llm.sh'
+echo 'The launcher prefers Adreno OpenCL. For explicit CPU recovery: SPICE_LLM_BACKEND=cpu bash scripts/start-local-llm.sh'
 echo 'Open the updated Android companion for offline voice; keep it visible for microphone turns.'
 echo 'Then: bash scripts/s24-doctor.sh'
