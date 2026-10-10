@@ -363,6 +363,38 @@ int main(int argc, char **argv) {
 
     @unittest.skipUnless(sys.platform == 'linux' and shutil.which('cc'),
                          'native linker fixture requires Linux and a C compiler')
+    def test_runtime_alias_rejects_directory_destinations(self):
+        profile, source = self.install_opencl_profile()
+        for directory_symlink in (False, True):
+            with self.subTest(directory_symlink=directory_symlink):
+                private = self.root / f'private libs {directory_symlink}'
+                binary = self.root / f'llama-server-{directory_symlink}'
+                runtime = self.build_native_runtime_fixture(binary, private, profile)
+                digest = hashlib.sha256(str(runtime).encode()).hexdigest()
+                cache = self.root / 'runtime/llama-cxx' / digest
+                cache.mkdir(parents=True)
+                destination = cache / 'libc++_shared.so'
+                if directory_symlink:
+                    existing = self.root / 'existing directory'
+                    existing.mkdir()
+                    destination.symlink_to(existing, target_is_directory=True)
+                else:
+                    destination.mkdir()
+                    existing = destination
+                sentinel = existing / 'keep.txt'
+                sentinel.write_text('existing content')
+
+                result = self.launch(SPICE_LLM_BIN=str(binary), SPICE_LLM_LIB_DIR=str(private),
+                                     SPICE_LLM_BACKEND='opencl')
+                self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+                self.assertIn('Cannot prepare llama C++ runtime alias', result.stderr)
+                self.assertFalse(self.probes.exists())
+                self.assertFalse(self.capture.exists())
+                self.assertEqual(list(existing.iterdir()), [sentinel])
+                self.assertEqual(sentinel.read_text(), 'existing content')
+
+    @unittest.skipUnless(sys.platform == 'linux' and shutil.which('cc'),
+                         'native linker fixture requires Linux and a C compiler')
     def test_cpu_does_not_replace_the_callers_preload(self):
         profile, source = self.install_opencl_profile()
         binary = self.root / 'runtime/llama-snapdragon/bin/llama-server'

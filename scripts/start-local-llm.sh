@@ -78,7 +78,7 @@ if [[ "$SPICE_TASK_BACKEND" == opencl || ( "$SPICE_TASK_BACKEND" == auto && ( -z
         SPICE_TASK_CXX_HASH="$(printf '%s' "$SPICE_TASK_CXX" | sha256sum)"
         SPICE_TASK_CXX_CACHE="$SPICE_TASK_ROOT/runtime/llama-cxx/${SPICE_TASK_CXX_HASH%% *}"
         mkdir -p -- "$SPICE_TASK_CXX_CACHE"
-        if ! ln -s -- "$SPICE_TASK_CXX" "$SPICE_TASK_CXX_CACHE/libc++_shared.so" 2>/dev/null &&
+        if ! ln -sT -- "$SPICE_TASK_CXX" "$SPICE_TASK_CXX_CACHE/libc++_shared.so" 2>/dev/null &&
            ! [[ -L "$SPICE_TASK_CXX_CACHE/libc++_shared.so" && "$(readlink -- "$SPICE_TASK_CXX_CACHE/libc++_shared.so")" == "$SPICE_TASK_CXX" ]]; then
           printf 'Cannot prepare llama C++ runtime alias: %s\n' "$SPICE_TASK_CXX_CACHE" >&2
           exit 3
