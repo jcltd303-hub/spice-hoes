@@ -3,11 +3,11 @@ set -euo pipefail
 SPICE_TASK_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SPICE_TASK_ROOT"
 if ! command -v pkg >/dev/null; then
-  echo 'This installer runs in Termux. On Azure/Linux supervise scripts/run-income-swarm.sh with your service manager.' >&2
+  echo 'This installer runs in Termux. On Linux supervise scripts/run-income-swarm.sh with your service manager.' >&2
   exit 2
 fi
-pkg install -y python termux-services
-python3 -m pip install -r requirements.txt
+pkg install -y python python-pillow termux-services
+python3 -m pip install 'PyYAML>=6,<7' 'rich>=13.9,<15'
 mkdir -p data/backups data/swarm-logs
 [[ -f .env.swarm ]] || cp config/swarm.env.example .env.swarm
 [[ -f data/swarm.json ]] || cp config/swarm.example.json data/swarm.json

@@ -1,4 +1,4 @@
-"""Construct the production swarm using configured Azure and S24 workers."""
+"""Construct the production swarm using device-local planning and S24 workers."""
 
 import os
 import shutil
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .assetgen import AssetGenerator
 from .autopilot import CoreAutopilot
-from .azure_moa import AzureChatProvider
+from .local_compute import chat_provider
 from .experiments import ExperimentPlanner
 from .learning import LearningController
 from .memory import KnowledgeBase
@@ -17,8 +17,13 @@ from .swarm import SwarmConfig, SwarmRuntime
 
 
 def production_blockers(config):
-    missing = [name for name in ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_MOA_DEPLOYMENT")
-               if not os.getenv(name)]
+    missing = []
+    try:
+        provider = chat_provider()
+        if hasattr(provider, "readiness") and not provider.readiness()["ready"]:
+            missing.append("local_chat_unavailable")
+    except (ValueError, RuntimeError):
+        missing.append("valid_local_model_configuration")
     token_env = {"instagram": "INSTAGRAM_ACCESS_TOKEN", "tiktok": "TIKTOK_ACCESS_TOKEN",
                  "youtube_shorts": "YOUTUBE_ACCESS_TOKEN"}[config.channel]
     if not os.getenv(token_env):
@@ -29,22 +34,17 @@ def production_blockers(config):
     if not os.getenv("SPICE_QNN_MODEL_DIR") or not Path(os.getenv("SPICE_QNN_MODEL_DIR", "")).is_dir():
         missing.append("SPICE_QNN_MODEL_DIR")
     if config.channel in ("instagram", "tiktok"):
-        for name in ("AZURE_MEDIA_UPLOAD_CONTAINER_SAS_URL", "AZURE_MEDIA_READ_CONTAINER_SAS_URL"):
-            if not os.getenv(name):
-                missing.append(name)
-        if all(os.getenv(name) for name in ("AZURE_MEDIA_UPLOAD_CONTAINER_SAS_URL", "AZURE_MEDIA_READ_CONTAINER_SAS_URL")):
-            from .media_delivery import AzureMediaDelivery
+        if not os.getenv("SPICE_MEDIA_PUBLIC_BASE_URL"):
+            missing.append("SPICE_MEDIA_PUBLIC_BASE_URL")
+        else:
+            from .media_delivery import MediaDelivery
             try:
-                AzureMediaDelivery.from_env()
+                if not MediaDelivery.from_env().readiness()["ready"]:
+                    missing.append("public_media_directory_unavailable")
             except ValueError:
-                missing.append("valid_Azure_media_configuration")
+                missing.append("valid_public_media_configuration")
     if not os.getenv("STRIPE_WEBHOOK_SECRET"):
         missing.append("STRIPE_WEBHOOK_SECRET")
-    if not missing:
-        try:
-            AzureChatProvider()
-        except ValueError:
-            missing.append("valid_Azure_model_configuration")
     return missing
 
 
@@ -53,20 +53,20 @@ def make_swarm(store, personas, config: SwarmConfig):
     from .distribution.instagram import InstagramGraphPublisher
     from .distribution.tiktok import TikTokPublisher
     from .distribution.youtube import YouTubeShortsPublisher
-    from .media_delivery import AzureMediaDelivery
+    from .media_delivery import MediaDelivery
 
     publishers = {"instagram": InstagramGraphPublisher(), "tiktok": TikTokPublisher(),
                   "youtube_shorts": YouTubeShortsPublisher()}
     media_delivery = None
     try:
-        media_delivery = AzureMediaDelivery.from_env()
+        media_delivery = MediaDelivery.from_env()
     except ValueError:
         pass
     secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
     commerce = StripeCommerce(store, secret) if secret else None
     autopilot = learning = None
     if not production_blockers(config):
-        provider = AzureChatProvider()
+        provider = chat_provider()
         values = RuntimePolicy(store).current()["values"]
         planner = ExperimentPlanner(provider, store)
         knowledge = KnowledgeBase(store)

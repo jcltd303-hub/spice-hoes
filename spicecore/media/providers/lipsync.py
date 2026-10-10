@@ -214,11 +214,14 @@ class Wav2LipLocalProvider(LipSyncProvider):
 
 
 def lipsync_provider_from_env() -> LipSyncProvider:
-    provider = os.getenv("SPICE_LIPSYNC_PROVIDER", "mock").strip().lower()
+    provider = os.getenv("SPICE_LIPSYNC_PROVIDER", "freegpu").strip().lower()
     if provider in ("", "mock"):
         return MockLipSyncProvider(cost_cents=0)
     if provider == "musetalk":
         return MuseTalkLipSyncProvider()
+    if provider == "freegpu":
+        from .freegpu import FreeGPULipSyncProvider
+        return FreeGPULipSyncProvider()
     if provider == "wav2lip":
         return Wav2LipLocalProvider()
     if provider == "synclabs":

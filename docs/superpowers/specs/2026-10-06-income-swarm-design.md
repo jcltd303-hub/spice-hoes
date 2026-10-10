@@ -1,10 +1,10 @@
 # Autonomous income loop
 
-The owner has authorized implementation and parallel work: move the existing project toward real income and automate its operation. Preserve fictional adult personas, their identity checks, auditable evidence, and bounded costs. Existing S24 native Go/QNN media and Azure model endpoints are the production compute lanes. The uploaded guide supplies experiment hypotheses, not verified earnings.
+The owner has authorized implementation and parallel work: move the existing project toward real income and automate its operation. Preserve fictional adult personas, their identity checks, auditable evidence, and bounded costs. Existing S24 native Go/QNN media and local llama.cpp endpoints are the production compute lanes. The uploaded guide supplies experiment hypotheses, not verified earnings.
 
 ## Delivery
 
-Connect existing MoA/RAG planning and asset generation to a restart-safe scheduler, real platform confirmation, cumulative outcome ingestion, authenticated payments, and learning closure. A persistent runtime performs bounded ticks and can be supervised on the phone or an Azure worker. It acts on a configured offer and accounts, reuses the existing ledger, and exposes exact blockers.
+Connect existing MoA/RAG planning and asset generation to a restart-safe scheduler, real platform confirmation, cumulative outcome ingestion, authenticated payments, and learning closure. A persistent runtime performs bounded ticks and can be supervised on the phone or a local worker. It acts on a configured offer and accounts, reuses the existing ledger, and exposes exact blockers.
 
 The first automatic content lane is Instagram still images, using the existing image generator. Other adapters accept reviewed compatible videos. Generated releases can use the owner's explicit `auto_approve` configuration only when identity and quality are scored and passed and commercial copy passes validation. Manual review remains available. The model cannot alter release authorization, budget, or scoring policy.
 

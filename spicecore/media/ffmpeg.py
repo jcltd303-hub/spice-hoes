@@ -46,19 +46,19 @@ class FFmpegAssembler:
 
         # Add video inputs
         for p in scene_video_paths:
-            cmd.extend(["-i", p])
+            cmd.extend(["-protocol_whitelist", "file,pipe", "-i", p])
 
         # Add voice audio input if present
         voice_idx = -1
         if voice_audio_path:
             voice_idx = len(scene_video_paths)
-            cmd.extend(["-i", voice_audio_path])
+            cmd.extend(["-protocol_whitelist", "file,pipe", "-i", voice_audio_path])
 
         # Add soundtrack input if present
         soundtrack_idx = -1
         if soundtrack_path:
             soundtrack_idx = len(scene_video_paths) + (1 if voice_audio_path else 0)
-            cmd.extend(["-i", soundtrack_path])
+            cmd.extend(["-protocol_whitelist", "file,pipe", "-i", soundtrack_path])
 
         # Build filter_complex
         filter_parts: List[str] = []
@@ -134,7 +134,7 @@ class FFmpegAssembler:
         soundtrack_path: Optional[str] = None,
         metadata: Optional[Dict[str, str]] = None,
     ) -> str:
-        """Executes assembly or synthesizes a valid MP4 file."""
+        """Executes assembly and fails if the required encoder is unavailable."""
         os.makedirs(os.path.dirname(os.path.abspath(output_mp4_path)), exist_ok=True)
 
         if not self.ffmpeg_bin:
@@ -150,15 +150,13 @@ class FFmpegAssembler:
                 metadata=metadata,
             )
             logging.info("Running FFmpeg: %s", " ".join(cmd))
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             if res.returncode != 0:
                 logging.error("FFmpeg failed: %s", res.stderr)
                 raise RuntimeError(f"FFmpeg assembly failed: {res.stderr}")
             return output_mp4_path
 
-        # If ffmpeg is not installed on system, generate a synthetic MP4 file for mock tests
-        self._write_mock_mp4(output_mp4_path)
-        return output_mp4_path
+        raise RuntimeError('FFmpeg is required for media assembly')
 
     def _write_mock_mp4(self, output_path: str) -> None:
         """Writes a lightweight MP4 container structure with valid ftyp box."""

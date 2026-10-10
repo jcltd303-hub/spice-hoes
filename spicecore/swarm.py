@@ -370,7 +370,7 @@ class SwarmRuntime:
                 if not media_uri:
                     media_uri = self.media_delivery.prepare(candidate) if self.media_delivery else candidate["asset_uri"]
                     if post_requires_url(self.config.channel) and urlsplit(media_uri or "").scheme != "https":
-                        raise ValueError("Azure_media_delivery_required")
+                        raise ValueError("public_media_delivery_required")
                     with self.store.db:
                         self.store.db.execute("UPDATE swarm_content SET media_uri=? WHERE candidate_id=?",
                                               (media_uri, cid))

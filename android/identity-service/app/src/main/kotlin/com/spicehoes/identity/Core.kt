@@ -23,6 +23,8 @@ enum class ServiceState {
 /** Machine-readable error contract (spec section 10). */
 enum class ErrorCode(val http: Int) {
     INVALID_REQUEST(400),
+    UNAUTHORIZED(401),
+    UNSUPPORTED_MEDIA_TYPE(415),
     INVALID_IMAGE(400),
     IMAGE_TOO_LARGE(413),
     REFERENCE_REQUIRED(400),
@@ -35,6 +37,12 @@ enum class ErrorCode(val http: Int) {
     ACCELERATOR_FAILED(500),
     OUT_OF_MEMORY(507),
     SERVER_BUSY(503),
+    VOICE_UNAVAILABLE(503),
+    RECOGNITION_UNAVAILABLE(503),
+    MICROPHONE_PERMISSION_REQUIRED(403),
+    ACTIVITY_NOT_VISIBLE(409),
+    VOICE_TIMEOUT(504),
+    VOICE_FAILED(500),
     INTERNAL_ERROR(500),
 }
 

@@ -187,12 +187,17 @@ class MiniHttpServer(
     private fun reason(status: Int) = when (status) {
         200 -> "OK"
         400 -> "Bad Request"
+        401 -> "Unauthorized"
+        403 -> "Forbidden"
         404 -> "Not Found"
         405 -> "Method Not Allowed"
+        409 -> "Conflict"
         411 -> "Length Required"
         413 -> "Payload Too Large"
+        415 -> "Unsupported Media Type"
         422 -> "Unprocessable Entity"
         503 -> "Service Unavailable"
+        504 -> "Gateway Timeout"
         507 -> "Insufficient Storage"
         else -> if (status >= 500) "Internal Server Error" else "OK"
     }

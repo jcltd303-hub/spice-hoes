@@ -45,8 +45,8 @@ CANONICAL_VOICE_PROFILES: Dict[str, VoiceProfile] = {
         persona_id="zara_voss",
         voice_profile_id="vp_zara_v1",
         version="1.0.0",
-        provider="elevenlabs",
-        voice_id="21m00Tcm4TlvDq8ikWAM",  # Confident, direct
+        provider="android-offline",
+        voice_id="default",  # Select an installed offline voice with SPICE_ANDROID_VOICE_MAP.
         language="en-GB",
         accent="London urban",
         tone="direct, kinetic, confident",
@@ -58,8 +58,8 @@ CANONICAL_VOICE_PROFILES: Dict[str, VoiceProfile] = {
         persona_id="tess_wilder",
         voice_profile_id="vp_tess_v1",
         version="1.0.0",
-        provider="elevenlabs",
-        voice_id="AZnzlk1XvdvUeBnXmlld",  # Athletic, grounded
+        provider="android-offline",
+        voice_id="default",  # Select an installed offline voice with SPICE_ANDROID_VOICE_MAP.
         language="en-US",
         accent="Pacific Northwest",
         tone="competitive, encouraging, quick-witted",
@@ -71,8 +71,8 @@ CANONICAL_VOICE_PROFILES: Dict[str, VoiceProfile] = {
         persona_id="lila_hart",
         voice_profile_id="vp_lila_v1",
         version="1.0.0",
-        provider="elevenlabs",
-        voice_id="EXAVITQu4vr4xnSDxMaL",  # Warm, melodic, adult
+        provider="android-offline",
+        voice_id="default",  # Select an installed offline voice with SPICE_ANDROID_VOICE_MAP.
         language="en-US",
         accent="Northern California warm",
         tone="warm, witty, playful, unmistakably adult",
@@ -84,8 +84,8 @@ CANONICAL_VOICE_PROFILES: Dict[str, VoiceProfile] = {
         persona_id="ruby_wren",
         voice_profile_id="vp_ruby_v1",
         version="1.0.0",
-        provider="elevenlabs",
-        voice_id="ErXwobaYiN019PkySvjV",  # Eloquent, fiery
+        provider="android-offline",
+        voice_id="default",  # Select an installed offline voice with SPICE_ANDROID_VOICE_MAP.
         language="en-GB",
         accent="Northern English articulate",
         tone="fiery, eloquent, irreverent",
@@ -97,8 +97,8 @@ CANONICAL_VOICE_PROFILES: Dict[str, VoiceProfile] = {
         persona_id="celeste_vale",
         voice_profile_id="vp_celeste_v1",
         version="1.0.0",
-        provider="elevenlabs",
-        voice_id="MF3mGyEYCl7XYWbV9V6O",  # Low, precise, dry
+        provider="android-offline",
+        voice_id="default",  # Select an installed offline voice with SPICE_ANDROID_VOICE_MAP.
         language="en-US",
         accent="Mid-Atlantic polished",
         tone="precise, dryly funny, selective",
@@ -300,12 +300,34 @@ class PiperVoiceProvider(VoiceProvider):
         return {"output_path": audio_path, "applied": {}}
 
 
+class AndroidVoiceProvider(VoiceProvider):
+    """Use Android offline voices without pip/native wheels in Termux."""
+
+    def synthesize(self, text, voice_profile, output_path=None, **kwargs):
+        from ...android_voice import AndroidVoiceClient, voice_fields
+        if output_path is None:
+            output_path = str(Path(os.getenv('TMPDIR', '/tmp')) / f'spice_voice_{uuid.uuid4().hex}.wav')
+        result = AndroidVoiceClient().synthesize(text, output_path, **voice_fields(voice_profile))
+        return {**result, 'voice_profile_id': voice_profile.voice_profile_id,
+                'persona_id': voice_profile.persona_id}
+
+    def transform(self, audio_path, transformation_spec, output_path=None):
+        if transformation_spec:
+            raise RuntimeError('Apply voice transforms with FFmpeg; Android synthesis uses profile pitch/pace')
+        if output_path and output_path != audio_path:
+            import shutil
+            shutil.copyfile(audio_path, output_path)
+        return {'output_path': output_path or audio_path, 'applied': {}}
+
+
 def voice_provider_from_env() -> VoiceProvider:
-    provider = os.getenv("SPICE_VOICE_PROVIDER", "mock").strip().lower()
+    provider = os.getenv("SPICE_VOICE_PROVIDER", "android").strip().lower()
     if provider in ("", "mock"):
         return MockVoiceProvider()
     if provider == "piper":
         return PiperVoiceProvider()
+    if provider in ("android", "android-offline"):
+        return AndroidVoiceProvider()
     if provider == "elevenlabs":
         return ElevenLabsVoiceProvider()
     raise RuntimeError(f"Unknown SPICE_VOICE_PROVIDER: {provider}")

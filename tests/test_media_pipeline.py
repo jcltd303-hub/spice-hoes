@@ -75,7 +75,7 @@ class TestMediaPipeline(unittest.TestCase):
         # Cost tracking checks
         self.assertGreater(rendered_job.costs.video_generation_cents, 0)
         self.assertGreater(rendered_job.costs.voice_generation_cents, 0)
-        self.assertGreater(rendered_job.costs.render_cents, 0)
+        self.assertEqual(rendered_job.costs.render_cents, 0)
         self.assertEqual(rendered_job.render_cost_cents, rendered_job.costs.render_cents)
 
         # 3. Human Review Gate

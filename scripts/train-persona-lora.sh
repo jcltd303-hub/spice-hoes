@@ -41,7 +41,7 @@ ACCUM_STEPS="${ACCUM_STEPS:-1}"
 python3 - <<'PY'
 import torch
 if not torch.cuda.is_available():
-    raise SystemExit("CUDA GPU required. Run this trainer in Colab/Kaggle/Azure GPU, not Termux.")
+    raise SystemExit("CUDA GPU required. Run this trainer in an attended Colab/Kaggle GPU session.")
 print("CUDA:", torch.cuda.get_device_name(0))
 PY
 

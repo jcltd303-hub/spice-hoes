@@ -6,7 +6,9 @@ Runnable experiment loop for a portfolio of **fictional adult** AI influencers. 
 
 The operating objective follows [project.md](project.md): optimize attributable net revenue while accounting for production/distribution cost, refunds, repeat purchase, retention, platform constraints, and evidence quality. Generated recommendations remain proposals until approved.
 
-The [income swarm launcher](docs/income-swarm.md) connects Azure MoA planning, native S24 generation, owner-authorized scored release, durable publishing, signed live Stripe receipts, and corrected learning in a supervised loop. Start with `swarm-status`; unconfigured providers block paid production. The first unattended lane produces Instagram still images, with views kept separate from impressions and cost reservations kept separate from verified money.
+Device setup: [S24 GPU/NPU and offline voice](docs/s24-local-runtime.md). Heavy media: [free GPU notebook batches](docs/free-gpu-media.md).
+
+The [income swarm launcher](docs/income-swarm.md) connects local S24 MoA planning, native S24 generation, owner-authorized scored release, durable publishing, signed live Stripe receipts, and corrected learning in a supervised loop. Start with `swarm-status`; unconfigured providers block production. The first unattended lane produces Instagram still images, with views kept separate from impressions and cost reservations kept separate from verified money.
 
 ## Start locally
 

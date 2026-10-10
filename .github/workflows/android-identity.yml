@@ -1,7 +1,7 @@
 name: Android Identity APK
 on:
   push:
-    branches: [android/identity-service]
+    branches: [main, android/identity-service]
     paths:
       - "android/identity-service/**"
       - ".github/workflows/android-identity.yml"

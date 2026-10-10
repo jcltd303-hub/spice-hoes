@@ -147,6 +147,7 @@ class OpenAICompatibleChatProvider:
             f"{self.base_url}/chat/completions",
             payload,
             self._headers(),
+            timeout=getattr(self, "chat_timeout", 90),
             retries=int(os.getenv("MOA_HTTP_RETRIES", "3")),
             backoff_seconds=float(os.getenv("MOA_HTTP_BACKOFF_SECONDS", "1.0")),
         )

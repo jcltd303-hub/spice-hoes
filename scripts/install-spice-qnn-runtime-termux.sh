@@ -35,7 +35,7 @@ if [[ -z "$LIBROOT" || ! -d "$LIBROOT" ]]; then
   exit 1
 fi
 
-rm -rf runtime
+rm -rf runtime/bin runtime/lib
 mkdir -p runtime/bin runtime/lib
 cp "$CORE" runtime/bin/spice-qnn-core
 chmod 0755 runtime/bin/spice-qnn-core

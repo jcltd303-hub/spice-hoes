@@ -69,11 +69,9 @@ class VideoQA:
             "fps": False,
             "codec": False,
             "audio_present": False,
-            "no_black_frames": True,
-            "no_audio_clipping": True,
-            "no_corrupt_frames": True,
+            "no_corrupt_frames": False,
         }
-        details: Dict[str, Any] = {}
+        details: Dict[str, Any] = {"unmeasured": ["black_frames", "audio_clipping"]}
 
         path = Path(video_path)
         if not path.exists() or path.stat().st_size == 0:
@@ -84,12 +82,29 @@ class VideoQA:
                 details={"error": "File does not exist or is empty"},
             )
 
-        checks["file_integrity"] = True
         file_size = path.stat().st_size
         details["file_size_bytes"] = file_size
 
         # Extract metadata either from ffprobe or simulated metadata
         probe_data = self.run_ffprobe(str(path)) or simulated_meta or {}
+        if not probe_data:
+            details['error'] = 'ffprobe could not verify the media; install FFmpeg and supply a valid video'
+            return QAReport(False, 0.0, checks, details)
+        if simulated_meta is not None:
+            # Explicit fixture support; the production pipeline never supplies it.
+            details['simulated'] = True
+            checks['no_corrupt_frames'] = True
+        else:
+            ffmpeg = shutil.which('ffmpeg')
+            if ffmpeg:
+                try:
+                    decoded = subprocess.run([ffmpeg, '-v', 'error', '-xerror', '-protocol_whitelist', 'file,pipe',
+                                              '-i', str(path), '-map', '0:v:0', '-map', '0:a?', '-f', 'null', '-'],
+                                             capture_output=True, timeout=120)
+                    checks['no_corrupt_frames'] = decoded.returncode == 0
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+        checks['file_integrity'] = checks['no_corrupt_frames']
 
         width = 0
         height = 0
@@ -122,16 +137,6 @@ class VideoQA:
 
             dur_str = fmt.get("duration") or (streams[0].get("duration") if streams else "0")
             duration = float(dur_str or 0.0)
-        else:
-            # Fallback heuristic if ffprobe is not present in mock test mode:
-            # Treat valid non-empty files as meeting requirements
-            width = self.target_width
-            height = self.target_height
-            duration = 15.0
-            fps = 30.0
-            v_codec = "h264"
-            a_codec = "aac"
-            has_audio = True
 
         details["width"] = width
         details["height"] = height
@@ -160,7 +165,7 @@ class VideoQA:
             checks["fps"] = True
 
         # Check codec
-        if any(c in v_codec for c in self.allowed_video_codecs) or not v_codec:
+        if v_codec in self.allowed_video_codecs and a_codec in self.allowed_audio_codecs:
             checks["codec"] = True
 
         # Check audio
@@ -173,13 +178,7 @@ class VideoQA:
         score = round(passed_count / total_count, 2)
 
         # Critical checks: file_integrity, aspect_ratio, duration, audio_present
-        passed = (
-            checks["file_integrity"]
-            and checks["aspect_ratio"]
-            and checks["duration"]
-            and checks["audio_present"]
-            and score >= 0.80
-        )
+        passed = all(checks.values())
 
         return QAReport(
             passed=passed,
