@@ -1,6 +1,6 @@
 # Canonical architecture
 
-**Status:** current implementation map · **Updated:** 2026-10-02
+**Status:** current implementation map · **Updated:** 2026-10-10
 
 This document reconciles the project proposal, operator README, identity docs, and the uploaded AI-influencer production guide. When implementation details disagree with older notes, use this document plus the code on `main`.
 
@@ -103,6 +103,8 @@ bin/spicemedia (Go)
   -> Qualcomm QNN / Hexagon HTP
 ```
 
+The C++ core comes from our custom [Local Dream fork](https://github.com/jcltd303-hub/local-dream). The [QNN runtime workflow](../.github/workflows/spice-qnn-runtime.yml) builds a pinned fork revision and extracts `libstable_diffusion_core.so` as the standalone executable `spice-qnn-core`, together with the QNN runtime libraries. Go starts that executable directly in Termux. This production path reuses the custom Local Dream native core without requiring the full APK to be installed or running.
+
 Production face identity uses the same device lane:
 
 ```text
@@ -110,6 +112,10 @@ SCRFD detection -> five landmarks -> aligned crop -> ArcFace embedding -> calibr
 ```
 
 No Python runtime is required on the phone. Python is permitted in CI/model-conversion and offline analysis workflows.
+
+### S24 Ultra: text and voice services
+
+GGUF planning/chat runs in a separate `llama-server` process through llama.cpp. Local Dream's diffusion/face core is not the text inference service. Its QNN path and the text service's OpenCL/Vulkan/experimental Hexagon backends have separate initialization and model requirements; a failure in text GPU enumeration does not establish a failure in QNN image or face inference. Android's voice companion provides the local speech interface. See [S24 local runtime](s24-local-runtime.md) for service setup and current hardware-validation limits.
 
 ### Cloud-accelerated open-source video
 
@@ -167,4 +173,4 @@ The learner may optimize within the eligible action set; it cannot silently chan
 
 ## Legacy/optional paths
 
-Local Dream, textual inversion, InSwapper experiments, and third-party generation stacks may remain useful for benchmarking, migration, or offline comparison. They are not the canonical production media path unless a later measured experiment and explicit architecture update promotes them.
+The full Local Dream APK and the older Python `LocalDreamProvider` HTTP adapter, textual inversion, InSwapper experiments, and third-party generation stacks may remain useful for benchmarking, migration, or offline comparison. Those interfaces are not the canonical production media path unless a later measured experiment and explicit architecture update promotes them. This designation does not apply to the custom Local Dream native core built into the production Go/QNN runtime described above.
