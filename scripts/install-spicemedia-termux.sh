@@ -32,18 +32,26 @@ fi
 echo "[5/5] Updating canonical .env"
 
 ENV_FILE="$ROOT/.env"
+SPICEMEDIA_ENV_FILE="$ROOT/.env.spicemedia"
 if [[ ! -f "$ENV_FILE" ]]; then
   cp "$ROOT/.env.example" "$ENV_FILE"
 fi
+touch "$SPICEMEDIA_ENV_FILE"
+
+upsert_env_file() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  if grep -qE "^${key}=" "$file"; then
+    sed -i "s|^${key}=.*$|${key}=${value}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
 
 upsert_env() {
-  local key="$1"
-  local value="$2"
-  if grep -qE "^${key}=" "$ENV_FILE"; then
-    sed -i "s|^${key}=.*$|${key}=${value}|" "$ENV_FILE"
-  else
-    printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
-  fi
+  upsert_env_file "$ENV_FILE" "$1" "$2"
+  upsert_env_file "$SPICEMEDIA_ENV_FILE" "$1" "$2"
 }
 
 upsert_env SPICE_MEDIA_PROVIDER go
@@ -77,9 +85,10 @@ echo
 echo "Installed Go media runtime."
 echo "Python is not required for spicemedia runtime; model conversion happens only in GitHub Actions."
 echo "Then load config:"
-echo "  set -a; source .env; set +a"
+echo "  set -a; source .env.spicemedia; set +a"
 echo "Running health check..."
 set -a
-source .env
+# shellcheck disable=SC1091
+source .env.spicemedia
 set +a
 echo '{}' | ./bin/spicemedia health

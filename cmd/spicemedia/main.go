@@ -1,11 +1,13 @@
 package main
 
 import (
+    "bytes"
     "context"
     "flag"
     "encoding/base64"
     "encoding/json"
     "fmt"
+    "image"
     "io"
     "os"
     "path/filepath"
@@ -227,40 +229,15 @@ func commandQuality() {
     write(result)
 }
 
-func arcFaceEmbedding(manager *nativecore.Manager, raw []byte) ([]float64, map[string]any, string, error) {
-    const alignment = "scrfd-5pt-112"
-    if manager.FaceDetector == "" {
-        return nil, nil, alignment, fmt.Errorf("SPICE_FACE_DETECT_MODEL is not configured")
+// embedFaceImage decodes raw image bytes and runs the canonical
+// identity.EmbedFace pipeline. Per-stage timeouts match the previous inline
+// implementation (2 minutes each for detection and embedding).
+func embedFaceImage(manager *nativecore.Manager, raw []byte) ([]float64, map[string]any, string, error) {
+    img, _, err := image.Decode(bytes.NewReader(raw))
+    if err != nil {
+        return nil, nil, ident.FaceAlignment, fmt.Errorf("decode image: %w", err)
     }
-    if manager.IdentityVision == "" {
-        return nil, nil, alignment, fmt.Errorf("SPICE_FACE_EMBED_MODEL is not configured")
-    }
-
-    prep, err := ident.SCRFDInput(raw)
-    if err != nil { return nil, nil, alignment, fmt.Errorf("prepare SCRFD input: %w", err) }
-
-    detectCtx, detectCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-    outputs, detectMeta, err := manager.Detect(detectCtx, prep.Tensor)
-    detectCancel()
-    if err != nil { return nil, nil, alignment, fmt.Errorf("SCRFD detection failed: %w", err) }
-
-    faces, err := ident.DecodeSCRFD(outputs, prep, ident.SCRFDThreshold(0.5), 0.4)
-    if err != nil || len(faces) == 0 {
-        if err == nil { err = fmt.Errorf("no face detected") }
-        return nil, nil, alignment, fmt.Errorf("SCRFD landmarks unavailable: %w", err)
-    }
-
-    input, err := ident.ArcFaceInputAligned(raw, faces[0].Landmarks)
-    if err != nil { return nil, nil, alignment, fmt.Errorf("five-point alignment failed: %w", err) }
-
-    embedCtx, embedCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-    vec, meta, err := manager.Embed(embedCtx, input)
-    embedCancel()
-    if err != nil { return nil, nil, alignment, fmt.Errorf("ArcFace embedding failed: %w", err) }
-
-    meta["alignment"] = alignment
-    meta["detector_latency_ms"] = detectMeta["latency_ms"]
-    return ident.Normalize(vec), meta, alignment, nil
+    return ident.EmbedFace(context.Background(), manager, img)
 }
 
 func commandEmbed() {
@@ -270,7 +247,7 @@ func commandEmbed() {
     manager := nativecore.FromEnv()
     if manager.IdentityVision == "" { fail(fmt.Errorf("SPICE_FACE_EMBED_MODEL is not configured")) }
     progress.SetProgress(30, "SCRFD + ArcFace embedding")
-    vec, meta, alignment, err := arcFaceEmbedding(manager, raw)
+    vec, meta, alignment, err := embedFaceImage(manager, raw)
     if err != nil { fail(err) }
     response := map[string]any{
         "embedding": vec,
@@ -302,7 +279,7 @@ func commandPersonaEmbed() {
     }
     manager := nativecore.FromEnv()
     if manager.IdentityVision == "" { fail(fmt.Errorf("SPICE_FACE_EMBED_MODEL is not configured")) }
-    vec, meta, alignment, err := arcFaceEmbedding(manager, raw)
+    vec, meta, alignment, err := embedFaceImage(manager, raw)
     if err != nil { fail(err) }
     outPath := filepath.Join("personas", personaID+".safetensors")
     if v, ok := payload["output_path"].(string); ok && strings.TrimSpace(v) != "" { outPath = v }
@@ -389,7 +366,7 @@ func commandIdentity() {
 
     manager := nativecore.FromEnv()
     if manager.IdentityVision != "" {
-        generatedEmbedding, meta, alignment, err := arcFaceEmbedding(manager, generated)
+        generatedEmbedding, meta, alignment, err := embedFaceImage(manager, generated)
         if err == nil {
             scores := make([]float64, 0, len(refs))
             for _, item := range refs {
@@ -397,7 +374,7 @@ func commandIdentity() {
                 if !ok { continue }
                 ref, err := decodeB64(obj["image_base64"])
                 if err != nil { continue }
-                refEmbedding, _, _, err := arcFaceEmbedding(manager, ref)
+                refEmbedding, _, _, err := embedFaceImage(manager, ref)
                 if err != nil { continue }
                 score, err := ident.Cosine(generatedEmbedding, refEmbedding)
                 if err == nil { scores = append(scores, score) }

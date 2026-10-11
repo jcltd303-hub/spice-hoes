@@ -30,6 +30,12 @@ type Manager struct {
     RequireModelMatch bool
 }
 
+// FaceDetectorModel and IdentityModel expose the configured face-pipeline
+// models so the shared identity.EmbedFace helper can validate configuration
+// against the FaceBackend interface without depending on this concrete type.
+func (m *Manager) FaceDetectorModel() string { return m.FaceDetector }
+func (m *Manager) IdentityModel() string     { return m.IdentityVision }
+
 func FromEnv() *Manager {
     port := 18081
     if raw := strings.TrimSpace(os.Getenv("SPICE_QNN_PORT")); raw != "" {

@@ -41,6 +41,7 @@ if [[ "$SWAP_MODE" != "disabled" ]]; then
 fi
 
 echo "Building Go-only spicemedia..."
+command -v go >/dev/null || { echo "Go is required: pkg install golang" >&2; exit 1; }
 go mod tidy
 mkdir -p "$ROOT/bin"
 go build -trimpath -o "$ROOT/bin/spicemedia" ./cmd/spicemedia

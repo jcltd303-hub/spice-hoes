@@ -30,16 +30,20 @@ echo "  $ROOT/models/face/arcface_w600k_r50.bin"
 echo "  $ROOT/models/face/scrfd_10g.bin"
 echo
 ENV_FILE="$ROOT/.env"
+SPICEMEDIA_ENV_FILE="$ROOT/.env.spicemedia"
 [[ -f "$ENV_FILE" ]] || cp "$ROOT/.env.example" "$ENV_FILE"
+touch "$SPICEMEDIA_ENV_FILE"
 for entry in \
   "SPICE_FACE_EMBED_MODEL=$ROOT/models/face/arcface_w600k_r50.bin" \
   "SPICE_FACE_DETECT_MODEL=$ROOT/models/face/scrfd_10g.bin"
 do
   key="${entry%%=*}"
-  if grep -qE "^${key}=" "$ENV_FILE"; then
-    sed -i "s|^${key}=.*$|${entry}|" "$ENV_FILE"
-  else
-    printf '%s\n' "$entry" >> "$ENV_FILE"
-  fi
+  for target in "$ENV_FILE" "$SPICEMEDIA_ENV_FILE"; do
+    if grep -qE "^${key}=" "$target"; then
+      sed -i "s|^${key}=.*$|${entry}|" "$target"
+    else
+      printf '%s\n' "$entry" >> "$target"
+    fi
+  done
 done
-echo "Updated $ENV_FILE with face detector/embedding paths."
+echo "Updated $ENV_FILE and $SPICEMEDIA_ENV_FILE with face detector/embedding paths."

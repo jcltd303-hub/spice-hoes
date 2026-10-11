@@ -14,6 +14,7 @@ fi
 BIN="${SPICE_MEDIA_BIN:-$ROOT/bin/spicemedia}"
 if [[ ! -x "$BIN" ]]; then
   echo "Building spicemedia..."
+  command -v go >/dev/null || { echo "Go is required: pkg install golang" >&2; exit 1; }
   mkdir -p "$ROOT/bin"
   go build -trimpath -o "$BIN" ./cmd/spicemedia
 fi

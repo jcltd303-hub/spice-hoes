@@ -276,35 +276,15 @@ func promptFor(p Persona, req Request) string {
 	return strings.Join(parts, " ")
 }
 
-func arcEmbeddingImage(ctx context.Context, m *nativecore.Manager, img image.Image) ([]float64, string, error) {
-	const alignment = "scrfd-5pt-112"
-	if m.FaceDetector == "" {
-		return nil, alignment, fmt.Errorf("SCRFD face detector is not configured")
+// embedFaceBytes decodes raw image bytes and runs the canonical
+// identity.EmbedFace pipeline.
+func embedFaceBytes(ctx context.Context, m *nativecore.Manager, raw []byte) ([]float64, error) {
+	img, _, err := image.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("decode image: %w", err)
 	}
-	if m.IdentityVision == "" {
-		return nil, alignment, fmt.Errorf("ArcFace embedding model is not configured")
-	}
-	prep, err := ident.SCRFDInputImage(img)
-	if err != nil { return nil, alignment, fmt.Errorf("prepare SCRFD input: %w", err) }
-	outputs, _, err := m.Detect(ctx, prep.Tensor)
-	if err != nil { return nil, alignment, fmt.Errorf("SCRFD detection failed: %w", err) }
-	faces, usedThreshold, err := ident.DecodeSCRFDWithFallback(outputs, prep, ident.SCRFDThreshold(0.5), 0.4)
-	if err != nil || len(faces) == 0 {
-		if err == nil { err = fmt.Errorf("no face detected") }
-		return nil, alignment, fmt.Errorf("SCRFD landmarks unavailable: %w", err)
-	}
-	alignmentUsed := fmt.Sprintf("scrfd-5pt-112@%.2f", usedThreshold)
-	input, err := ident.ArcFaceInputAlignedImage(img, faces[0].Landmarks)
-	if err != nil { return nil, alignment, fmt.Errorf("five-point alignment failed: %w", err) }
-	vec, _, err := m.Embed(ctx, input)
-	if err != nil { return nil, alignment, fmt.Errorf("ArcFace embedding failed: %w", err) }
-	return ident.Normalize(vec), alignmentUsed, nil
-}
-
-func arcEmbedding(ctx context.Context, m *nativecore.Manager, raw []byte) ([]float64, string, error) {
-	img,_,err:=image.Decode(bytes.NewReader(raw))
-	if err!=nil { return nil,"scrfd-5pt-112",fmt.Errorf("decode image: %w",err) }
-	return arcEmbeddingImage(ctx,m,img)
+	vec, _, _, err := ident.EmbedFace(ctx, m, img)
+	return vec, err
 }
 
 func loadReferences(root, personaID string) ([][]byte, []string, error) {
@@ -538,7 +518,7 @@ func scoreIdentityImageCached(ctx context.Context, m *nativecore.Manager, genera
 		result.Reason = "no_reference_embedding_succeeded"
 		return result
 	}
-	genVec, alignment, err := arcEmbeddingImage(ctx, m, generated)
+	genVec, _, alignment, err := ident.EmbedFace(ctx, m, generated)
 	result.Alignment = alignment
 	if err != nil {
 		result.Reason = err.Error()
@@ -683,7 +663,7 @@ func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated im
 		result.Reason = "no_reference_pack"
 		return result
 	}
-	genVec, alignment, err := arcEmbeddingImage(ctx, m, generated)
+	genVec, _, alignment, err := ident.EmbedFace(ctx, m, generated)
 	result.Alignment = alignment
 	if err != nil {
 		result.Reason = err.Error()
@@ -691,7 +671,7 @@ func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated im
 	}
 	scores := make([]float64, 0, len(refs))
 	for _, ref := range refs {
-		refVec, _, err := arcEmbedding(ctx, m, ref)
+		refVec, err := embedFaceBytes(ctx, m, ref)
 		if err != nil {
 			continue
 		}
@@ -700,6 +680,13 @@ func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated im
 			scores = append(scores, s)
 		}
 	}
+	result = finalizeIdentityResult(result, scores)
+	return result
+}
+
+// finalizeIdentityResult computes max/mean/passed from cosine scores and
+// fills the tail of an IdentityResult.
+func finalizeIdentityResult(result IdentityResult, scores []float64) IdentityResult {
 	if len(scores) == 0 {
 		result.Reason = "no_reference_embedding_succeeded"
 		return result
@@ -716,7 +703,7 @@ func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated im
 	result.Score = maxScore
 	result.MeanScore = sum / float64(len(scores))
 	result.ReferenceCount = len(scores)
-	result.Passed = maxScore >= threshold && result.MeanScore >= meanThreshold
+	result.Passed = maxScore >= result.Threshold && result.MeanScore >= result.MeanThreshold
 	return result
 }
 
