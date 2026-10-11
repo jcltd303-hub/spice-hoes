@@ -1,0 +1,283 @@
+{
+  "schema_version": 1,
+  "canon": [
+    {
+      "persona_id": "celeste_vale",
+      "path": "data/references/celeste_vale/canon-01.png",
+      "sha256": "6df689fc5ed40881ea5e753006361536031eb702de5a2855a543fb09b22919e1",
+      "width": 1536,
+      "height": 857,
+      "role": "identity canon board",
+      "source": "existing user-confirmed canon-01.png; preserved unchanged"
+    },
+    {
+      "persona_id": "lila_hart",
+      "path": "data/references/lila_hart/canon-01.png",
+      "sha256": "dd85ecab53e0b4049a300bd378848e66fb064014f658f9b6a2e1e74de62c86bc",
+      "width": 1536,
+      "height": 857,
+      "role": "identity canon board",
+      "source": "existing user-confirmed canon-01.png; preserved unchanged"
+    },
+    {
+      "persona_id": "ruby_wren",
+      "path": "data/references/ruby_wren/canon-01.png",
+      "sha256": "8c46b293fe78677e8302a4016be189fa75a30e22d65761902a209394f1423d19",
+      "width": 857,
+      "height": 1536,
+      "role": "identity canon board",
+      "source": "existing user-confirmed canon-01.png; preserved unchanged"
+    },
+    {
+      "persona_id": "tess_wilder",
+      "path": "data/references/tess_wilder/canon-01.png",
+      "sha256": "5c4dbd364b909b92cf81b89d67ae02d50d7170f07136b6b89640ac1a437ce6ee",
+      "width": 1536,
+      "height": 857,
+      "role": "identity canon board",
+      "source": "existing user-confirmed canon-01.png; preserved unchanged"
+    },
+    {
+      "persona_id": "zara_voss",
+      "path": "data/references/zara_voss/canon-01.png",
+      "sha256": "965feedaf821e45077c25f8e963de9b940a0ad737fefd158e93264d4a9f57eaf",
+      "width": 857,
+      "height": 1536,
+      "role": "identity canon board",
+      "source": "existing user-confirmed canon-01.png; preserved unchanged"
+    }
+  ],
+  "archived": [
+    {
+      "from": "data/references/celeste_vale/celeste_vale_athletic.png",
+      "to": "data/reference-archive/celeste_vale/celeste_vale_athletic.png",
+      "sha256": "c14701bf246635c7cc73c8da78b080f4d739d4e7143ffebaccca64a6d3bb9f53"
+    },
+    {
+      "from": "data/references/celeste_vale/celeste_vale_athletic_profile.png",
+      "to": "data/reference-archive/celeste_vale/celeste_vale_athletic_profile.png",
+      "sha256": "8ea1bffeb9cac74de6d057e6d7f9b0ca6e3aae2926e6c498a7a5f25c9d771399"
+    },
+    {
+      "from": "data/references/celeste_vale/celeste_vale_athletic_rear.png",
+      "to": "data/reference-archive/celeste_vale/celeste_vale_athletic_rear.png",
+      "sha256": "e4610620ea99eb8a4a70a883e0e64dbfa87572e3e9dc84092169e31411cb8ab4"
+    },
+    {
+      "from": "data/references/celeste_vale/celeste_vale_fill1.png",
+      "to": "data/reference-archive/celeste_vale/celeste_vale_fill1.png",
+      "sha256": "3efb10efebe1e2f67cb2a1237967355a100758cbeacebf7488f4b28b58341c1d"
+    },
+    {
+      "from": "data/references/celeste_vale/celeste_vale_posture_stretch.png",
+      "to": "data/reference-archive/celeste_vale/celeste_vale_posture_stretch.png",
+      "sha256": "2c00535e259ceaf153e7e49674a37c24c1db0230010b3111980a23a64f0c27dd"
+    },
+    {
+      "from": "data/references/celeste_vale/ref-01-bootstrap.png",
+      "to": "data/reference-archive/celeste_vale/ref-01-bootstrap.png",
+      "sha256": "45f5aa905c3793f388203c71926acf42551cb528d76275eb8a0340fb9be4fc31"
+    },
+    {
+      "from": "data/references/celeste_vale/ref-02-verified.png",
+      "to": "data/reference-archive/celeste_vale/ref-02-verified.png",
+      "sha256": "ca6131285b3e5b82c139c800b900bd8a4659358ee4165be2d2a6a20a9f9f3880"
+    },
+    {
+      "from": "data/references/celeste_vale/ref-03-verified.png",
+      "to": "data/reference-archive/celeste_vale/ref-03-verified.png",
+      "sha256": "45f5aa905c3793f388203c71926acf42551cb528d76275eb8a0340fb9be4fc31"
+    },
+    {
+      "from": "data/references/celeste_vale/ref-04-verified.png",
+      "to": "data/reference-archive/celeste_vale/ref-04-verified.png",
+      "sha256": "ca6131285b3e5b82c139c800b900bd8a4659358ee4165be2d2a6a20a9f9f3880"
+    },
+    {
+      "from": "data/references/lila_hart/anchor-01.jpg",
+      "to": "data/reference-archive/lila_hart/anchor-01.jpg",
+      "sha256": "2253212977db7856dfed1b889f3d3624abe7944cbc005f7249e5e86271f2d36c"
+    },
+    {
+      "from": "data/references/lila_hart/bootstrap-2.png",
+      "to": "data/reference-archive/lila_hart/bootstrap-2.png",
+      "sha256": "e5359b23b5acbac06797c2363c0e20b7ebba2bfa4d56a69749d936bc21add146"
+    },
+    {
+      "from": "data/references/lila_hart/bootstrap-3.png",
+      "to": "data/reference-archive/lila_hart/bootstrap-3.png",
+      "sha256": "f1bf084e85e0cd79119390d488b52796413f6e123e9867b19613b94c9a6fb9d9"
+    },
+    {
+      "from": "data/references/lila_hart/bootstrap-4.png",
+      "to": "data/reference-archive/lila_hart/bootstrap-4.png",
+      "sha256": "68e38566d1336c8f2f67a9d5801675342fec16b4cd460fcee1138d24981410fe"
+    },
+    {
+      "from": "data/references/lila_hart/lila_hart_athletic.png",
+      "to": "data/reference-archive/lila_hart/lila_hart_athletic.png",
+      "sha256": "a8fd461e00c106ba71b7e167371e8797deeb9028fc059976be616c05beaebb03"
+    },
+    {
+      "from": "data/references/lila_hart/lila_hart_athletic_back34.png",
+      "to": "data/reference-archive/lila_hart/lila_hart_athletic_back34.png",
+      "sha256": "d98400318b8e2256697f0be7f15a4dfab97051002c68a2f47f4e7742926073c9"
+    },
+    {
+      "from": "data/references/lila_hart/lila_hart_athletic_profile.png",
+      "to": "data/reference-archive/lila_hart/lila_hart_athletic_profile.png",
+      "sha256": "02bee6f0ebd94651eb83ad759436c22568eedc10dd351e9ee5fd0cf75474fb42"
+    },
+    {
+      "from": "data/references/lila_hart/lila_hart_athletic_rear.png",
+      "to": "data/reference-archive/lila_hart/lila_hart_athletic_rear.png",
+      "sha256": "68f3f42e1fd70b35e0edbf6766d348ff3990aef041b6b4767e66c6a99bfc5fc9"
+    },
+    {
+      "from": "data/references/lila_hart/lila_hart_fill1.png",
+      "to": "data/reference-archive/lila_hart/lila_hart_fill1.png",
+      "sha256": "7f5db6b67f0caaa8889ccea6ae7f553d87ed44d67ea1aa0c5da05f9442e5c726"
+    },
+    {
+      "from": "data/references/lila_hart/lila_hart_posture_lean.png",
+      "to": "data/reference-archive/lila_hart/lila_hart_posture_lean.png",
+      "sha256": "172fd4beb375774daf6493ae41d93944268621a31aa8e0d106f9cf1ce202e947"
+    },
+    {
+      "from": "data/references/ruby_wren/anchor-01.jpg",
+      "to": "data/reference-archive/ruby_wren/anchor-01.jpg",
+      "sha256": "1534af4f9b238aae3c4871fcde6304889e3a29e713661cd4c35fc7790d21460c"
+    },
+    {
+      "from": "data/references/ruby_wren/bootstrap-2.png",
+      "to": "data/reference-archive/ruby_wren/bootstrap-2.png",
+      "sha256": "c847fa44ebf69af842157564e45d285f46da32351eacf45be230aee6f3473733"
+    },
+    {
+      "from": "data/references/ruby_wren/bootstrap-3.png",
+      "to": "data/reference-archive/ruby_wren/bootstrap-3.png",
+      "sha256": "422d5602804e2d37c7dfe0e4387d1d21386782f6d780ccf3447bffa355c4c4b2"
+    },
+    {
+      "from": "data/references/ruby_wren/bootstrap-4.png",
+      "to": "data/reference-archive/ruby_wren/bootstrap-4.png",
+      "sha256": "47a0582f99d93724b3d901ac6074a706568b924473734bfd30a1a3e2b347f319"
+    },
+    {
+      "from": "data/references/ruby_wren/ruby_wren_athletic.png",
+      "to": "data/reference-archive/ruby_wren/ruby_wren_athletic.png",
+      "sha256": "45e4e31407bad83c6cc7a176985e92d5e8498cb1d18546f1b81f3a5d283d83e6"
+    },
+    {
+      "from": "data/references/ruby_wren/ruby_wren_athletic_profile.png",
+      "to": "data/reference-archive/ruby_wren/ruby_wren_athletic_profile.png",
+      "sha256": "e8e319d0bc75b3c0a3597f640b87c03d1c8515db12a19fab2b23690e30f1440a"
+    },
+    {
+      "from": "data/references/ruby_wren/ruby_wren_fill1.png",
+      "to": "data/reference-archive/ruby_wren/ruby_wren_fill1.png",
+      "sha256": "1383e192af874b17cc243f42764f065d9e966b0299869f37fc12ca3561dcd835"
+    },
+    {
+      "from": "data/references/ruby_wren/ruby_wren_posture_twirl.png",
+      "to": "data/reference-archive/ruby_wren/ruby_wren_posture_twirl.png",
+      "sha256": "9fb20784fe3b79f4acdd1b4f081a1630cb7db946c250292971283df170c7c28a"
+    },
+    {
+      "from": "data/references/tess_wilder/anchor-01.jpg",
+      "to": "data/reference-archive/tess_wilder/anchor-01.jpg",
+      "sha256": "a75d4c9bbf46755a0f5c9dafe1846a09022c7c84dd619fd31f1fe69014e37ffb"
+    },
+    {
+      "from": "data/references/tess_wilder/bootstrap-1.png",
+      "to": "data/reference-archive/tess_wilder/bootstrap-1.png",
+      "sha256": "f82a34057362fa63112ce926dd2c2c657dfc0d03803d886988fceedb0b6aab85"
+    },
+    {
+      "from": "data/references/tess_wilder/bootstrap-2.png",
+      "to": "data/reference-archive/tess_wilder/bootstrap-2.png",
+      "sha256": "57aab8c6b7f8cc15b69febc140e2b457c35b278e82362e3ac83473da1d1657df"
+    },
+    {
+      "from": "data/references/tess_wilder/bootstrap-4.png",
+      "to": "data/reference-archive/tess_wilder/bootstrap-4.png",
+      "sha256": "978ef0e5f0782fbf9ed63885d1e311be869c40d8d1b3184f3dd509889ac3be29"
+    },
+    {
+      "from": "data/references/tess_wilder/tess_wilder_athletic.png",
+      "to": "data/reference-archive/tess_wilder/tess_wilder_athletic.png",
+      "sha256": "113a5bde6aad282db7c16c4a752ffd93ac5b0e0e913724d085695bb3d5dee864"
+    },
+    {
+      "from": "data/references/tess_wilder/tess_wilder_athletic_back34.png",
+      "to": "data/reference-archive/tess_wilder/tess_wilder_athletic_back34.png",
+      "sha256": "f8bb7bc0f5efa6920bd7e15bc728f1ea92c20595438a8f4082dd8b2bac030fa0"
+    },
+    {
+      "from": "data/references/tess_wilder/tess_wilder_athletic_profile.png",
+      "to": "data/reference-archive/tess_wilder/tess_wilder_athletic_profile.png",
+      "sha256": "21e8258cae27afd6cb39a8e881a9b81cd8654933dd41450769ec2b36ac4bbab6"
+    },
+    {
+      "from": "data/references/tess_wilder/tess_wilder_athletic_rear.png",
+      "to": "data/reference-archive/tess_wilder/tess_wilder_athletic_rear.png",
+      "sha256": "3b1377cc99a31ddb814317f97258a9e00b0d106ed149d0ec1bb7e292fadd371b"
+    },
+    {
+      "from": "data/references/tess_wilder/tess_wilder_fill1.png",
+      "to": "data/reference-archive/tess_wilder/tess_wilder_fill1.png",
+      "sha256": "616f3bba27a02a7906f184bb0f2189069ba370e07309f691d6371390ca2368a8"
+    },
+    {
+      "from": "data/references/tess_wilder/tess_wilder_posture_seated.png",
+      "to": "data/reference-archive/tess_wilder/tess_wilder_posture_seated.png",
+      "sha256": "daa265fcb3e4c21d3ddf353eee49629c689ab3877160f98e4ee18aec7f119ea9"
+    },
+    {
+      "from": "data/references/zara_voss/anchor-01.jpg",
+      "to": "data/reference-archive/zara_voss/anchor-01.jpg",
+      "sha256": "6d350b618a297dc581edd52bcf38251e6513c2b89970cad70142c918856f4ae0"
+    },
+    {
+      "from": "data/references/zara_voss/bootstrap-1.png",
+      "to": "data/reference-archive/zara_voss/bootstrap-1.png",
+      "sha256": "43dbea92c7b13a1c5d7e5826958cd7c093a3a733b7c338f0a387313dca9bc2ff"
+    },
+    {
+      "from": "data/references/zara_voss/bootstrap-2.png",
+      "to": "data/reference-archive/zara_voss/bootstrap-2.png",
+      "sha256": "81b32b83bef7d8bc7cf9b7ee31c41ae4682ef6ea94088cf4fb033e28b36b5021"
+    },
+    {
+      "from": "data/references/zara_voss/bootstrap-3.png",
+      "to": "data/reference-archive/zara_voss/bootstrap-3.png",
+      "sha256": "52b87dd2dbfae0d2fe6866c5d91c979c1ac7840eef3f1ec8152e723fdb54b972"
+    },
+    {
+      "from": "data/references/zara_voss/zara_voss_athletic.png",
+      "to": "data/reference-archive/zara_voss/zara_voss_athletic.png",
+      "sha256": "beb1661388b4a2e9b00473f428c267454ff18fc550896683b6d93a59ad7d9ffa"
+    },
+    {
+      "from": "data/references/zara_voss/zara_voss_athletic_profile.png",
+      "to": "data/reference-archive/zara_voss/zara_voss_athletic_profile.png",
+      "sha256": "eb952b75b8c98c664a55401ad732bb7f41ca3bf2cc35c26770fc1ba78f75e6f9"
+    },
+    {
+      "from": "data/references/zara_voss/zara_voss_athletic_rear.png",
+      "to": "data/reference-archive/zara_voss/zara_voss_athletic_rear.png",
+      "sha256": "799b694a5d105dce7be442a4871dd22d235c2da33b52d608c76b60b38a47b263"
+    },
+    {
+      "from": "data/references/zara_voss/zara_voss_fill1.png",
+      "to": "data/reference-archive/zara_voss/zara_voss_fill1.png",
+      "sha256": "b024c6a18d94fa821c94797afde4c572e480e7815994da09945c7d8c4414858f"
+    },
+    {
+      "from": "data/references/zara_voss/zara_voss_posture_walk.png",
+      "to": "data/reference-archive/zara_voss/zara_voss_posture_walk.png",
+      "sha256": "edfaee41db99f7c39513831dc5466841863f8424dc558d3f212bd066b6c77864"
+    }
+  ],
+  "policy": "Canon images remain authoritative. Archived bootstrap, pose and support images are retained for history; generated test candidates never become canon automatically."
+}

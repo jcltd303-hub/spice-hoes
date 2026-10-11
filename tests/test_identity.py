@@ -27,6 +27,20 @@ class IdentityTests(unittest.TestCase):
             self.assertEqual(len(refs), 1)
             self.assertEqual(base64.b64decode(refs[0]["base64"]), b"png")
 
+    def test_canon_excludes_legacy_images_before_applying_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "zara_voss"
+            root.mkdir()
+            for name in ("anchor-01.jpg", "bootstrap-1.png", "athletic-front.png"):
+                (root / name).write_bytes(b"legacy")
+            (root / "canon-01.png").write_bytes(b"canon-one")
+            (root / "canon_02.JPG").write_bytes(b"canon-two")
+            refs = load_reference_pack("zara_voss", tmp, limit=2)
+            self.assertEqual([Path(ref["path"]).name for ref in refs],
+                             ["canon-01.png", "canon_02.JPG"])
+            self.assertEqual([base64.b64decode(ref["base64"]) for ref in refs],
+                             [b"canon-one", b"canon-two"])
+
     def test_identity_gate_pass_and_fail(self):
         refs = [{"base64": base64.b64encode(b"ref").decode(), "mime_type": "image/png"}]
         passing = IdentityGate(FakeProvider(0.9), threshold=0.82).score(b"gen", "image/png", refs)

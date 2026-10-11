@@ -197,6 +197,7 @@ func (c *Client) Generate(ctx context.Context, in GenerateRequest) (GenerateResu
 		"negative_prompt": in.NegativePrompt,
 		"width":           in.Width,
 		"height":          in.Height,
+		"output_format":   "png",
 	}
 	if in.Steps > 0 {
 		payload["steps"] = in.Steps

@@ -15,6 +15,7 @@ assets/private/
 data/*
 !data/references/
 data/references/*
+!data/references/manifest.json
 !data/references/zara_voss/
 !data/references/ruby_wren/
 !data/references/tess_wilder/
@@ -25,21 +26,20 @@ data/references/ruby_wren/*
 data/references/tess_wilder/*
 data/references/celeste_vale/*
 data/references/lila_hart/*
-!data/references/zara_voss/*.png
-!data/references/zara_voss/*.jpg
-!data/references/zara_voss/*.jpeg
-!data/references/ruby_wren/*.png
-!data/references/ruby_wren/*.jpg
-!data/references/ruby_wren/*.jpeg
-!data/references/tess_wilder/*.png
-!data/references/tess_wilder/*.jpg
-!data/references/tess_wilder/*.jpeg
-!data/references/celeste_vale/*.png
-!data/references/celeste_vale/*.jpg
-!data/references/celeste_vale/*.jpeg
-!data/references/lila_hart/*.png
-!data/references/lila_hart/*.jpg
-!data/references/lila_hart/*.jpeg
+!data/references/*/canon.png
+!data/references/*/canon.jpg
+!data/references/*/canon.jpeg
+!data/references/*/canon-*.png
+!data/references/*/canon-*.jpg
+!data/references/*/canon-*.jpeg
+!data/references/*/canon_*.png
+!data/references/*/canon_*.jpg
+!data/references/*/canon_*.jpeg
+
+# Existing legacy images are tracked for history; new outputs stay ignored.
+!data/reference-archive/
+data/reference-archive/*
+!data/reference-archive/README.md
 
 .env.s24
 models/llm/

@@ -17,8 +17,16 @@ def load_reference_pack(persona_id: str, reference_root: str | Path = "data/refe
     root = Path(reference_root) / persona_id
     if not root.exists():
         return []
+    images = [path for path in sorted(root.iterdir())
+              if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS]
+    canon = [path for path in images if path.stem.lower() == "canon"
+             or path.stem.lower().startswith(("canon-", "canon_"))]
+    # An existing canon pack overrides historical bootstrap/support images.
+    # Keep legacy-only packs readable for the optional reference builder.
+    if canon:
+        images = canon
     refs = []
-    for path in sorted(root.iterdir()):
+    for path in images:
         if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS:
             refs.append({
                 "path": str(path),
