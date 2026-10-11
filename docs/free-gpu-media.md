@@ -101,12 +101,49 @@ termux-setup-storage
 cp data/freegpu/jobs/garden.zip ~/storage/downloads/spice-garden-job.zip
 ```
 
+## Non-explicit adult modeling in Colab
+
+The notebook has two input modes. **Exported job ZIP** preserves the uploaded
+job's bytes, ID and options, including existing gym-motion/controller jobs.
+The style and seed controls are ignored in that mode.
+
+**New approved adult image** accepts one PNG, JPEG or WebP and creates a
+validated SVD image-to-video job. Confirm that the reference is an approved
+fictional adult (25+) and non-explicit, select a style and seed, then upload.
+The confirmation is an operator assertion, not automated age/content detection.
+This flow supports adult glamour, opaque lingerie editorial and gym/swimwear
+modeling; it does not configure explicit sexual generation.
+
+| Style | Motion bucket | Image noise | Purpose |
+| --- | --- | --- | --- |
+| `glamour-subtle` | 60 | 0.02 | Modest motion for an adult glamour reference |
+| `lingerie-editorial` | 60 | 0.02 | Modest motion for a non-explicit opaque-lingerie reference |
+| `gym-swimwear` | 80 | 0.02 | Motion starting point matching the saved gym job |
+
+These are starting settings, not identity/pose guarantees. SVD follows the
+image rather than a text prompt: the source must already show the intended
+appearance, outfit and pose. The notebook previews the worker's actual framing
+before inference and the verified completed clip afterward. SVD's existing
+1024x576 profile pads portrait references into a landscape frame.
+
+For a new-image job, **download and keep the original job ZIP before rendering**.
+Download the result ZIP at the end, then import on the phone against that exact
+original job. New-image jobs are standalone; they do not replace a controller's
+existing job or automatically enter its publication queue.
+
+```bash
+python -m spicecore.freegpu import /absolute/path/to/spice-JOB_ID-result.zip \
+  --job /absolute/path/to/spice-attended-job.zip \
+  --output-dir data/freegpu/results
+```
+
 ## Run in Colab or your own ephemeral CUDA worker
 
 Open `notebooks/spice_free_gpu_media.ipynb` in Colab, select a free GPU runtime,
 and run the cells while attended. The notebook checks actual CUDA availability,
-clones your trusted checkout/revision **or uploads the two checked worker source
-files**, uploads/validates one job, installs task dependencies, executes once,
+clones your trusted checkout/revision **or uploads the three checked source
+files** (`freegpu.py`, `freegpu-worker.py`, `setup-musetalk-colab.py`),
+uploads/validates one job or creates it from a selected image, installs task dependencies, executes once,
 and downloads the result. Source upload works without publishing this branch.
 Use your reviewed source; uploading Python files means executing that code.
 
@@ -303,3 +340,4 @@ Native offline speech is padded with silence when needed to retain the full
 scene plan during lip sync. The controller performs final framing, captions and
 real FFmpeg decoding before review. Captions are timing estimates rather than
 word-aligned recognition output.
+

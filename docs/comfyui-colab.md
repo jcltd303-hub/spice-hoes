@@ -2,7 +2,10 @@
 
 The default free GPU path uses [attended notebook ZIP jobs](free-gpu-media.md).
 `notebooks/spice_comfyui_colab.ipynb` is a compatibility copy of that notebook;
-it no longer starts a ComfyUI server or tunnel in Colab.
+it no longer starts a ComfyUI server or tunnel in Colab. Both copies offer an
+optional approved-adult-image mode with non-explicit glamour, opaque lingerie
+and gym/swimwear motion presets, input/result previews and a downloadable
+original job ZIP. See [the input modes and presets](free-gpu-media.md#non-explicit-adult-modeling-in-colab).
 
 Use the existing ComfyUI adapter when you already have an installed GPU worker:
 
@@ -24,3 +27,4 @@ For a remote worker, use your authenticated HTTPS proxy and set
 `COMFYUI_BEARER_TOKEN` to its credential. Native ComfyUI has no bearer auth.
 Speech still defaults to the local Android companion, and lip sync defaults to
 attended GPU batches. Set Piper/MuseTalk explicitly for an installed desktop lane.
+
