@@ -182,7 +182,7 @@ type BatchSummary struct {
 	Attempts  []AttemptSummary `json:"attempts,omitempty"`
 }
 
-const defaultNegative = "public figure likeness, child, teen, underage, youth-coded sexual styling, extra fingers, malformed hands, duplicate limbs, distorted face, waxy skin, plastic skin, 3d render, watermark, logo, text artifacts, soft focus, blurry face, smeared skin texture, motion blur, low facial contrast, excessive denoise"
+const defaultNegative = "cartoon, anime, illustration, digital painting, comic, 3d render, plastic skin, waxy skin, public figure likeness, child, teen, underage, youth-coded sexual styling, extra fingers, malformed hands, duplicate limbs, distorted face, watermark, logo, text artifacts, soft focus, blurry face, smeared skin texture, motion blur, low facial contrast, excessive denoise"
 
 func loadPersona(req Request) (Persona, error) {
 	path := strings.TrimSpace(req.PersonaPath)
@@ -236,6 +236,9 @@ func barefootDue(p Persona, req Request) bool {
 }
 
 func promptFor(p Persona, req Request) string {
+	if strings.EqualFold(strings.TrimSpace(req.Style), "photo-test") {
+		return photoTestPrompt(p, req)
+	}
 	style := strings.TrimSpace(req.Style)
 	if style == "" {
 		style = "photorealistic"
@@ -272,6 +275,31 @@ func promptFor(p Persona, req Request) string {
 	}
 	if strings.TrimSpace(p.Voice) != "" {
 		parts = append(parts, "Personality cue: "+strings.TrimSpace(p.Voice)+".")
+	}
+	return strings.Join(parts, " ")
+}
+
+// photoTestPrompt isolates model realism from body, wardrobe and persona-story
+// cues. Keep photography and face traits early for short CLIP context windows.
+func photoTestPrompt(p Persona, req Request) string {
+	parts := []string{fmt.Sprintf("RAW portrait photograph of a fictional adult woman, age %d, natural skin texture.", p.Age)}
+	for _, trait := range []struct{ value, suffix string }{
+		{p.Physical.HairColor, "hair"},
+		{p.Physical.EyeColor, "eyes"},
+		{p.Physical.SkinTone, "skin"},
+	} {
+		if value := strings.TrimSpace(trait.value); value != "" {
+			parts = append(parts, value+" "+trait.suffix+".")
+		}
+	}
+	parts = append(parts, "Single subject, head and shoulders, soft window light, neutral shirt.")
+	if scene := strings.TrimSpace(req.Scene); scene != "" {
+		parts = append(parts, scene+".")
+	}
+	if token := strings.TrimSpace(req.IdentityEmbeddingToken); token != "" {
+		weight := req.IdentityEmbeddingWeight
+		if weight <= 0 { weight = 1.1 }
+		parts = append([]string{fmt.Sprintf("(%s:%.2f)", token, weight)}, parts...)
 	}
 	return strings.Join(parts, " ")
 }

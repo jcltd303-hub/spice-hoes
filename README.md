@@ -8,6 +8,10 @@ The operating objective follows [project.md](project.md): optimize attributable 
 
 Device setup: [S24 GPU/NPU and offline voice](docs/s24-local-runtime.md). Heavy media: [free GPU notebook batches](docs/free-gpu-media.md).
 
+Canon portrait test: [Local Dream realism test](docs/canon-image-test.md). Run
+`bash scripts/test-local-dream-image.sh celeste_vale` on the phone; the five
+confirmed canon boards are preserved and older reference images are archived.
+
 The [income swarm launcher](docs/income-swarm.md) connects local S24 MoA planning, native S24 generation, owner-authorized scored release, durable publishing, signed live Stripe receipts, and corrected learning in a supervised loop. Start with `swarm-status`; unconfigured providers block production. The first unattended lane produces Instagram still images, with views kept separate from impressions and cost reservations kept separate from verified money.
 
 ## Start locally
