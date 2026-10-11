@@ -25,6 +25,7 @@ import (
 	"github.com/jcltd303-hub/spice-hoes/internal/faceswap"
 	"github.com/jcltd303-hub/spice-hoes/internal/localdream"
 	"github.com/jcltd303-hub/spice-hoes/internal/nativecore"
+	"github.com/jcltd303-hub/spice-hoes/internal/sdcpp"
 	"gopkg.in/yaml.v3"
 )
 
@@ -98,6 +99,7 @@ type Request struct {
 	ReferenceRoot    string  `json:"reference_root,omitempty"`
 	IdentityThreshold float64 `json:"identity_threshold,omitempty"`
 	IdentityMeanThreshold float64 `json:"identity_mean_threshold,omitempty"`
+	IdentityMarginThreshold float64 `json:"identity_margin_threshold,omitempty"`
 	QualityThreshold float64  `json:"quality_threshold,omitempty"`
 	Generator         string   `json:"generator,omitempty"`
 	IdentityEmbeddingToken string `json:"identity_embedding_token,omitempty"`
@@ -117,6 +119,13 @@ type IdentityResult struct {
 	Passed         bool    `json:"passed"`
 	Score          float64 `json:"score,omitempty"`
 	MeanScore      float64 `json:"mean_score,omitempty"`
+	PrototypeScore float64 `json:"prototype_score,omitempty"`
+	NearestOtherScore float64 `json:"nearest_other_score,omitempty"`
+	IdentityMargin float64 `json:"identity_margin,omitempty"`
+	MarginThreshold float64 `json:"margin_threshold,omitempty"`
+	NearestOtherPersona string `json:"nearest_other_persona,omitempty"`
+	MarginScored bool `json:"margin_scored,omitempty"`
+	DecisionBasis string `json:"decision_basis,omitempty"`
 	Threshold      float64 `json:"threshold"`
 	MeanThreshold  float64 `json:"mean_threshold,omitempty"`
 	ReferenceCount int     `json:"reference_count"`
@@ -153,10 +162,16 @@ type AttemptSummary struct {
 	MetadataPath  string  `json:"metadata_path,omitempty"`
 	IdentityScore float64 `json:"identity_score,omitempty"`
 	IdentityMean  float64 `json:"identity_mean,omitempty"`
+	PrototypeScore float64 `json:"prototype_score,omitempty"`
+	NearestOtherScore float64 `json:"nearest_other_score,omitempty"`
+	NearestOtherPersona string `json:"nearest_other_persona,omitempty"`
+	IdentityMargin float64 `json:"identity_margin,omitempty"`
+	MarginThreshold float64 `json:"margin_threshold,omitempty"`
 	IdentityPass  bool    `json:"identity_pass"`
 	QualityScore  float64 `json:"quality_score,omitempty"`
 	QualityPass   bool    `json:"quality_pass"`
 	SelectionScore float64 `json:"selection_score,omitempty"`
+	RejectReason string `json:"reject_reason,omitempty"`
 	Error         string  `json:"error,omitempty"`
 }
 
@@ -293,15 +308,24 @@ func loadReferences(root, personaID string) ([][]byte, []string, error) {
 		name := strings.ToLower(entry.Name())
 		ext := strings.ToLower(filepath.Ext(name))
 		if ext != ".png" && ext != ".jpg" && ext != ".jpeg" { continue }
-		if strings.HasPrefix(name, "master_") || strings.HasPrefix(name, "contact_") || strings.Contains(name, "_rear") {
+
+		// Canon is authoritative for identity. Old anchors, bootstrap generations,
+		// support images, contact sheets, and prior candidates must never enter
+		// the production identity bank or generation-time identity scoring.
+		base := strings.TrimSuffix(name, ext)
+		isCanon := base == "canon" || strings.HasPrefix(base, "canon-") || strings.HasPrefix(base, "canon_")
+		if !isCanon {
 			continue
 		}
+
 		path := filepath.Join(dir, entry.Name())
 		b, err := os.ReadFile(path)
 		if err != nil { continue }
 		candidates = append(candidates, candidate{path:path, data:b})
 	}
-	if len(candidates) == 0 { return nil, nil, nil }
+	if len(candidates) == 0 {
+		return nil, nil, fmt.Errorf("no Canon identity references found for %s; expected canon.png or canon-* / canon_* image files", personaID)
+	}
 
 	const maxRefs = 8
 	selected := candidates
@@ -326,18 +350,54 @@ type referenceEmbedding struct {
 	vec   []float64
 }
 
+func embedReferenceFaces(ctx context.Context, m *nativecore.Manager, raw []byte, sourceIndex int) ([]referenceEmbedding, error) {
+	img, _, err := image.Decode(bytes.NewReader(raw))
+	if err != nil { return nil, fmt.Errorf("decode image: %w", err) }
+	if m.FaceDetector == "" { return nil, fmt.Errorf("SCRFD face detector is not configured") }
+	if m.IdentityVision == "" { return nil, fmt.Errorf("ArcFace embedding model is not configured") }
+
+	prep, err := ident.SCRFDInputImage(img)
+	if err != nil { return nil, fmt.Errorf("prepare SCRFD input: %w", err) }
+	outputs, _, err := m.Detect(ctx, prep.Tensor)
+	if err != nil { return nil, fmt.Errorf("SCRFD detection failed: %w", err) }
+	faces, _, err := ident.DecodeSCRFDWithFallback(outputs, prep, ident.SCRFDThreshold(0.5), 0.4)
+	if err != nil || len(faces) == 0 {
+		if err == nil { err = fmt.Errorf("no face detected") }
+		return nil, fmt.Errorf("SCRFD landmarks unavailable: %w", err)
+	}
+
+	// Canon sheets intentionally contain several views of the same fictional
+	// adult identity. Treat every detected face as a separate ArcFace sample
+	// instead of silently taking faces[0].
+	const maxFacesPerReference = 8
+	if len(faces) > maxFacesPerReference { faces = faces[:maxFacesPerReference] }
+
+	out := make([]referenceEmbedding, 0, len(faces))
+	for _, face := range faces {
+		input, alignErr := ident.ArcFaceInputAlignedImage(img, face.Landmarks)
+		if alignErr != nil { continue }
+		vec, _, embedErr := m.Embed(ctx, input)
+		if embedErr != nil { continue }
+		vec = ident.Normalize(vec)
+		if len(vec) == 0 { continue }
+		out = append(out, referenceEmbedding{index:sourceIndex, vec:vec})
+	}
+	if len(out) == 0 { return nil, fmt.Errorf("no detected Canon face produced an ArcFace embedding") }
+	return out, nil
+}
+
 func embedReferences(ctx context.Context, m *nativecore.Manager, refs [][]byte, paths []string) ([]referenceEmbedding, []string) {
-	out := make([]referenceEmbedding, 0, len(refs))
+	out := make([]referenceEmbedding, 0, len(refs)*4)
 	failures := make([]string, 0)
 	for i, ref := range refs {
-		vec, err := embedFaceBytes(ctx, m, ref)
+		embeddings, err := embedReferenceFaces(ctx, m, ref, i)
 		if err != nil {
 			label := fmt.Sprintf("reference[%d]", i)
 			if i < len(paths) && strings.TrimSpace(paths[i]) != "" { label = paths[i] }
 			failures = append(failures, fmt.Sprintf("%s: %v", label, err))
 			continue
 		}
-		out = append(out, referenceEmbedding{index:i, vec:vec})
+		out = append(out, embeddings...)
 	}
 	return out, failures
 }
@@ -445,7 +505,7 @@ func referenceCentroid(refs []referenceEmbedding) ([]float64, error) {
 	return ident.Normalize(out), nil
 }
 
-func scoreIdentityImageCached(ctx context.Context, m *nativecore.Manager, generated image.Image, refs []referenceEmbedding, threshold, meanThreshold float64) IdentityResult {
+func scoreIdentityImageCached(ctx context.Context, m *nativecore.Manager, generated image.Image, refs []referenceEmbedding, threshold, meanThreshold float64, personaID string, marginThreshold float64) IdentityResult {
 	result := IdentityResult{
 		Threshold: threshold,
 		MeanThreshold: meanThreshold,
@@ -469,7 +529,43 @@ func scoreIdentityImageCached(ctx context.Context, m *nativecore.Manager, genera
 		score, err := ident.Cosine(genVec, ref.vec)
 		if err == nil { scores = append(scores, score) }
 	}
-	return finalizeIdentityResult(result, scores)
+	if len(scores) == 0 {
+		result.Reason = "no_reference_embedding_succeeded"
+		return result
+	}
+	maxScore := scores[0]
+	sum := 0.0
+	for _, score := range scores {
+		if score > maxScore { maxScore = score }
+		sum += score
+	}
+	result.Scored = true
+	result.Score = maxScore
+	result.MeanScore = sum / float64(len(scores))
+	result.ReferenceCount = len(scores)
+	result.Passed = result.Score >= threshold && result.MeanScore >= meanThreshold
+	result.DecisionBasis = "legacy_raw_reference_max_and_mean"
+
+	if strings.TrimSpace(personaID) != "" {
+		if marginThreshold <= 0 { marginThreshold = DefaultIdentityMargin }
+		if protos, err := LoadDiscriminativePrototypes("personas"); err == nil {
+			if own := protos[personaID]; len(own) > 0 {
+				if ps, err := ScorePrototypeMargin(genVec, personaID, own, protos, marginThreshold); err == nil {
+					result.PrototypeScore = ps.OwnScore
+					result.NearestOtherScore = ps.NearestOtherScore
+					result.IdentityMargin = ps.Margin
+					result.MarginThreshold = ps.MarginThreshold
+					result.NearestOtherPersona = ps.NearestOtherPersona
+					result.MarginScored = true
+					ownThreshold := meanThreshold
+					if ownThreshold <= 0 { ownThreshold = 0.70 }
+					result.Passed = ps.OwnScore >= ownThreshold && ps.Passed
+					result.DecisionBasis = "own_prototype_similarity_and_nearest_foreign_margin"
+				}
+			}
+		}
+	}
+	return result
 }
 
 func selectCanonicalReference(refs [][]byte, paths []string, embedded []referenceEmbedding) ([]byte, string, float64, error) {
@@ -544,6 +640,10 @@ func betterIdentityQuality(a IdentityResult, aq imagemetrics.Metrics, b Identity
 	bAccepted := b.Passed && bQualityPass
 	if aAccepted != bAccepted { return aAccepted }
 	if a.Passed != b.Passed { return a.Passed }
+	if a.MarginScored && b.MarginScored {
+		if a.IdentityMargin != b.IdentityMargin { return a.IdentityMargin > b.IdentityMargin }
+		if a.PrototypeScore != b.PrototypeScore { return a.PrototypeScore > b.PrototypeScore }
+	}
 	if a.Score != b.Score { return a.Score > b.Score }
 	if a.MeanScore != b.MeanScore { return a.MeanScore > b.MeanScore }
 	if aQualityPass != bQualityPass { return aQualityPass }
@@ -580,12 +680,12 @@ func scoreIdentityImage(ctx context.Context, m *nativecore.Manager, generated im
 			scores = append(scores, s)
 		}
 	}
-	return finalizeIdentityResult(result, scores)
+	result = finalizeIdentityResult(result, scores)
+	return result
 }
 
 // finalizeIdentityResult computes max/mean/passed from cosine scores and
-// fills the tail of an IdentityResult. Shared by scoreIdentityImage and
-// scoreIdentityImageCached.
+// fills the tail of an IdentityResult.
 func finalizeIdentityResult(result IdentityResult, scores []float64) IdentityResult {
 	if len(scores) == 0 {
 		result.Reason = "no_reference_embedding_succeeded"
@@ -679,6 +779,9 @@ func generationBackend(req Request) string {
 		backend = strings.ToLower(strings.TrimSpace(os.Getenv("SPICE_IDENTITY_GENERATOR")))
 	}
 	if backend == "" || backend == "auto" {
+		if sdcpp.Available(strings.TrimSpace(req.PersonaID)) {
+			return "sdcpp"
+		}
 		if strings.TrimSpace(os.Getenv("LOCAL_DREAM_URL")) != "" {
 			return "local-dream"
 		}
@@ -687,6 +790,8 @@ func generationBackend(req Request) string {
 	switch backend {
 	case "local-dream", "localdream", "ld":
 		return "local-dream"
+	case "sdcpp", "stable-diffusion.cpp", "stable-diffusion-cpp":
+		return "sdcpp"
 	default:
 		return "qnn"
 	}
@@ -752,6 +857,28 @@ func resolveIdentityEmbedding(ctx context.Context, req *Request, p Persona) (map
 
 func generateFrame(ctx context.Context, req Request, prompt string) (generatedFrame, map[string]any, string, error) {
 	backend := generationBackend(req)
+	if backend == "sdcpp" {
+		weight := req.IdentityEmbeddingWeight
+		if weight <= 0 { weight = 0.8 }
+		out, err := sdcpp.Generate(ctx, sdcpp.Request{
+			Persona: req.PersonaID,
+			Prompt: reqPrompt(prompt),
+			Negative: req.NegativePrompt,
+			Seed: req.Seed,
+			Width: req.Width,
+			Height: req.Height,
+			Steps: req.Steps,
+			Guidance: req.Guidance,
+			LoRAWeight: weight,
+		})
+		if err != nil { return generatedFrame{}, nil, backend, err }
+		img, _, err := image.Decode(bytes.NewReader(out.Image))
+		if err != nil { return generatedFrame{}, nil, backend, fmt.Errorf("decode stable-diffusion.cpp output: %w", err) }
+		meta := out.Meta
+		if meta == nil { meta = map[string]any{} }
+		meta["pipeline_image_mode"] = "decoded-memory"
+		return generatedFrame{Image:img, Encoded:out.Image}, meta, backend, nil
+	}
 	if backend == "local-dream" {
 		client := localdream.FromEnv()
 		out, err := client.Generate(ctx, localdream.GenerateRequest{
@@ -766,7 +893,7 @@ func generateFrame(ctx context.Context, req Request, prompt string) (generatedFr
 		return generatedFrame{Image:out.Frame,Encoded:out.Encoded}, meta, backend, nil
 	}
 
-	m := nativecore.FromEnv()
+	m := nativecore.FromEnvForPersona(req.PersonaID)
 	if m.ModelDir == "" {
 		return generatedFrame{}, nil, backend, fmt.Errorf("QNN identity generation requires SPICE_QNN_MODEL_DIR")
 	}
@@ -790,6 +917,11 @@ func generateFrame(ctx context.Context, req Request, prompt string) (generatedFr
 	if err!=nil { return generatedFrame{},nil,backend,fmt.Errorf("decode generated image pixels: %w",err) }
 	out["generator"] = "qnn"
 	out["pipeline_image_mode"] = "decoded-memory"
+	if m.RequireModelMatch {
+		out["lora_persona"] = req.PersonaID
+		out["lora_mode"] = "prefused-sdxl-mnn"
+		out["lora_model_dir"] = m.ModelDir
+	}
 	return generatedFrame{Image:img,Encoded:imageBytes}, out, backend, nil
 }
 
@@ -803,15 +935,25 @@ func boolOption(v *bool, fallback bool) bool {
 
 func candidateSelectionScore(r Result) float64 {
 	if !r.Identity.Scored { return -1 }
+	qualityNorm := r.Quality.LocalScore
+	if r.QualityThreshold > 0 { qualityNorm /= r.QualityThreshold }
+
+	if r.Identity.MarginScored {
+		ownNorm := r.Identity.PrototypeScore
+		if r.Identity.MeanThreshold > 0 { ownNorm /= r.Identity.MeanThreshold }
+		marginNorm := r.Identity.IdentityMargin
+		if r.Identity.MarginThreshold > 0 { marginNorm /= r.Identity.MarginThreshold }
+		// Discriminative identity is the hard objective: optimize the weaker
+		// of own-prototype similarity and foreign separation first.
+		floor := math.Min(ownNorm, marginNorm)
+		ceil := math.Max(ownNorm, marginNorm)
+		return 0.65*floor + 0.20*ceil + 0.15*qualityNorm
+	}
+
 	maxNorm := r.Identity.Score
 	if r.Identity.Threshold > 0 { maxNorm /= r.Identity.Threshold }
 	meanNorm := r.Identity.MeanScore
 	if r.Identity.MeanThreshold > 0 { meanNorm /= r.Identity.MeanThreshold }
-	qualityNorm := r.Quality.LocalScore
-	if r.QualityThreshold > 0 { qualityNorm /= r.QualityThreshold }
-
-	// Optimize the weakest identity gate first. Once both identity gates are
-	// healthy, quality and excess identity provide the tie-break.
 	identityFloor := math.Min(maxNorm, meanNorm)
 	identityCeil := math.Max(maxNorm, meanNorm)
 	return 0.60*identityFloor + 0.20*identityCeil + 0.20*qualityNorm
@@ -823,16 +965,27 @@ func betterResult(a, b Result) bool {
 	if aAccepted != bAccepted { return aAccepted }
 	if a.Identity.Passed != b.Identity.Passed { return a.Identity.Passed }
 
-	// For rejected identity candidates, prefer the one closest to satisfying
-	// BOTH gates instead of over-rewarding resemblance to a single reference.
-	aMaxNorm, bMaxNorm := a.Identity.Score, b.Identity.Score
-	if a.Identity.Threshold > 0 { aMaxNorm /= a.Identity.Threshold }
-	if b.Identity.Threshold > 0 { bMaxNorm /= b.Identity.Threshold }
-	aMeanNorm, bMeanNorm := a.Identity.MeanScore, b.Identity.MeanScore
-	if a.Identity.MeanThreshold > 0 { aMeanNorm /= a.Identity.MeanThreshold }
-	if b.Identity.MeanThreshold > 0 { bMeanNorm /= b.Identity.MeanThreshold }
-	aFloor, bFloor := math.Min(aMaxNorm, aMeanNorm), math.Min(bMaxNorm, bMeanNorm)
-	if aFloor != bFloor { return aFloor > bFloor }
+	if a.Identity.MarginScored && b.Identity.MarginScored {
+		aOwn, bOwn := a.Identity.PrototypeScore, b.Identity.PrototypeScore
+		if a.Identity.MeanThreshold > 0 { aOwn /= a.Identity.MeanThreshold }
+		if b.Identity.MeanThreshold > 0 { bOwn /= b.Identity.MeanThreshold }
+		aMargin, bMargin := a.Identity.IdentityMargin, b.Identity.IdentityMargin
+		if a.Identity.MarginThreshold > 0 { aMargin /= a.Identity.MarginThreshold }
+		if b.Identity.MarginThreshold > 0 { bMargin /= b.Identity.MarginThreshold }
+		aFloor, bFloor := math.Min(aOwn, aMargin), math.Min(bOwn, bMargin)
+		if aFloor != bFloor { return aFloor > bFloor }
+		if a.Identity.IdentityMargin != b.Identity.IdentityMargin { return a.Identity.IdentityMargin > b.Identity.IdentityMargin }
+		if a.Identity.PrototypeScore != b.Identity.PrototypeScore { return a.Identity.PrototypeScore > b.Identity.PrototypeScore }
+	} else {
+		aMaxNorm, bMaxNorm := a.Identity.Score, b.Identity.Score
+		if a.Identity.Threshold > 0 { aMaxNorm /= a.Identity.Threshold }
+		if b.Identity.Threshold > 0 { bMaxNorm /= b.Identity.Threshold }
+		aMeanNorm, bMeanNorm := a.Identity.MeanScore, b.Identity.MeanScore
+		if a.Identity.MeanThreshold > 0 { aMeanNorm /= a.Identity.MeanThreshold }
+		if b.Identity.MeanThreshold > 0 { bMeanNorm /= b.Identity.MeanThreshold }
+		aFloor, bFloor := math.Min(aMaxNorm, aMeanNorm), math.Min(bMaxNorm, bMeanNorm)
+		if aFloor != bFloor { return aFloor > bFloor }
+	}
 
 	if a.QualityPassed != b.QualityPassed { return a.QualityPassed }
 	if a.Identity.MeanScore != b.Identity.MeanScore { return a.Identity.MeanScore > b.Identity.MeanScore }
@@ -897,7 +1050,7 @@ func runSingleAttempt(
 	preSwapBytes := append([]byte(nil), imageBytes...)
 	preSwapIdentity := IdentityResult{}
 	if len(refs) > 0 {
-		preSwapIdentity = scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+		preSwapIdentity = scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold, p.ID, req.IdentityMarginThreshold)
 		out["identity_pre_swap_score"] = preSwapIdentity.Score
 		out["identity_pre_swap_mean"] = preSwapIdentity.MeanScore
 		out["identity_pre_swap_scored"] = preSwapIdentity.Scored
@@ -923,7 +1076,7 @@ func runSingleAttempt(
 				if len(vec) != 512 { return }
 				swappedImg, meta, swapErr := swapper.SwapImageWithEmbedding(ctx, vec, frame.Image)
 				if swapErr != nil || swappedImg == nil { return }
-				idResult := scoreIdentityImageCached(ctx, m, swappedImg, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+				idResult := scoreIdentityImageCached(ctx, m, swappedImg, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold, p.ID, req.IdentityMarginThreshold)
 				if !idResult.Scored { return }
 				q, qErr := imagemetrics.AnalyzeImage(swappedImg)
 				if qErr != nil || q.LocalScore < req.QualityThreshold { return }
@@ -983,7 +1136,7 @@ func runSingleAttempt(
 		"attempt":attemptIndex, "best_of_n":attemptTotal,
 		"references":len(refs), "identity_threshold":req.IdentityThreshold,
 	})
-	identity := scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+	identity := scoreIdentityImageCached(ctx, m, frame.Image, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold, p.ID, req.IdentityMarginThreshold)
 	if applied, _ := out["faceswap_applied"].(bool); applied && preSwapIdentity.Scored && identity.Scored && identity.Score < preSwapIdentity.Score {
 		out["faceswap_reverted"] = true
 		out["faceswap_revert_reason"] = fmt.Sprintf("post-swap identity %.6f below pre-swap %.6f", identity.Score, preSwapIdentity.Score)
@@ -1066,6 +1219,21 @@ func runSingleAttempt(
 }
 
 func summarizeAttempt(index int, seed int64, result Result) AttemptSummary {
+	reason := ""
+	if !(result.Identity.Passed && result.QualityPassed) {
+		switch {
+		case !result.Identity.Passed && !result.QualityPassed:
+			reason = "identity_and_quality_failed"
+		case !result.Identity.Passed:
+			if result.Identity.MarginScored && result.Identity.IdentityMargin < result.Identity.MarginThreshold {
+				reason = "identity_margin_failed"
+			} else {
+				reason = "identity_failed"
+			}
+		case !result.QualityPassed:
+			reason = "quality_failed"
+		}
+	}
 	return AttemptSummary{
 		Index:index,
 		Seed:seed,
@@ -1074,10 +1242,16 @@ func summarizeAttempt(index int, seed int64, result Result) AttemptSummary {
 		MetadataPath:result.MetadataPath,
 		IdentityScore:result.Identity.Score,
 		IdentityMean:result.Identity.MeanScore,
+		PrototypeScore:result.Identity.PrototypeScore,
+		NearestOtherScore:result.Identity.NearestOtherScore,
+		NearestOtherPersona:result.Identity.NearestOtherPersona,
+		IdentityMargin:result.Identity.IdentityMargin,
+		MarginThreshold:result.Identity.MarginThreshold,
 		IdentityPass:result.Identity.Passed,
 		QualityScore:result.Quality.LocalScore,
 		QualityPass:result.QualityPassed,
 		SelectionScore:candidateSelectionScore(result),
+		RejectReason:reason,
 	}
 }
 
@@ -1115,7 +1289,7 @@ func refineAttemptWithFaceSwap(
 		if len(vec) != 512 { return }
 		swapped, meta, swapErr := swapper.SwapImageWithEmbedding(ctx, vec, img)
 		if swapErr != nil || swapped == nil { return }
-		idResult := scoreIdentityImageCached(ctx, m, swapped, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold)
+		idResult := scoreIdentityImageCached(ctx, m, swapped, refEmbeddings, req.IdentityThreshold, req.IdentityMeanThreshold, req.PersonaID, req.IdentityMarginThreshold)
 		if !idResult.Scored { return }
 		q, qErr := imagemetrics.AnalyzeImage(swapped)
 		if qErr != nil || q.LocalScore < req.QualityThreshold { return }
@@ -1224,6 +1398,7 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	if req.ReferenceRoot == "" { req.ReferenceRoot = filepath.Join("data", "references") }
 	if req.IdentityThreshold == 0 { req.IdentityThreshold = 0.82 }
 	if req.IdentityMeanThreshold == 0 { req.IdentityMeanThreshold = 0.70 }
+	if req.IdentityMarginThreshold == 0 { req.IdentityMarginThreshold = DefaultIdentityMargin }
 	if req.QualityThreshold == 0 { req.QualityThreshold = 0.78 }
 	if req.NegativePrompt == "" { req.NegativePrompt = defaultNegative }
 	if req.BestOfN <= 0 {
