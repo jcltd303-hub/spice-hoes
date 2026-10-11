@@ -94,7 +94,7 @@ func AnchorFix(ctx context.Context, personaIDs []string, attempts, keep int, app
 			if err != nil { continue }
 			raw, err := os.ReadFile(out.AssetPath)
 			if err != nil { continue }
-			vec, _, err := arcEmbedding(ctx, m, raw)
+			vec, err := embedFaceBytes(ctx, m, raw)
 			if err != nil { continue }
 
 			ownScore, err := ident.Cosine(vec, own)

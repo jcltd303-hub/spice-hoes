@@ -45,6 +45,12 @@ func FromEnv() *Manager {
     return &Manager{Binary:bin, ModelDir:modelDir, LibDir:libDir, Type:modelType, Host:host, Port:port, LogPath:logPath, IdentityVision:identityVision, FaceDetector:faceDetector}
 }
 
+// FaceDetectorModel and IdentityModel expose the configured face-pipeline
+// models so the shared identity.EmbedFace helper can validate configuration
+// against the FaceBackend interface without depending on this concrete type.
+func (m *Manager) FaceDetectorModel() string { return m.FaceDetector }
+func (m *Manager) IdentityModel() string     { return m.IdentityVision }
+
 func (m *Manager) baseURL() string { return fmt.Sprintf("http://%s:%d", m.Host, m.Port) }
 
 func (m *Manager) Health(ctx context.Context) bool {

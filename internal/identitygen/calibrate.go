@@ -126,7 +126,7 @@ func Calibrate(ctx context.Context, req CalibrateRequest) (CalibrateResult, erro
 		}
 		cp := calibPersona{id: id, found: len(refs)}
 		for i, ref := range refs {
-			vec, _, err := arcEmbedding(ctx, m, ref)
+			vec, err := embedFaceBytes(ctx, m, ref)
 			if err != nil {
 				cp.skipped = append(cp.skipped, fmt.Sprintf("%s: %v", filepath.Base(paths[i]), err))
 				continue
